@@ -195,7 +195,10 @@ export function PlaygroundPage() {
 
   // Panels & Tabs
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState<"params" | "inspector" | null>("params");
+  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
+  const [rightPanelTab, setRightPanelTab] = useState<"params" | "inspector" | null>(() =>
+    typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches ? "params" : null,
+  );
   const [lastPanelTab, setLastPanelTab] = useState<"params" | "inspector">("params");
   const panelTab = rightPanelTab ?? lastPanelTab;
   const [inspectorMsgId, setInspectorMsgId] = useState<string | null>(null);
@@ -884,28 +887,48 @@ export function PlaygroundPage() {
   return (
     <div className="flex h-[calc(100vh-3.5rem)] -m-4 overflow-hidden pb-14 sm:-m-6 md:-m-8 md:pb-0">
       {/* ---------------------------------------------------------------- Column 1: Test Sessions Manager */}
+      {mobileSessionsOpen && (
+        <div
+          className="fixed inset-0 z-40 animate-in fade-in duration-200 bg-slate-950/40 backdrop-blur-sm lg:hidden"
+          onClick={() => setMobileSessionsOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       <div
         className={cn(
-          "hidden lg:flex shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out",
-          sidebarCollapsed ? "w-0" : "w-64",
+          "fixed inset-y-0 left-0 z-50 w-64 overflow-hidden transition-transform duration-200 ease-in-out",
+          "lg:static lg:z-auto lg:shrink-0 lg:translate-x-0 lg:transition-[width]",
+          mobileSessionsOpen ? "translate-x-0" : "-translate-x-full",
+          sidebarCollapsed ? "lg:w-0" : "lg:w-64",
         )}
       >
-        <div className="flex w-64 flex-col border-r border-slate-200/60 bg-slate-50/50 dark:border-slate-800/60 dark:bg-slate-950/40 select-none">
+        <div className="flex h-full w-64 flex-col border-r border-slate-200/60 bg-slate-50 select-none dark:border-slate-800/60 dark:bg-slate-950 lg:bg-slate-50/50 lg:dark:bg-slate-950/40">
           {/* Header & Add Button */}
           <div className="flex items-center justify-between p-3 border-b border-slate-200/60 dark:border-slate-800/60">
             <div className="flex items-center gap-2">
               <Terminal className="size-4 text-blue-600 dark:text-blue-400" />
               <span className="font-bold text-xs text-slate-800 dark:text-slate-200">{t("playground.sessions")}</span>
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={handleCreateSession}
-              title={t("playground.newSession")}
-              className="size-7 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-400"
-            >
-              <Plus className="size-3.5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={handleCreateSession}
+                title={t("playground.newSession")}
+                className="size-7 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-400"
+              >
+                <Plus className="size-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setMobileSessionsOpen(false)}
+                title="关闭"
+                className="flex lg:hidden size-7 rounded-xl text-slate-400 hover:text-slate-600"
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
           </div>
 
           {/* Search bar */}
@@ -932,6 +955,7 @@ export function PlaygroundPage() {
                   onClick={() => {
                     setActiveSessionId(session.id);
                     setSelectedModel(session.model || selectedModel);
+                    setMobileSessionsOpen(false);
                   }}
                   className={cn(
                     "group relative flex cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-xs transition-all",
@@ -1011,6 +1035,19 @@ export function PlaygroundPage() {
         {/* Playground Top Bar */}
         <div className="flex items-center justify-between border-b border-slate-200/70 bg-white/80 px-4 py-2.5 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-900/80">
           <div className="flex items-center gap-2 min-w-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setMobileSessionsOpen(true)}
+                  className="flex lg:hidden size-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                  aria-label="打开会话列表"
+                >
+                  <PanelLeftOpen className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">会话列表</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -1108,7 +1145,10 @@ export function PlaygroundPage() {
                 <Button
                   variant={rightPanelTab ? "secondary" : "ghost"}
                   size="icon"
-                  onClick={() => setRightPanelTab(rightPanelTab ? null : lastPanelTab)}
+                  onClick={() => {
+                    if (!rightPanelTab) setMobileSessionsOpen(false);
+                    setRightPanelTab(rightPanelTab ? null : lastPanelTab);
+                  }}
                   className="size-8 rounded-xl"
                   aria-label={t("playground.panel")}
                 >
@@ -1581,13 +1621,21 @@ export function PlaygroundPage() {
       </div>
 
       {/* ---------------------------------------------------------------- Column 3: Parameters & JSON Inspector Pane */}
+      {rightPanelTab && (
+        <div
+          className="fixed inset-0 z-40 animate-in fade-in duration-200 bg-slate-950/40 backdrop-blur-sm md:hidden"
+          onClick={() => setRightPanelTab(null)}
+          aria-hidden="true"
+        />
+      )}
       <div
         className={cn(
-          "flex shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out",
-          rightPanelTab ? "w-80 md:w-96" : "w-0",
+          "fixed inset-y-0 right-0 z-50 w-80 overflow-hidden transition-transform duration-200 ease-in-out",
+          "md:static md:z-auto md:shrink-0 md:translate-x-0 md:transition-[width]",
+          rightPanelTab ? "translate-x-0 md:w-96" : "translate-x-full md:w-0",
         )}
       >
-        <div className="flex w-80 md:w-96 flex-col border-l border-slate-200/70 bg-white/95 dark:border-slate-800/70 dark:bg-slate-900/95 backdrop-blur-xl">
+        <div className="flex h-full w-80 md:w-96 flex-col border-l border-slate-200/70 bg-white/95 dark:border-slate-800/70 dark:bg-slate-900/95 backdrop-blur-xl">
           {/* Panel Header Tabs */}
           <div className="flex h-[53px] items-center justify-between border-b border-slate-200/70 px-3 dark:border-slate-800/70">
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl">

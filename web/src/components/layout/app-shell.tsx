@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate, useOutlet } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -42,6 +42,37 @@ const TITLES: Record<string, string> = {
   "/plugin-pages": "pluginPages.title",
   "/system": "nav.systemItem",
 };
+
+function PageTransition({ className }: { className?: string }) {
+  const location = useLocation();
+  const outlet = useOutlet();
+  const outletRef = useRef(outlet);
+  outletRef.current = outlet;
+  const [displayed, setDisplayed] = useState(() => ({ key: location.key, outlet }));
+  const [leaving, setLeaving] = useState(false);
+
+  useEffect(() => {
+    if (location.key === displayed.key) return;
+    setLeaving(true);
+    const timer = window.setTimeout(() => {
+      setDisplayed({ key: location.key, outlet: outletRef.current });
+      setLeaving(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [location.key, displayed.key]);
+
+  return (
+    <div
+      key={displayed.key}
+      className={cn(
+        leaving ? "opacity-0 transition-opacity duration-150" : "animate-in fade-in duration-200",
+        className,
+      )}
+    >
+      {displayed.outlet}
+    </div>
+  );
+}
 
 export function AppShell() {
   const { t } = useTranslation();
@@ -144,7 +175,7 @@ export function AppShell() {
         >
           <div className={cn("mx-auto w-full", isPluginPage ? "flex-1 flex flex-col max-w-none" : "max-w-[1700px]")}>
             <ErrorBoundary>
-              <Outlet />
+              <PageTransition className={isPluginPage ? "flex flex-1 flex-col min-h-0" : undefined} />
             </ErrorBoundary>
           </div>
         </main>

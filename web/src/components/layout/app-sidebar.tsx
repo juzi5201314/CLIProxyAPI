@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -57,6 +57,10 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
   const toggleSidebar = usePrefsStore((state) => state.toggleSidebar);
   const isCollapsed = mobile ? false : collapsed;
 
+  const navRef = useRef<HTMLElement | null>(null);
+  const activeItemRef = useRef<HTMLAnchorElement | null>(null);
+  const [indicator, setIndicator] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+
   const pluginsQuery = useQuery({
     queryKey: ["plugins"],
     queryFn: plugins.list,
@@ -102,6 +106,24 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
     if (!to.startsWith("/plugin-pages") && location.pathname.startsWith(to)) return true;
     return false;
   };
+
+  const updateIndicator = useCallback(() => {
+    const el = activeItemRef.current;
+    if (!el) {
+      setIndicator(null);
+      return;
+    }
+    setIndicator({ top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight });
+  }, []);
+
+  useLayoutEffect(() => {
+    updateIndicator();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateIndicator);
+    if (activeItemRef.current) observer.observe(activeItemRef.current);
+    if (navRef.current) observer.observe(navRef.current);
+    return () => observer.disconnect();
+  }, [updateIndicator, location.pathname, isCollapsed, mobile, pluginResourceNavItems.length]);
 
   const pluginGroupItems: NavItem[] =
     pluginResourceNavItems.length > 0
@@ -221,7 +243,17 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
       </div>
 
       {/* Main Nav Scroll Area */}
-      <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+      <nav
+        ref={navRef}
+        className="relative flex flex-1 flex-col gap-4 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+      >
+        {indicator ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-0 rounded-xl bg-blue-600 shadow-md shadow-blue-500/25 transition-[top,left,width,height] duration-300 ease-in-out"
+            style={{ top: indicator.top, left: indicator.left, width: indicator.width, height: indicator.height }}
+          />
+        ) : null}
         {NAV_GROUPS.map((group) => (
           <div key={group.groupKey} className="space-y-1">
             {!collapsed && (
@@ -269,10 +301,11 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
                         <NavLink
                           to={item.to}
                           onClick={() => onNavigate?.()}
+                          ref={active ? activeItemRef : undefined}
                           className={cn(
-                            "group flex items-center justify-center size-10 mx-auto rounded-xl transition-all duration-200",
+                            "group relative z-10 flex items-center justify-center size-10 mx-auto rounded-xl transition-all duration-200",
                             active
-                              ? "bg-blue-600 text-white shadow-md shadow-blue-500/25 dark:bg-blue-600"
+                              ? "text-white font-semibold"
                               : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
                           )}
                         >
@@ -291,10 +324,11 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
                     key={item.to}
                     to={item.to}
                     onClick={() => onNavigate?.()}
+                    ref={active ? activeItemRef : undefined}
                     className={cn(
-                      "group flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150",
+                      "group relative z-10 flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150",
                       active
-                        ? "bg-blue-600 text-white shadow-sm shadow-blue-500/25 dark:bg-blue-600 font-semibold"
+                        ? "text-white font-semibold"
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
                     )}
                   >

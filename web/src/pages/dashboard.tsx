@@ -65,6 +65,8 @@ import { usePrefsStore, type TimeRange } from "@/stores/prefs";
 import type { RecordFilter } from "@/api/management";
 import { ModelPricingDialog } from "@/components/model-pricing-dialog";
 
+const DASHBOARD_CARD_SURFACE = "rounded-2xl border border-slate-200/80 bg-white/95 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/90";
+
 const chartConfig = {
   requests: { label: "Requests", color: "var(--chart-1)" },
   failed: { label: "Failed", color: "var(--chart-5)" },
@@ -388,6 +390,7 @@ export function DashboardPage() {
       <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
         {/* Traffic Chart */}
         <SectionCard
+          className={DASHBOARD_CARD_SURFACE}
           title={t("dashboard.charts.traffic")}
           hint={t("dashboard.charts.trafficHint", { interval: stepLabel })}
           actions={
@@ -428,6 +431,7 @@ export function DashboardPage() {
 
         {/* Cost Trend Chart */}
         <SectionCard
+          className={DASHBOARD_CARD_SURFACE}
           title={t("dashboard.charts.cost", "费用消耗走势")}
           hint={t("dashboard.charts.costHint", "按模型单价每 {{interval}} 预估消费 (USD)", { interval: stepLabel })}
         >
@@ -460,7 +464,7 @@ export function DashboardPage() {
         </SectionCard>
 
         {/* Token Input vs Output Stacked Chart */}
-        <SectionCard title={t("dashboard.charts.tokens")} hint={t("dashboard.charts.tokensHint", { interval: stepLabel })}>
+        <SectionCard className={DASHBOARD_CARD_SURFACE} title={t("dashboard.charts.tokens")} hint={t("dashboard.charts.tokensHint", { interval: stepLabel })}>
           <ChartContainer config={chartConfig} className="h-60 w-full">
             <AreaChart data={points} margin={{ left: 4, right: 8 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.4} />
@@ -485,7 +489,7 @@ export function DashboardPage() {
         </SectionCard>
 
         {/* Latency and TTFT Chart */}
-        <SectionCard title={t("dashboard.charts.latency")} hint={t("dashboard.charts.latencyHint")}>
+        <SectionCard className={DASHBOARD_CARD_SURFACE} title={t("dashboard.charts.latency")} hint={t("dashboard.charts.latencyHint")}>
           <ChartContainer config={chartConfig} className="h-60 w-full">
             <LineChart data={points} margin={{ left: 4, right: 8 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.4} />
@@ -650,7 +654,7 @@ function ComprehensiveBreakdownTable({
   };
 
   return (
-    <div className="card-surface overflow-hidden">
+    <div className={`${DASHBOARD_CARD_SURFACE} overflow-hidden`}>
       {/* Table Header Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 p-4">
         <div className="flex items-center gap-3">
