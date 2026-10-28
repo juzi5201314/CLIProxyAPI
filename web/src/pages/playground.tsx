@@ -873,7 +873,7 @@ export function PlaygroundPage() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-5.5rem)] overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80">
+    <div className="flex h-[calc(100vh-3.5rem)] -m-4 overflow-hidden pb-14 sm:-m-6 md:-m-8 md:pb-0">
       {/* ---------------------------------------------------------------- Column 1: Test Sessions Manager */}
       {!sidebarCollapsed && (
         <div className="hidden lg:flex w-64 flex-col border-r border-slate-200/60 bg-slate-50/50 dark:border-slate-800/60 dark:bg-slate-950/40 select-none">
