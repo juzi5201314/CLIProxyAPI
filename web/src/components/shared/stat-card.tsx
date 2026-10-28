@@ -23,7 +23,7 @@ export function StatCard({ label, value, sub, icon: Icon, loading, className }: 
           ) : (
             <p className="mt-1 truncate text-2xl sm:text-3xl font-bold tracking-tight tabular-nums font-mono text-slate-900 dark:text-slate-100">{value}</p>
           )}
-          {sub && !loading ? <p className="text-muted-foreground mt-1.5 text-xs">{sub}</p> : null}
+          {sub && !loading ? <div className="text-muted-foreground mt-1.5 text-xs">{sub}</div> : null}
         </div>
         {Icon ? (
           <div className="bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 flex size-11 shrink-0 items-center justify-center rounded-2xl">

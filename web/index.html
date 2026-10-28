@@ -4,6 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
+    <style>
+      html {
+        background-color: #eff4fb;
+      }
+      html.dark {
+        background-color: #0b1120;
+      }
+    </style>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("theme");
+          const dark =
+            stored === "dark" ||
+            (stored === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch {
+          // Ignore storage access errors (e.g. private browsing restrictions).
+        }
+      })();
+    </script>
+    <link rel="icon" type="image/x-icon" href="/src/assets/favicon.ico?inline" />
     <title>CLIProxyAPI Dashboard</title>
   </head>
   <body>

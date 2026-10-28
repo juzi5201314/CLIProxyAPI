@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -8,7 +8,6 @@ import {
   Menu,
   Moon,
   PanelRight,
-  Search,
   Settings2,
   Sun,
   Terminal,
@@ -28,7 +27,6 @@ import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { server } from "@/api/management";
 import { usePrefsStore } from "@/stores/prefs";
 import { cn } from "@/lib/utils";
-import i18n from "@/i18n";
 
 const TITLES: Record<string, string> = {
   "/": "nav.dashboard",
@@ -55,24 +53,18 @@ export function AppShell() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Keep document language in sync
-  const locale = usePrefsStore((state) => state.locale);
-  useEffect(() => {
-    if (i18n.language !== locale) void i18n.changeLanguage(locale);
-  }, [locale]);
-
   const isPluginPage = location.pathname.startsWith("/plugin-pages");
   const titleKey = isPluginPage ? "pluginPages.title" : (TITLES[location.pathname] ?? "app.subtitle");
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#EFF4FB] dark:bg-[#0B1120] text-slate-800 dark:text-slate-200">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#EFF4FB] dark:bg-[#0B1120] text-slate-800 dark:text-slate-200 transition-colors duration-300 ease-in-out">
       {/* Sleek Left Vertical Icon Dock */}
       <AppSidebar onOpenSearch={() => setCommandPaletteOpen(true)} />
 
       {/* Main App Frame */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Modern Top Header */}
-        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/80 px-4 md:px-6 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-900/80 select-none">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/80 px-4 md:px-6 backdrop-blur-md transition-colors duration-300 ease-in-out dark:border-slate-800/70 dark:bg-slate-900/80 select-none">
           {/* Breadcrumb & Gateway Status */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -105,22 +97,6 @@ export function AppShell() {
 
           {/* Right Controls */}
           <div className="flex items-center gap-2">
-            {/* Quick Search Bar button (⌘K) */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCommandPaletteOpen(true)}
-              className="hidden sm:flex h-8 w-44 md:w-56 items-center justify-between rounded-full border-slate-200/80 bg-slate-50/80 px-3 text-xs text-slate-400 shadow-xs hover:border-blue-400 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400 dark:hover:bg-slate-900"
-            >
-              <div className="flex items-center gap-2">
-                <Search className="size-3.5 text-slate-400" />
-                <span>{t("common.search")}...</span>
-              </div>
-              <kbd className="pointer-events-none inline-flex h-4.5 select-none items-center gap-0.5 rounded border border-slate-200 bg-white px-1.5 font-mono text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                ⌘K
-              </kbd>
-            </Button>
-
             {/* Server Version Badge */}
             {info.data ? (
               <Tooltip>

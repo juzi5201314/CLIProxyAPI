@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Boxes,
   Check,
+  CircleHelp,
   Copy,
   ExternalLink,
   Layers,
@@ -91,6 +92,24 @@ export function PluginPages() {
     return list;
   }, [pluginsQuery.data]);
 
+  // Hold the loading state briefly so it can fade out before the empty card fades in.
+  const [loadingExited, setLoadingExited] = useState(!pluginsQuery.isLoading);
+  const loadingFadingOut = !pluginsQuery.isLoading && resources.length === 0 && !loadingExited;
+
+  useEffect(() => {
+    if (pluginsQuery.isLoading) {
+      setLoadingExited(false);
+      return;
+    }
+    if (resources.length > 0) {
+      setLoadingExited(true);
+      return;
+    }
+    if (loadingExited) return;
+    const timer = window.setTimeout(() => setLoadingExited(true), 200);
+    return () => window.clearTimeout(timer);
+  }, [pluginsQuery.isLoading, resources.length, loadingExited]);
+
   // Determine active item based on URL params or default to first
   const activeResource = useMemo(() => {
     if (resources.length === 0) return null;
@@ -152,10 +171,15 @@ export function PluginPages() {
     window.open(activeResource.url, "_blank", "noopener,noreferrer");
   };
 
-  // If loading plugins initially
-  if (pluginsQuery.isLoading) {
+  // Loading state (kept mounted through the fade-out)
+  if (!loadingExited) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] gap-3 text-slate-500 dark:text-slate-400">
+      <div
+        className={cn(
+          "flex flex-1 flex-col items-center justify-center min-h-[500px] gap-3 text-slate-500 dark:text-slate-400 transition-opacity duration-200",
+          loadingFadingOut && "opacity-0",
+        )}
+      >
         <Loader2 className="size-8 animate-spin text-blue-600 dark:text-blue-400" />
         <p className="text-sm font-medium">{t("pluginPages.loading")}</p>
       </div>
@@ -165,23 +189,43 @@ export function PluginPages() {
   // If no plugins have resource pages
   if (resources.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[520px] max-w-lg mx-auto text-center p-8 rounded-3xl border border-slate-200/80 bg-white/70 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/60 shadow-xl shadow-slate-200/40 dark:shadow-none">
-        <div className="flex size-16 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 mb-5 shadow-inner">
-          <Puzzle className="size-8" />
+      <div className="flex flex-1 items-center justify-center p-4">
+        <div className="animate-in fade-in duration-200 flex w-full max-w-lg flex-col items-center justify-center min-h-[400px] text-center p-8 rounded-3xl border border-slate-200/80 bg-white/70 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/60 shadow-xl shadow-slate-200/40 dark:shadow-none">
+          <div className="flex size-16 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 mb-5 shadow-inner">
+            <Puzzle className="size-8" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">
+            {t("pluginPages.noPlugins")}
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
+            {t("pluginPages.noPluginsDesc")}
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              onClick={() => navigate("/plugins")}
+              className="rounded-xl px-5 gap-2 shadow-md shadow-blue-500/20"
+            >
+              <Boxes className="size-4" />
+              <span>{t("pluginPages.goToPlugins")}</span>
+            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label={t("pluginPages.helpLabel")}
+                  className="rounded-full border-slate-200/80 text-slate-500 hover:text-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                  <CircleHelp className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-64 text-center leading-relaxed">
+                {t("pluginPages.noPluginsDetail")}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">
-          {t("pluginPages.noPlugins")}
-        </h3>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
-          {t("pluginPages.noPluginsDesc")}
-        </p>
-        <Button
-          onClick={() => navigate("/plugins")}
-          className="rounded-xl px-5 gap-2 shadow-md shadow-blue-500/20"
-        >
-          <Boxes className="size-4" />
-          <span>{t("pluginPages.goToPlugins")}</span>
-        </Button>
       </div>
     );
   }

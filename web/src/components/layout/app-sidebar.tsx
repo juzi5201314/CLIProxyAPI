@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MascotAvatar } from "@/components/shared/mascot";
+import { BrandAvatar } from "@/components/shared/brand-avatar";
 import { plugins } from "@/api/management";
 import { useAuthStore } from "@/stores/auth";
 import { usePrefsStore } from "@/stores/prefs";
@@ -178,7 +178,7 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
                   onClick={toggleSidebar}
                   className="cursor-pointer transition-transform hover:scale-105 active:scale-95"
                 >
-                  <MascotAvatar size={34} mood="happy" online={true} />
+                  <BrandAvatar size={34} online={true} />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" className="font-semibold text-xs">
@@ -188,7 +188,7 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
           ) : (
             <>
               <div className="flex items-center gap-2.5 min-w-0">
-                <MascotAvatar size={32} mood="happy" online={true} />
+                <BrandAvatar size={32} online={true} />
                 <div className="flex flex-col min-w-0">
                   <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-slate-100 truncate">
                     CLIProxyAPI

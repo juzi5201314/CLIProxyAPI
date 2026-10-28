@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -14,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { server, credentials, requestDB } from "@/api/management";
 import { formatDuration, formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface InspectorDrawerProps {
   open: boolean;
@@ -30,7 +32,20 @@ export function InspectorDrawer({ open, onClose }: InspectorDrawerProps) {
     staleTime: 30_000,
   });
 
-  if (!open) return null;
+  const [visible, setVisible] = useState(open);
+  const closing = !open && visible;
+
+  useEffect(() => {
+    if (open) {
+      if (!visible) setVisible(true);
+      return;
+    }
+    if (!visible) return;
+    const timer = window.setTimeout(() => setVisible(false), 200);
+    return () => window.clearTimeout(timer);
+  }, [open, visible]);
+
+  if (!visible) return null;
 
   const totalAuthFiles = authFiles.data?.files?.length ?? 0;
   const activeAuthFiles = authFiles.data?.files?.filter((f) => !f.disabled && !f.unavailable)?.length ?? 0;
@@ -41,7 +56,25 @@ export function InspectorDrawer({ open, onClose }: InspectorDrawerProps) {
   };
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-50 flex w-80 sm:w-88 flex-col border-l border-slate-200/80 bg-white/95 shadow-2xl backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/95 select-none animate-in slide-in-from-right duration-200">
+    <>
+      <div
+        className={cn(
+          "fixed inset-0 z-40 bg-slate-950/20 backdrop-blur-[2px] dark:bg-black/50",
+          closing
+            ? "animate-out fade-out duration-200 fill-mode-forwards"
+            : "animate-in fade-in duration-200",
+        )}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside
+        className={cn(
+          "fixed inset-y-0 right-0 z-50 flex w-80 sm:w-88 flex-col border-l border-slate-200/80 bg-white/95 shadow-2xl backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/95 select-none",
+          closing
+            ? "animate-out slide-out-to-right duration-200 fill-mode-forwards"
+            : "animate-in slide-in-from-right duration-200",
+        )}
+      >
       {/* Top Banner Header */}
       <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3 dark:border-slate-800/80">
         <div className="flex items-center gap-2">
@@ -244,5 +277,6 @@ export function InspectorDrawer({ open, onClose }: InspectorDrawerProps) {
         </p>
       </div>
     </aside>
+    </>
   );
 }

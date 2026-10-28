@@ -1166,7 +1166,7 @@ export function PlaygroundPage() {
                       key={item.label}
                       type="button"
                       onClick={() => handleSend(item.prompt)}
-                      className="group flex flex-col rounded-2xl border border-slate-200/80 bg-white/80 p-3 text-xs shadow-xs transition hover:border-blue-400 hover:bg-blue-50/40 hover:shadow-sm dark:border-slate-800 dark:bg-slate-850 dark:hover:bg-slate-800"
+                      className="group flex flex-col rounded-2xl border border-slate-200/80 bg-white/80 p-3 text-xs shadow-xs transition hover:border-blue-400 hover:bg-blue-50/40 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900/80 dark:hover:bg-slate-800"
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-semibold text-slate-800 group-hover:text-blue-600 dark:text-slate-200 dark:group-hover:text-blue-400">

@@ -2,14 +2,15 @@ import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LanguageToggle, ThemeToggle } from "@/components/layout/app-shell";
-import { Mascot } from "@/components/shared/mascot";
+import faviconImage from "@/assets/favicon.png";
 import { server } from "@/api/management";
 import { errMessage } from "@/api/types";
 import { useAuthStore } from "@/stores/auth";
@@ -64,16 +65,35 @@ export function LoginPage() {
         <ThemeToggle />
       </div>
 
-      <Card className="w-full max-w-sm rounded-3xl border border-slate-200/80 bg-white/95 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
+      <Card className="w-full max-w-sm rounded-3xl border border-slate-200/80 bg-white/95 py-6 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
         <CardHeader className="items-center text-center pb-2">
-          <div className="mb-2">
-            <Mascot size={72} mood="waving" />
+          <div className="mb-2 flex justify-center">
+            <img
+              src={faviconImage}
+              alt=""
+              width={72}
+              height={72}
+              className="size-[72px] object-contain"
+            />
           </div>
           <CardTitle className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             {t("login.title")}
           </CardTitle>
-          <CardDescription className="text-xs text-slate-500 max-w-xs mt-1">
-            {t("login.description")}
+          <CardDescription className="mx-auto max-w-xs text-xs text-slate-500 mt-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="inline-flex cursor-help items-center gap-1 underline decoration-dotted underline-offset-4 outline-none"
+                >
+                  {t("login.description")}
+                  <Info className="size-3 shrink-0" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-64 leading-relaxed">
+                {t("login.descriptionTooltip")}
+              </TooltipContent>
+            </Tooltip>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -125,7 +145,6 @@ export function LoginPage() {
               )}
             </Button>
           </form>
-          <p className="text-muted-foreground text-center text-xs">{t("login.secureHint")}</p>
         </CardContent>
       </Card>
     </div>

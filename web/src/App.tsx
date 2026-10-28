@@ -1,8 +1,11 @@
+import { useEffect } from "react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/layout/app-shell";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { useAuthStore } from "@/stores/auth";
+import { usePrefsStore } from "@/stores/prefs";
+import i18n from "@/i18n";
 import { LoginPage } from "@/pages/login";
 import { DashboardPage } from "@/pages/dashboard";
 import { RequestLogsPage } from "@/pages/request-logs";
@@ -27,9 +30,18 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function LocaleSync() {
+  const locale = usePrefsStore((state) => state.locale);
+  useEffect(() => {
+    if (i18n.language !== locale) void i18n.changeLanguage(locale);
+  }, [locale]);
+  return null;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
+      <LocaleSync />
       <HashRouter>
         <TooltipProvider>
           <Routes>

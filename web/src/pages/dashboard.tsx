@@ -27,7 +27,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { Mascot } from "@/components/shared/mascot";
+import bannerImage from "@/assets/dashboard-banner.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -288,11 +288,17 @@ export function DashboardPage() {
       </div>
 
       {/* Hero Welcome Banner */}
-      <div className="mb-6 relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 p-6 text-white shadow-sm">
+      <div className="mb-6 relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500 p-6 text-white shadow-sm dark:from-blue-800 dark:via-indigo-800 dark:to-sky-700">
         <div className="absolute right-8 -bottom-4 opacity-90 hidden sm:block">
-          <Mascot size={115} mood="happy" />
+          <img
+            src={bannerImage}
+            alt=""
+            width={115}
+            height={115}
+            className="size-[115px] object-contain"
+          />
         </div>
-        <div className="relative z-10 max-w-xl">
+        <div className="relative z-10 max-w-xl pr-0 sm:pr-36">
           <div className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-medium backdrop-blur-md mb-2">
             <Sparkles className="size-3 text-amber-300" />
             <span>{t("dashboard.heroBadge")}</span>
