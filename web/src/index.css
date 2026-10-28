@@ -143,8 +143,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    background-color: var(--background);
+  }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";
   }
   /* Numeric data reads better aligned; apply broadly to tables and stats. */
