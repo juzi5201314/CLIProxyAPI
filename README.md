@@ -11,7 +11,7 @@
 > docker pull ghcr.io/juzi5201314/cliproxyapi:latest
 > ```
 
-本项目为 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的功能增强 Fork 版本（版本号标记为 `*-s*`，当前版本：`v8.0.43-s7`）。在官方版本基础上，主要对思考参数透传、请求日志数据库、管理面板与可视化体验进行了改进。
+本项目为 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 的功能增强 Fork 版本（版本号标记为 `*-s*`，当前版本：`v8.0.43-s8`）。在官方版本基础上，主要对思考参数透传、请求日志数据库、管理面板与可视化体验进行了改进。
 
 ---
 

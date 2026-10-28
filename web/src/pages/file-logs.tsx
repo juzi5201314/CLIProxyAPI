@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -37,10 +37,11 @@ export function FileLogsPage() {
   const lastHandled = useRef<string>("");
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const tail = useQuery({
-    queryKey: ["file-logs", cursorRef.current],
+    queryKey: ["file-logs"],
     queryFn: async () => {
       const response = await fileLogs.lines({ limit: PAGE_LINES, cursor: cursorRef.current });
       return response;
@@ -86,22 +87,35 @@ export function FileLogsPage() {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
     const atBottom = scrollHeight - scrollTop - clientHeight < 40;
+    stickToBottomRef.current = atBottom;
     setIsAtBottom(atBottom);
   };
 
   const scrollToBottom = () => {
+    stickToBottomRef.current = true;
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
       setIsAtBottom(true);
     }
   };
 
-  // Auto-scroll when follow is enabled and was already at bottom
-  useEffect(() => {
-    if (follow && isAtBottom && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+  const toggleFollow = () => {
+    if (follow) {
+      setFollow(false);
+      return;
     }
-  }, [renderedLines.length, follow, isAtBottom]);
+    setFollow(true);
+    scrollToBottom();
+    void tail.refetch();
+  };
+
+  // Keep the viewport pinned while new batches render. Programmatic scrolling
+  // is instant (no smooth mode) so it cannot feed back into handleScroll.
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!follow || !stickToBottomRef.current || !container) return;
+    container.scrollTop = container.scrollHeight;
+  }, [renderedLines, follow]);
 
   const errorLogs = useQuery({ queryKey: ["error-logs"], queryFn: fileLogs.errorLogs, refetchInterval: 15_000 });
 
@@ -129,7 +143,7 @@ export function FileLogsPage() {
           variant={follow ? "default" : "outline"}
           size="sm"
           className="h-8 gap-1.5 text-xs"
-          onClick={() => setFollow(!follow)}
+          onClick={toggleFollow}
         >
           {follow ? <PauseCircle className="size-3.5" /> : <PlayCircle className="size-3.5" />}
           {follow ? t("common.pause") : t("common.resume")}
@@ -174,7 +188,7 @@ export function FileLogsPage() {
           <div
             ref={containerRef}
             onScroll={handleScroll}
-            className="max-h-[calc(100vh-20rem)] overflow-auto p-3 relative scroll-smooth"
+            className="max-h-[calc(100vh-20rem)] overflow-auto p-3 relative"
           >
             <pre className="font-mono text-xs leading-relaxed">
               {renderedLines.map((line, index) => (

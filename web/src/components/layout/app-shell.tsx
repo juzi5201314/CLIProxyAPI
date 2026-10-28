@@ -96,34 +96,20 @@ export function AppShell() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Modern Top Header */}
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/80 px-4 md:px-6 backdrop-blur-md transition-colors duration-300 ease-in-out dark:border-slate-800/70 dark:bg-slate-900/80 select-none">
-          {/* Breadcrumb & Gateway Status */}
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 rounded-xl md:hidden text-slate-600 dark:text-slate-300"
-                onClick={() => setMobileNavOpen(true)}
-                aria-label="Toggle navigation menu"
-              >
-                <Menu className="size-4.5" />
-              </Button>
-              <h2 className="text-sm md:text-base font-bold text-slate-900 dark:text-slate-100 truncate tracking-tight">
-                {t(titleKey) || "控制台"}
-              </h2>
-              <span className="hidden sm:inline-block text-slate-300 dark:text-slate-700">/</span>
-              <span className="hidden sm:inline-block text-xs text-slate-400 font-medium">
-                {t("nav.consoleSubtitle", "CLIProxyAPI 智能网关")}
-              </span>
-            </div>
-
-            <div className="hidden xl:flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-50/70 dark:bg-emerald-950/30 px-2.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex size-2 rounded-full bg-emerald-500"></span>
-              </span>
-              <span>{t("nav.gatewayOnline", "网关在线")}</span>
-            </div>
+          {/* Page Title */}
+          <div className="flex items-center gap-2 min-w-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-xl md:hidden text-slate-600 dark:text-slate-300"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Toggle navigation menu"
+            >
+              <Menu className="size-4.5" />
+            </Button>
+            <h2 className="text-sm md:text-base font-bold text-slate-900 dark:text-slate-100 truncate tracking-tight">
+              {t(titleKey) || "控制台"}
+            </h2>
           </div>
 
           {/* Right Controls */}
