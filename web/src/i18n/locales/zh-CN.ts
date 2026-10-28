@@ -52,6 +52,7 @@ const zhCN = {
     clear: "清空记录",
     stream: "流式输出",
     params: "模型参数",
+    panel: "参数与报文透视",
     emptyTitle: "CLIProxyAPI · 接口调试测控台",
     emptyDesc: "直接向当前配置的 AI 模型发送测试请求，实时查看首字延迟、吞吐速率与 Token 消耗。",
     sessions: "调试会话",

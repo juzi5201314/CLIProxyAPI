@@ -52,6 +52,7 @@ const en = {
     clear: "Clear Chat",
     stream: "Streaming",
     params: "Model Parameters",
+    panel: "Parameters & JSON Inspector",
     emptyTitle: "CLIProxyAPI Playground",
     emptyDesc: "Send interactive test prompts directly to configured AI models to verify latency and responses.",
     sessions: "Test Sessions",
