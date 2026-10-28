@@ -3,11 +3,11 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   KeyRound,
   LayoutDashboard,
   Menu,
   Moon,
-  PanelRight,
   Settings2,
   Sun,
   Terminal,
@@ -112,6 +112,9 @@ export function AppShell() {
               </Tooltip>
             ) : null}
 
+            <LanguageToggle />
+            <ThemeToggle />
+
             {/* Toggle Inspector Drawer */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -119,16 +122,14 @@ export function AppShell() {
                   variant={inspectorOpen ? "secondary" : "ghost"}
                   size="icon"
                   className="size-8 rounded-xl"
+                  aria-label={t("nav.realtimeInspector", "实时测控面板")}
                   onClick={() => setInspectorOpen(!inspectorOpen)}
                 >
-                  <PanelRight className="size-4" />
+                  <Activity className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">{t("nav.realtimeInspector", "实时测控面板")}</TooltipContent>
             </Tooltip>
-
-            <LanguageToggle />
-            <ThemeToggle />
           </div>
         </header>
 

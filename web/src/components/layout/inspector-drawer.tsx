@@ -5,7 +5,6 @@ import {
   Activity,
   ChevronRight,
   KeyRound,
-  PanelRight,
   Settings2,
   Terminal,
   X,
@@ -79,7 +78,7 @@ export function InspectorDrawer({ open, onClose }: InspectorDrawerProps) {
       <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3 dark:border-slate-800/80">
         <div className="flex items-center gap-2">
           <div className="flex size-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
-            <PanelRight className="size-4" />
+            <Activity className="size-4" />
           </div>
           <div>
             <h3 className="font-bold text-slate-900 dark:text-slate-100 text-xs sm:text-sm">
