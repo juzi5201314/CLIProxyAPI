@@ -3,16 +3,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-interface StatCardProps {
+type StatCardProps = {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
   icon?: ComponentType<{ className?: string }>;
   loading?: boolean;
   className?: string;
-}
+  valueClassName?: string;
+};
 
-export function StatCard({ label, value, sub, icon: Icon, loading, className }: StatCardProps) {
+export function StatCard({ label, value, sub, icon: Icon, loading, className, valueClassName }: StatCardProps) {
   return (
     <Card className={cn("gap-0 py-5 rounded-2xl border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/90 shadow-2xs hover:shadow-xs transition", className)}>
       <CardContent className="flex items-start justify-between gap-4 px-5">
@@ -21,7 +22,7 @@ export function StatCard({ label, value, sub, icon: Icon, loading, className }: 
           {loading ? (
             <Skeleton className="mt-2 h-8 w-24 rounded-lg" />
           ) : (
-            <p className="mt-1 truncate text-2xl sm:text-3xl font-bold tracking-tight tabular-nums font-mono text-slate-900 dark:text-slate-100">{value}</p>
+            <p className={cn("mt-1 truncate text-2xl sm:text-3xl font-bold tracking-tight tabular-nums font-mono text-slate-900 dark:text-slate-100", valueClassName)}>{value}</p>
           )}
           {sub && !loading ? <div className="text-muted-foreground mt-1.5 text-xs">{sub}</div> : null}
         </div>
