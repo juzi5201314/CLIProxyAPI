@@ -171,7 +171,6 @@ const zhCN = {
   dashboard: {
     title: "仪表板",
     subtitle: "全供应商的用量与性能概览",
-    heroBadge: "智能代理调度控制中心",
     heroTitle: "欢迎使用 CLIProxyAPI 控制台",
     heroDesc: "简洁 · 轻量 · 但不简单 ✧ 为 OpenAI、Gemini、Claude、Codex 等模型提供企业级统一接入网关与负载均衡。",
     kpi: {

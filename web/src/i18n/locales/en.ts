@@ -171,7 +171,6 @@ const en = {
   dashboard: {
     title: "Dashboard",
     subtitle: "Usage and performance across all providers",
-    heroBadge: "Intelligent Proxy Orchestration",
     heroTitle: "Welcome to CLIProxyAPI Gateway",
     heroDesc: "Simple · Lightweight · Powerful ✧ Unified enterprise gateway and load balancer for OpenAI, Gemini, Claude, Codex and more.",
     kpi: {

@@ -24,7 +24,6 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
-  Sparkles,
   X,
 } from "lucide-react";
 import bannerImage from "@/assets/dashboard-banner.png";
@@ -289,20 +288,16 @@ export function DashboardPage() {
 
       {/* Hero Welcome Banner */}
       <div className="mb-6 relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 p-6 text-slate-900 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/90 dark:text-slate-100">
-        <div className="absolute right-8 -bottom-4 opacity-95 hidden sm:block">
+        <div className="absolute right-8 -bottom-4 hidden sm:block">
           <img
             src={bannerImage}
             alt=""
             width={115}
             height={115}
-            className="size-[115px] object-contain [mask-image:linear-gradient(to_right,transparent,black_22%)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_22%)]"
+            className="size-[115px] object-contain"
           />
         </div>
         <div className="relative z-10 max-w-xl pr-0 sm:pr-36">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 mb-2 dark:bg-blue-950/60 dark:text-blue-300">
-            <Sparkles className="size-3 text-amber-500 dark:text-amber-300" />
-            <span>{t("dashboard.heroBadge")}</span>
-          </div>
           <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             {t("dashboard.heroTitle")}
           </h2>
