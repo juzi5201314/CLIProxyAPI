@@ -25,7 +25,6 @@ const en = {
     expandSidebar: "Expand sidebar",
     collapseSidebar: "Collapse sidebar",
     quickSearch: "Quick search (⌘K)",
-    gatewayOnline: "Gateway Online",
     consoleSubtitle: "AI Gateway Console",
     realtimeInspector: "Real-time Inspector",
     short: {

@@ -25,7 +25,6 @@ const zhCN = {
     expandSidebar: "展开侧栏",
     collapseSidebar: "折叠侧栏",
     quickSearch: "快速搜索 (⌘K)",
-    gatewayOnline: "网关正常运行",
     consoleSubtitle: "智能网关控制台",
     realtimeInspector: "实时测控面板",
     short: {
