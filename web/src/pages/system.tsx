@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import faviconImage from "@/assets/favicon.png";
+import faceImage from "@/assets/face-1.png";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
@@ -46,6 +47,7 @@ type InfoCardProps = {
   children: ReactNode;
   className?: string;
   contentClassName?: string;
+  overflowVisible?: boolean;
 };
 
 export function SystemPage() {
@@ -124,20 +126,38 @@ export function SystemPage() {
           </Button>
         </InfoCard>
 
-        <InfoCard icon={Github} title={t("system.project")} hint={t("system.projectHint")} className="h-full" contentClassName="flex flex-col">
-          <div className="flex items-start gap-3">
-            <img
-              src={faviconImage}
-              alt=""
-              className="size-12 shrink-0 rounded-2xl border border-border/60 bg-muted/30 object-contain p-1.5"
-            />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">CLIProxyAPI</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("system.projectDesc")}</p>
+        <InfoCard
+          icon={Github}
+          title={t("system.project")}
+          hint={t("system.projectHint")}
+          className="h-full"
+          contentClassName="flex flex-col"
+          overflowVisible
+          actions={
+            <div className="relative h-9 w-[68px]">
+              <img
+                src={faceImage}
+                alt=""
+                className="absolute right-0 -bottom-6 h-[68px] w-[68px] object-contain"
+              />
+            </div>
+          }
+        >
+          <div className="flex flex-1 items-center">
+            <div className="flex items-start gap-3">
+              <img
+                src={faviconImage}
+                alt=""
+                className="size-12 shrink-0 rounded-2xl border border-border/60 bg-muted/30 object-contain p-1.5"
+              />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">CLIProxyAPI</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("system.projectDesc")}</p>
+              </div>
             </div>
           </div>
 
-          <div className="mt-auto pt-4">
+          <div className="pt-4">
             <a
               href={PROJECT_URL}
               target="_blank"
@@ -222,15 +242,16 @@ export function SystemPage() {
   );
 }
 
-function InfoCard({ icon: Icon, title, hint, actions, children, className, contentClassName }: InfoCardProps) {
+function InfoCard({ icon: Icon, title, hint, actions, children, className, contentClassName, overflowVisible }: InfoCardProps) {
   return (
     <section
       className={cn(
-        "flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/90",
+        "flex flex-col rounded-2xl border border-slate-200/80 bg-white/95 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/90",
+        overflowVisible ? "overflow-visible" : "overflow-hidden",
         className,
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 overflow-visible border-b border-border/60 px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <Icon className="size-4" />
