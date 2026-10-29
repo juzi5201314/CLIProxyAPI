@@ -675,6 +675,18 @@ func (k ClaudeKey) GetPrefix() string { return k.Prefix }
 
 func (k ClaudeKey) GetProxyURL() string { return k.ProxyURL }
 
+// LegacyModelThinking is the retired per-model thinking capability override.
+// Configurations written by older releases may still contain it, so it remains
+// decodable and round-trippable. Runtime capability resolution ignores it.
+type LegacyModelThinking struct {
+	Min            int      `yaml:"min,omitempty" json:"min,omitempty"`
+	Max            int      `yaml:"max,omitempty" json:"max,omitempty"`
+	ZeroAllowed    bool     `yaml:"zero-allowed,omitempty" json:"zero_allowed,omitempty"`
+	DynamicAllowed bool     `yaml:"dynamic-allowed,omitempty" json:"dynamic_allowed,omitempty"`
+	DisableType    string   `yaml:"disable-type,omitempty" json:"disable_type,omitempty"`
+	Levels         []string `yaml:"levels,omitempty" json:"levels,omitempty"`
+}
+
 // ClaudeModel describes a mapping between an alias and the actual upstream model name.
 type ClaudeModel struct {
 	// Name is the upstream model identifier used when issuing requests.
@@ -696,6 +708,10 @@ type ClaudeModel struct {
 	// and enables provider-aware signed-thinking replay for Claude-compatible API-key models.
 	// Default false keeps the normal signature validation behavior.
 	IsCompat bool `yaml:"is-compat,omitempty" json:"is-compat,omitempty"`
+
+	// Thinking is a retired per-model capability override kept for compatibility
+	// with older configuration files. Runtime capability resolution ignores it.
+	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
 }
 
 func (m ClaudeModel) GetName() string { return m.Name }
@@ -797,6 +813,10 @@ type CodexModel struct {
 	// SupportConfigurationUpdate enables configuration_update for this API-key model.
 	// It defaults to false, independently of the built-in OAuth model catalog.
 	SupportConfigurationUpdate bool `yaml:"support-configuration-update,omitempty" json:"support-configuration-update,omitempty"`
+
+	// Thinking is a retired per-model capability override kept for compatibility
+	// with older configuration files. Runtime capability resolution ignores it.
+	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
 }
 
 func (m CodexModel) GetName() string { return m.Name }
@@ -892,6 +912,10 @@ type GeminiModel struct {
 	// IsCompat preserves thinking blocks with empty signatures for compatible upstreams.
 	// Default false keeps the normal signature validation behavior.
 	IsCompat bool `yaml:"is-compat,omitempty" json:"is-compat,omitempty"`
+
+	// Thinking is a retired per-model capability override kept for compatibility
+	// with older configuration files. Runtime capability resolution ignores it.
+	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
 }
 
 func (m GeminiModel) GetName() string { return m.Name }
@@ -994,6 +1018,10 @@ type OpenAICompatibilityModel struct {
 	// UseMaxCompletionTokens emits max_completion_tokens instead of legacy max_tokens for this model.
 	// Default false preserves max_tokens for older compatible upstreams.
 	UseMaxCompletionTokens bool `yaml:"use-max-completion-tokens,omitempty" json:"use-max-completion-tokens,omitempty"`
+
+	// Thinking is a retired per-model capability override kept for compatibility
+	// with older configuration files. Runtime capability resolution ignores it.
+	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
 }
 
 func (m OpenAICompatibilityModel) GetName() string { return m.Name }

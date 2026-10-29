@@ -40,8 +40,8 @@ client.interceptors.response.use(
     const status = error.response?.status ?? 0;
     let message = error.message;
     const data = error.response?.data as { error?: string; message?: string } | undefined;
-    if (data?.error) message = data.error;
-    else if (data?.message) message = data.message;
+    if (data?.message) message = data.message;
+    else if (data?.error) message = data.error;
     if (status === 401 || (status === 403 && /management key/i.test(message))) {
       useAuthStore.getState().clear();
     }

@@ -178,6 +178,14 @@ export function PluginsPage() {
     void queryClient.invalidateQueries({ queryKey: ["plugin-store"] });
   };
 
+  // Plugin registration happens after the management response reloads the plugin
+  // host, so refresh once immediately and again after the asynchronous load settles.
+  const invalidateAfterPluginChange = () => {
+    invalidate();
+    window.setTimeout(invalidate, 1_500);
+    window.setTimeout(invalidate, 4_000);
+  };
+
   const installedQuery = useQuery({
     queryKey: ["plugins"],
     queryFn: plugins.list,
@@ -195,7 +203,7 @@ export function PluginsPage() {
       plugins.setEnabled(id, enabled),
     onSuccess: () => {
       toast.success(t("common.saved"));
-      invalidate();
+      invalidateAfterPluginChange();
     },
     onError: (error) => toast.error(errMessage(error)),
   });
@@ -229,7 +237,7 @@ export function PluginsPage() {
     }) => plugins.install(storeId, { version, source }),
     onSuccess: () => {
       toast.success(t("plugins.installed"));
-      invalidate();
+      invalidateAfterPluginChange();
     },
     onError: (error) => toast.error(errMessage(error)),
   });
@@ -242,6 +250,24 @@ export function PluginsPage() {
 
   const storeList = storeQuery.data?.plugins ?? [];
   const sourcesCount = storeQuery.data?.sources_count ?? 1;
+
+  const installMissingPlugin = (plugin: PluginInfo) => {
+    const item = storeList.find(
+      (candidate) =>
+        candidate.id === plugin.id ||
+        candidate.store_id === plugin.id ||
+        candidate.store_id?.endsWith(`/${plugin.id}`),
+    );
+    if (!item) {
+      toast.error(t("plugins.storeItemMissing"));
+      return;
+    }
+    installMutation.mutate({
+      storeId: item.store_id || item.id || plugin.id,
+      version: item.version || item.installed_version,
+      source: item.source_id,
+    });
+  };
 
   // Filter installed plugins
   const filteredInstalled = useMemo(() => {
@@ -484,9 +510,12 @@ export function PluginsPage() {
                     <InstalledPluginRow
                       key={plugin.id}
                       plugin={plugin}
+                      pluginsEnabled={pluginsEnabled}
                       onToggleEnabled={(enabled) =>
                         setEnabledMutation.mutate({ id: plugin.id, enabled })
                       }
+                      onInstallMissing={() => installMissingPlugin(plugin)}
+                      installingMissing={installMutation.isPending}
                       onEditConfig={() => setConfigTarget(plugin)}
                       onDelete={() => setDeleteTarget(plugin)}
                     />
@@ -690,12 +719,18 @@ export function PluginsPage() {
 
 function InstalledPluginRow({
   plugin,
+  pluginsEnabled,
   onToggleEnabled,
+  onInstallMissing,
+  installingMissing,
   onEditConfig,
   onDelete,
 }: {
   plugin: PluginInfo;
+  pluginsEnabled: boolean;
   onToggleEnabled: (enabled: boolean) => void;
+  onInstallMissing: () => void;
+  installingMissing: boolean;
   onEditConfig: () => void;
   onDelete: () => void;
 }) {
@@ -707,6 +742,8 @@ function InstalledPluginRow({
   const version = (plugin.metadata?.version as string | undefined)?.trim();
   const author = (plugin.metadata?.author as string | undefined)?.trim();
   const description = (plugin.metadata?.description as string | undefined)?.trim() || "";
+  const missingFile = plugin.configured && plugin.enabled && !plugin.path;
+  const notLoaded = plugin.configured && plugin.enabled && !plugin.registered;
 
   const configFieldsCount =
     plugin.config_fields?.length ??
@@ -758,12 +795,33 @@ function InstalledPluginRow({
             >
               {t("plugins.statusEffective") || "正在生效"}
             </Badge>
-          ) : (
+          ) : !plugin.enabled ? (
             <Badge
               variant="outline"
               className="text-muted-foreground bg-muted/40 font-normal text-[11px] h-5 px-2"
             >
               {t("plugins.statusDisabled") || "已停用"}
+            </Badge>
+          ) : !pluginsEnabled ? (
+            <Badge
+              variant="outline"
+              className="text-muted-foreground bg-muted/40 font-normal text-[11px] h-5 px-2"
+            >
+              {t("plugins.statusNotEffective") || "未生效"}
+            </Badge>
+          ) : missingFile ? (
+            <Badge
+              variant="outline"
+              className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 font-medium text-[11px] h-5 px-2"
+            >
+              {t("plugins.statusMissingFile") || "文件缺失"}
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="text-muted-foreground bg-muted/40 font-normal text-[11px] h-5 px-2"
+            >
+              {t("plugins.statusNotLoaded") || "未加载"}
             </Badge>
           )}
           <div className="text-[11px] text-muted-foreground">
@@ -821,13 +879,22 @@ function InstalledPluginRow({
           )}
 
           {/* Config fields count or no-menu note */}
-          <div className="text-[10px] text-muted-foreground/80">
-            {configFieldsCount > 0
-              ? t("plugins.configFieldsCount", { count: configFieldsCount }) ||
-                `${configFieldsCount} 个配置字段`
-              : plugin.menus && plugin.menus.length > 0
-                ? null
-                : t("plugins.noMenuEntry") || "无菜单入口"}
+          <div
+            className={cn(
+              "text-[10px] text-muted-foreground/80",
+              missingFile && "text-amber-600 dark:text-amber-400",
+            )}
+          >
+            {missingFile
+              ? t("plugins.missingFileHint") || "插件文件不存在，请重新安装。"
+              : notLoaded
+                ? t("plugins.notLoadedHint") || "插件文件已存在但尚未注册，请稍后刷新或查看运行日志。"
+                : configFieldsCount > 0
+                  ? t("plugins.configFieldsCount", { count: configFieldsCount }) ||
+                    `${configFieldsCount} 个配置字段`
+                  : plugin.menus && plugin.menus.length > 0
+                    ? null
+                    : t("plugins.noMenuEntry") || "无菜单入口"}
           </div>
         </div>
       </TableCell>
@@ -854,6 +921,22 @@ function InstalledPluginRow({
       {/* 6. 操作 (Actions) */}
       <TableCell className="py-3 pr-4 text-right">
         <div className="flex items-center justify-end gap-1.5">
+          {missingFile && pluginsEnabled && (
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 rounded-lg"
+              onClick={onInstallMissing}
+              disabled={installingMissing}
+            >
+              {installingMissing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              <span>{t("plugins.installMissing") || "安装文件"}</span>
+            </Button>
+          )}
+
           <Button
             variant="outline"
             size="sm"

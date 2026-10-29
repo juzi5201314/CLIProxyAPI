@@ -53,7 +53,7 @@ export function PluginPages() {
     const list: PluginResourceItem[] = [];
 
     for (const p of pluginsQuery.data) {
-      if (p.enabled === false && p.effective_enabled === false) continue;
+      if (!p.effective_enabled) continue;
       if (!p.menus || p.menus.length === 0) continue;
 
       p.menus.forEach((menu, index) => {

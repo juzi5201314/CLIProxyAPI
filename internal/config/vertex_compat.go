@@ -87,6 +87,10 @@ type VertexCompatModel struct {
 
 	// OpenAPI overrides endpoint selection for this model.
 	OpenAPI *bool `yaml:"openapi,omitempty" json:"openapi,omitempty"`
+
+	// Thinking is a retired per-model capability override kept for compatibility
+	// with older configuration files. Runtime capability resolution ignores it.
+	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
 }
 
 func (m VertexCompatModel) GetOpenAPI() *bool { return m.OpenAPI }
