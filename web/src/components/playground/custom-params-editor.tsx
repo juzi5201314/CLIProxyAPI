@@ -142,53 +142,61 @@ export function customHeadersToRecord(headers: CustomHeader[]): Record<string, s
 
 // ---------------------------------------------------------------- Presets
 
+export type ApiProtocol = "openai" | "claude" | "codex" | "gemini";
+
+export interface PresetDefinition {
+  name: string;
+  badge: string;
+  desc: string;
+  rootKey?: string;
+  create: () => VisualFieldNode;
+}
+
 export const COMMON_HEADER_PRESETS = [
   { key: "X-Custom-Header", value: "custom-value" },
-  { key: "anthropic-version", value: "2023-06-01" },
   { key: "User-Agent", value: "CLIProxyAPI-Playground/1.0" },
-  { key: "x-api-key", value: "" },
+  { key: "OpenAI-Beta", value: "assistants=v2" },
+  { key: "anthropic-version", value: "2023-06-01" },
 ];
 
-export const COMMON_BODY_PRESETS = [
+export function getHeaderPresets(protocol?: ApiProtocol) {
+  const common = [
+    { key: "X-Custom-Header", value: "custom-value" },
+    { key: "User-Agent", value: "CLIProxyAPI-Playground/1.0" },
+  ];
+  switch (protocol) {
+    case "claude":
+      return [
+        { key: "anthropic-version", value: "2023-06-01" },
+        { key: "anthropic-beta", value: "prompt-caching-2024-07-31" },
+        ...common,
+      ];
+    case "gemini":
+      return [
+        { key: "x-goog-api-key", value: "" },
+        ...common,
+      ];
+    case "codex":
+    case "openai":
+    default:
+      return [
+        { key: "OpenAI-Beta", value: "assistants=v2" },
+        ...common,
+      ];
+  }
+}
+
+export const OPENAI_BODY_PRESETS: PresetDefinition[] = [
   {
     name: "reasoning_effort",
     badge: "string",
-    desc: "推理强度 (low/medium/high)",
+    desc: "OpenAI 推理强度 (low / medium / high / xhigh)",
     create: () => ({
       id: createNodeId(),
       key: "reasoning_effort",
-      type: "string" as const,
+      type: "string",
       value: "high",
       enabled: true,
-    }),
-  },
-  {
-    name: "thinking",
-    badge: "object",
-    desc: "Claude / Gemini 思考配置",
-    create: () => ({
-      id: createNodeId(),
-      key: "thinking",
-      type: "object" as const,
-      value: null,
-      enabled: true,
-      collapsed: false,
-      children: [
-        {
-          id: createNodeId(),
-          key: "type",
-          type: "string" as const,
-          value: "enabled",
-          enabled: true,
-        },
-        {
-          id: createNodeId(),
-          key: "budget_tokens",
-          type: "number" as const,
-          value: 2048,
-          enabled: true,
-        },
-      ],
     }),
   },
   {
@@ -198,7 +206,7 @@ export const COMMON_BODY_PRESETS = [
     create: () => ({
       id: createNodeId(),
       key: "response_format",
-      type: "object" as const,
+      type: "object",
       value: null,
       enabled: true,
       collapsed: false,
@@ -206,7 +214,7 @@ export const COMMON_BODY_PRESETS = [
         {
           id: createNodeId(),
           key: "type",
-          type: "string" as const,
+          type: "string",
           value: "json_object",
           enabled: true,
         },
@@ -216,11 +224,11 @@ export const COMMON_BODY_PRESETS = [
   {
     name: "stop",
     badge: "array",
-    desc: "停止词数组",
+    desc: "停止词序列",
     create: () => ({
       id: createNodeId(),
       key: "stop",
-      type: "array" as const,
+      type: "array",
       value: null,
       enabled: true,
       collapsed: false,
@@ -228,7 +236,7 @@ export const COMMON_BODY_PRESETS = [
         {
           id: createNodeId(),
           key: "[0]",
-          type: "string" as const,
+          type: "string",
           value: "<|endoftext|>",
           enabled: true,
         },
@@ -242,7 +250,7 @@ export const COMMON_BODY_PRESETS = [
     create: () => ({
       id: createNodeId(),
       key: "seed",
-      type: "number" as const,
+      type: "number",
       value: 42,
       enabled: true,
     }),
@@ -254,12 +262,351 @@ export const COMMON_BODY_PRESETS = [
     create: () => ({
       id: createNodeId(),
       key: "presence_penalty",
-      type: "number" as const,
+      type: "number",
       value: 0.5,
       enabled: true,
     }),
   },
+  {
+    name: "frequency_penalty",
+    badge: "number",
+    desc: "频率惩罚 (-2.0 ~ 2.0)",
+    create: () => ({
+      id: createNodeId(),
+      key: "frequency_penalty",
+      type: "number",
+      value: 0.5,
+      enabled: true,
+    }),
+  },
+  {
+    name: "user",
+    badge: "string",
+    desc: "终端用户标识符",
+    create: () => ({
+      id: createNodeId(),
+      key: "user",
+      type: "string",
+      value: "user-123",
+      enabled: true,
+    }),
+  },
 ];
+
+export const CODEX_BODY_PRESETS: PresetDefinition[] = [
+  {
+    name: "reasoning",
+    badge: "object",
+    desc: "Codex 推理配置 (effort: low/medium/high/xhigh)",
+    create: () => ({
+      id: createNodeId(),
+      key: "reasoning",
+      type: "object",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      children: [
+        {
+          id: createNodeId(),
+          key: "effort",
+          type: "string",
+          value: "high",
+          enabled: true,
+        },
+      ],
+    }),
+  },
+  {
+    name: "instructions",
+    badge: "string",
+    desc: "系统顶层指令 (覆盖默认提示词)",
+    create: () => ({
+      id: createNodeId(),
+      key: "instructions",
+      type: "string",
+      value: "You are a helpful coding assistant.",
+      enabled: true,
+    }),
+  },
+  {
+    name: "stop",
+    badge: "array",
+    desc: "停止词序列",
+    create: () => ({
+      id: createNodeId(),
+      key: "stop",
+      type: "array",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      items: [
+        {
+          id: createNodeId(),
+          key: "[0]",
+          type: "string",
+          value: "<|endoftext|>",
+          enabled: true,
+        },
+      ],
+    }),
+  },
+  {
+    name: "store",
+    badge: "boolean",
+    desc: "是否在 upstream 存储会话",
+    create: () => ({
+      id: createNodeId(),
+      key: "store",
+      type: "boolean",
+      value: false,
+      enabled: true,
+    }),
+  },
+];
+
+export const CLAUDE_BODY_PRESETS: PresetDefinition[] = [
+  {
+    name: "thinking (adaptive)",
+    badge: "object",
+    desc: "Claude 4.6 自适应思考模式",
+    rootKey: "thinking",
+    create: () => ({
+      id: createNodeId(),
+      key: "thinking",
+      type: "object",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      children: [
+        {
+          id: createNodeId(),
+          key: "type",
+          type: "string",
+          value: "adaptive",
+          enabled: true,
+        },
+      ],
+    }),
+  },
+  {
+    name: "output_config",
+    badge: "object",
+    desc: "自适应思考输出配置 (effort: low/medium/high/max)",
+    create: () => ({
+      id: createNodeId(),
+      key: "output_config",
+      type: "object",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      children: [
+        {
+          id: createNodeId(),
+          key: "effort",
+          type: "string",
+          value: "high",
+          enabled: true,
+        },
+      ],
+    }),
+  },
+  {
+    name: "thinking (budget)",
+    badge: "object",
+    desc: "Claude 固定 Token 思考预算",
+    rootKey: "thinking",
+    create: () => ({
+      id: createNodeId(),
+      key: "thinking",
+      type: "object",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      children: [
+        {
+          id: createNodeId(),
+          key: "type",
+          type: "string",
+          value: "enabled",
+          enabled: true,
+        },
+        {
+          id: createNodeId(),
+          key: "budget_tokens",
+          type: "number",
+          value: 2048,
+          enabled: true,
+        },
+      ],
+    }),
+  },
+  {
+    name: "stop_sequences",
+    badge: "array",
+    desc: "Claude 停止词序列",
+    create: () => ({
+      id: createNodeId(),
+      key: "stop_sequences",
+      type: "array",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      items: [
+        {
+          id: createNodeId(),
+          key: "[0]",
+          type: "string",
+          value: "\n\nHuman:",
+          enabled: true,
+        },
+      ],
+    }),
+  },
+  {
+    name: "metadata",
+    badge: "object",
+    desc: "用户元数据 (user_id 等)",
+    create: () => ({
+      id: createNodeId(),
+      key: "metadata",
+      type: "object",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      children: [
+        {
+          id: createNodeId(),
+          key: "user_id",
+          type: "string",
+          value: "user-123",
+          enabled: true,
+        },
+      ],
+    }),
+  },
+  {
+    name: "top_k",
+    badge: "number",
+    desc: "Top-K 候选采样数",
+    create: () => ({
+      id: createNodeId(),
+      key: "top_k",
+      type: "number",
+      value: 40,
+      enabled: true,
+    }),
+  },
+];
+
+export const GEMINI_BODY_PRESETS: PresetDefinition[] = [
+  {
+    name: "generationConfig",
+    badge: "object",
+    desc: "Gemini 生成与思考配置 (thinkingLevel)",
+    create: () => ({
+      id: createNodeId(),
+      key: "generationConfig",
+      type: "object",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      children: [
+        {
+          id: createNodeId(),
+          key: "thinkingConfig",
+          type: "object",
+          value: null,
+          enabled: true,
+          children: [
+            {
+              id: createNodeId(),
+              key: "thinkingLevel",
+              type: "string",
+              value: "high",
+              enabled: true,
+            },
+          ],
+        },
+      ],
+    }),
+  },
+  {
+    name: "safetySettings",
+    badge: "array",
+    desc: "安全与内容过滤门槛配置",
+    create: () => ({
+      id: createNodeId(),
+      key: "safetySettings",
+      type: "array",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      items: [
+        {
+          id: createNodeId(),
+          key: "[0]",
+          type: "object",
+          value: null,
+          enabled: true,
+          children: [
+            {
+              id: createNodeId(),
+              key: "category",
+              type: "string",
+              value: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              enabled: true,
+            },
+            {
+              id: createNodeId(),
+              key: "threshold",
+              type: "string",
+              value: "BLOCK_NONE",
+              enabled: true,
+            },
+          ],
+        },
+      ],
+    }),
+  },
+  {
+    name: "stopSequences",
+    badge: "array",
+    desc: "停止词序列 (Gemini 格式)",
+    create: () => ({
+      id: createNodeId(),
+      key: "stopSequences",
+      type: "array",
+      value: null,
+      enabled: true,
+      collapsed: false,
+      items: [
+        {
+          id: createNodeId(),
+          key: "[0]",
+          type: "string",
+          value: "\n\n",
+          enabled: true,
+        },
+      ],
+    }),
+  },
+];
+
+export function getBodyPresets(protocol?: ApiProtocol): PresetDefinition[] {
+  switch (protocol) {
+    case "codex":
+      return CODEX_BODY_PRESETS;
+    case "claude":
+      return CLAUDE_BODY_PRESETS;
+    case "gemini":
+      return GEMINI_BODY_PRESETS;
+    case "openai":
+    default:
+      return OPENAI_BODY_PRESETS;
+  }
+}
+
+export const COMMON_BODY_PRESETS = OPENAI_BODY_PRESETS;
 
 // ---------------------------------------------------------------- Recursive Tree Modifiers
 
@@ -628,12 +975,14 @@ function VisualFieldItem({
 // ---------------------------------------------------------------- Custom Headers Editor
 
 export interface CustomHeadersEditorProps {
+  protocol?: ApiProtocol;
   headers: CustomHeader[];
   onChange: (headers: CustomHeader[]) => void;
 }
 
-export function CustomHeadersEditor({ headers, onChange }: CustomHeadersEditorProps) {
+export function CustomHeadersEditor({ protocol, headers, onChange }: CustomHeadersEditorProps) {
   const { t } = useTranslation();
+  const headerPresets = getHeaderPresets(protocol);
 
   const handleAddHeader = (key = "", value = "") => {
     onChange([
@@ -667,7 +1016,7 @@ export function CustomHeadersEditor({ headers, onChange }: CustomHeadersEditorPr
       {/* Quick Header Suggestions */}
       <div className="flex items-center gap-1.5 flex-wrap">
         <span className="text-[10px] text-slate-400 font-medium">常用 Header:</span>
-        {COMMON_HEADER_PRESETS.map((p) => {
+        {headerPresets.map((p) => {
           const exists = headers.some((h) => h.key.toLowerCase() === p.key.toLowerCase());
           return (
             <button
@@ -768,14 +1117,16 @@ export function CustomHeadersEditor({ headers, onChange }: CustomHeadersEditorPr
 // ---------------------------------------------------------------- Visual Body Editor
 
 export interface VisualBodyEditorProps {
+  protocol?: ApiProtocol;
   fields: VisualFieldNode[];
   onChange: (fields: VisualFieldNode[]) => void;
 }
 
-export function VisualBodyEditor({ fields, onChange }: VisualBodyEditorProps) {
+export function VisualBodyEditor({ protocol, fields, onChange }: VisualBodyEditorProps) {
   const { t } = useTranslation();
   const [showPreview, setShowPreview] = useState(false);
   const [copied, setCopied] = useState(false);
+  const bodyPresets = getBodyPresets(protocol);
 
   const handleAddField = () => {
     onChange([...fields, createDefaultNode("", "string")]);
@@ -797,10 +1148,11 @@ export function VisualBodyEditor({ fields, onChange }: VisualBodyEditorProps) {
     onChange(addChildToNode(fields, parentId, item));
   };
 
-  const handleApplyPreset = (preset: (typeof COMMON_BODY_PRESETS)[0]) => {
-    const exists = fields.some((f) => f.key.trim().toLowerCase() === preset.name.toLowerCase());
+  const handleApplyPreset = (preset: PresetDefinition) => {
+    const rootKey = (preset.rootKey || preset.name.split(" ")[0] || preset.name).trim();
+    const exists = fields.some((f) => f.key.trim().toLowerCase() === rootKey.toLowerCase());
     if (exists) {
-      toast.info(`字段 "${preset.name}" 已在自定义列表中`);
+      toast.info(`字段 "${rootKey}" 已在自定义列表中`);
       return;
     }
     onChange([...fields, preset.create()]);
@@ -837,8 +1189,9 @@ export function VisualBodyEditor({ fields, onChange }: VisualBodyEditorProps) {
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap">
-          {COMMON_BODY_PRESETS.map((p) => {
-            const exists = fields.some((f) => f.key.trim().toLowerCase() === p.name.toLowerCase());
+          {bodyPresets.map((p) => {
+            const rootKey = (p.rootKey || p.name.split(" ")[0] || p.name).trim();
+            const exists = fields.some((f) => f.key.trim().toLowerCase() === rootKey.toLowerCase());
             return (
               <button
                 key={p.name}
@@ -907,7 +1260,7 @@ export function VisualBodyEditor({ fields, onChange }: VisualBodyEditorProps) {
             {t("playground.emptyBodyFields", "暂无自定义 Body 字段")}
           </p>
           <p className="text-[11px] text-slate-400">
-            使用纯控件编辑，支持嵌套对象与数组，将合并至 POST /v1/chat/completions 请求
+            {t("playground.customBodyHint", "使用纯控件编辑，支持嵌套对象与数组，将自动合并至请求体 Payload")}
           </p>
         </div>
       )}
@@ -944,6 +1297,7 @@ export function VisualBodyEditor({ fields, onChange }: VisualBodyEditorProps) {
 // ---------------------------------------------------------------- Combined CustomParamsSection
 
 export interface CustomParamsSectionProps {
+  protocol?: ApiProtocol;
   customHeaders: CustomHeader[];
   setCustomHeaders: React.Dispatch<React.SetStateAction<CustomHeader[]>>;
   customBodyFields: VisualFieldNode[];
@@ -951,6 +1305,7 @@ export interface CustomParamsSectionProps {
 }
 
 export function CustomParamsSection({
+  protocol,
   customHeaders,
   setCustomHeaders,
   customBodyFields,
@@ -999,7 +1354,7 @@ export function CustomParamsSection({
             <p className="text-[10px] text-slate-400 mb-2 leading-relaxed">
               {t("playground.customHeadersDesc", "随请求携带额外的 HTTP Header，支持开关与覆盖标准头")}
             </p>
-            <CustomHeadersEditor headers={customHeaders} onChange={setCustomHeaders} />
+            <CustomHeadersEditor protocol={protocol} headers={customHeaders} onChange={setCustomHeaders} />
           </div>
         )}
       </div>
@@ -1038,7 +1393,7 @@ export function CustomParamsSection({
             <p className="text-[10px] text-slate-400 mb-2 leading-relaxed">
               {t("playground.customBodyDesc", "通过可视化控件向请求 Body 注入字段，支持嵌套对象与数组")}
             </p>
-            <VisualBodyEditor fields={customBodyFields} onChange={setCustomBodyFields} />
+            <VisualBodyEditor protocol={protocol} fields={customBodyFields} onChange={setCustomBodyFields} />
           </div>
         )}
       </div>

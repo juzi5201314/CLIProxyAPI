@@ -109,6 +109,11 @@ const en = {
     emptyHeaders: "No custom headers configured",
     emptyBodyFields: "No custom body fields configured",
     clearAll: "Clear All",
+    reasoningEffort: "Reasoning Effort",
+    reasoningEffortDesc: "Control thinking and reasoning depth for modern models",
+    paramDisabled: "Omitted",
+    paramEnabled: "Enabled",
+    customBodyHint: "Visual editor supporting nested objects & arrays, merged directly into request payload",
   },
   login: {
     title: "Sign in to your server",

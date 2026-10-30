@@ -109,6 +109,11 @@ const zhCN = {
     emptyHeaders: "暂无自定义请求头",
     emptyBodyFields: "暂无自定义 Body 字段",
     clearAll: "清空全部",
+    reasoningEffort: "思考等级 (Reasoning Effort)",
+    reasoningEffortDesc: "控制模型的深度思考与推理强度，主流现代推理模型推荐启用",
+    paramDisabled: "不发送",
+    paramEnabled: "已启用",
+    customBodyHint: "使用纯控件编辑，支持嵌套对象与数组，将自动合并至请求体 Payload",
   },
   login: {
     title: "登录到服务器",

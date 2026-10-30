@@ -22,6 +22,7 @@ import {
   Search,
   Settings2,
   Sliders,
+  Sparkles,
   Terminal,
   Trash2,
   X,
@@ -151,6 +152,41 @@ const PROTOCOL_OPTIONS: ProtocolMeta[] = [
     desc: "Google Gemini 协议 (/v1beta/models/...)",
   },
 ];
+
+export type ReasoningEffortLevel = "off" | "low" | "medium" | "high" | "xhigh" | "max";
+
+interface ReasoningOption {
+  id: ReasoningEffortLevel;
+  label: string;
+  desc: string;
+}
+
+const REASONING_EFFORT_OPTIONS: ReasoningOption[] = [
+  { id: "off", label: "off (不发送)", desc: "不传递思考参数，使用模型默认行为" },
+  { id: "low", label: "low", desc: "轻量思考，更快速响应" },
+  { id: "medium", label: "medium", desc: "标准思考，平衡推理质量与延时" },
+  { id: "high", label: "high", desc: "高强度思考，完整深度推理链路" },
+  { id: "xhigh", label: "xhigh", desc: "极高深度思考 (OpenAI o-series 等)" },
+  { id: "max", label: "max", desc: "最大推理深度 (Claude 4.6 / Adaptive 等)" },
+];
+
+function getReasoningInjectionPreview(protocol: ApiProtocol, effort: ReasoningEffortLevel): string {
+  if (effort === "off") {
+    return "未启用，不传递思考等级参数";
+  }
+  switch (protocol) {
+    case "openai":
+      return `"reasoning_effort": "${effort}"`;
+    case "codex":
+      return `"reasoning": { "effort": "${effort}" }`;
+    case "claude":
+      return `"thinking": { "type": "adaptive" }, "output_config": { "effort": "${effort}" }`;
+    case "gemini":
+      return `"generationConfig": { "thinkingConfig": { "thinkingLevel": "${effort}" } }`;
+    default:
+      return `"reasoning_effort": "${effort}"`;
+  }
+}
 
 interface InferredResult {
   protocol: ApiProtocol;
@@ -758,9 +794,13 @@ export function PlaygroundPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [stream, setStream] = useState(true);
+  const [enableTemperature, setEnableTemperature] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
+  const [enableMaxTokens, setEnableMaxTokens] = useState(false);
   const [maxTokens, setMaxTokens] = useState(2048);
+  const [enableTopP, setEnableTopP] = useState(false);
   const [topP, setTopP] = useState(1.0);
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortLevel>("off");
   const [systemPrompt, setSystemPrompt] = useState("You are a helpful and concise AI assistant.");
   const [selectedModel, setSelectedModel] = useState<string>(activeSession.model || "gpt-4o");
   const [manualProtocol, setManualProtocol] = useState<ApiProtocol | null>(() => activeSession.protocol ?? null);
@@ -1331,10 +1371,16 @@ export function PlaygroundPage() {
         model: targetModel,
         ...(systemPrompt.trim() ? { system: systemPrompt.trim() } : {}),
         messages: claudeMessages,
-        max_tokens: maxTokens || 2048,
-        temperature,
-        top_p: topP,
+        ...(enableMaxTokens ? { max_tokens: maxTokens || 2048 } : {}),
+        ...(enableTemperature ? { temperature } : {}),
+        ...(enableTopP ? { top_p: topP } : {}),
         stream,
+        ...(reasoningEffort !== "off"
+          ? {
+              thinking: { type: "adaptive" },
+              output_config: { effort: reasoningEffort },
+            }
+          : {}),
         ...customBody,
       };
     } else if (activeProtocol === "codex") {
@@ -1365,9 +1411,14 @@ export function PlaygroundPage() {
         model: targetModel,
         ...(systemPrompt.trim() ? { instructions: systemPrompt.trim() } : {}),
         input: [...codexHistory, { role: "user", content: codexUserContent }],
-        temperature,
-        max_output_tokens: maxTokens,
+        ...(enableTemperature ? { temperature } : {}),
+        ...(enableMaxTokens ? { max_output_tokens: maxTokens } : {}),
         stream,
+        ...(reasoningEffort !== "off"
+          ? {
+              reasoning: { effort: reasoningEffort },
+            }
+          : {}),
         ...customBody,
       };
     } else if (activeProtocol === "gemini") {
@@ -1401,14 +1452,20 @@ export function PlaygroundPage() {
         { role: "user", parts: buildGeminiParts(textToSend, imagesToSend) },
       ];
 
+      const generationConfig: Record<string, unknown> = {};
+      if (enableTemperature) generationConfig.temperature = temperature;
+      if (enableMaxTokens) generationConfig.maxOutputTokens = maxTokens;
+      if (enableTopP) generationConfig.topP = topP;
+      if (reasoningEffort !== "off") {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: reasoningEffort,
+        };
+      }
+
       requestPayload = {
         contents: geminiContents,
         ...(systemPrompt.trim() ? { systemInstruction: { parts: [{ text: systemPrompt.trim() }] } } : {}),
-        generationConfig: {
-          temperature,
-          maxOutputTokens: maxTokens,
-          topP: topP,
-        },
+        ...(Object.keys(generationConfig).length > 0 ? { generationConfig } : {}),
         ...customBody,
       };
     } else {
@@ -1448,10 +1505,11 @@ export function PlaygroundPage() {
       requestPayload = {
         model: targetModel,
         messages: messagesPayload,
-        temperature,
-        max_tokens: maxTokens,
-        top_p: topP,
+        ...(enableTemperature ? { temperature } : {}),
+        ...(enableMaxTokens ? { max_tokens: maxTokens } : {}),
+        ...(enableTopP ? { top_p: topP } : {}),
         stream,
+        ...(reasoningEffort !== "off" ? { reasoning_effort: reasoningEffort } : {}),
         ...customBody,
       };
     }
@@ -2777,56 +2835,241 @@ export function PlaygroundPage() {
                 </p>
               </div>
 
-              {/* Temperature Slider */}
-              <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800/60 dark:bg-slate-950/40">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{t("playground.temperature")}</span>
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{temperature}</span>
+              {/* Reasoning Effort (思考等级) */}
+              <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800/70 dark:bg-slate-950/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="size-3.5 text-amber-500" />
+                    <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
+                      {t("playground.reasoningEffort", "思考等级 (Reasoning Effort)")}
+                    </span>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-[10px] font-mono px-1.5 py-0",
+                      reasoningEffort === "off"
+                        ? "text-slate-400 border-slate-200 dark:border-slate-800"
+                        : "text-amber-600 border-amber-300 bg-amber-50/80 dark:text-amber-400 dark:border-amber-900/60 dark:bg-amber-950/30",
+                    )}
+                  >
+                    {reasoningEffort === "off" ? "off" : reasoningEffort}
+                  </Badge>
                 </div>
-                <Slider
-                  value={[temperature]}
-                  min={0}
-                  max={2}
-                  step={0.05}
-                  onValueChange={(vals) => vals[0] !== undefined && setTemperature(vals[0])}
-                  className="py-1"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>精确严谨 (0.0)</span>
-                  <span>富有创意 (2.0)</span>
+
+                <Select
+                  value={reasoningEffort}
+                  onValueChange={(val) => setReasoningEffort(val as ReasoningEffortLevel)}
+                >
+                  <SelectTrigger className="h-8 w-full rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {REASONING_EFFORT_OPTIONS.map((opt) => (
+                      <SelectItem
+                        key={opt.id}
+                        value={opt.id}
+                        className="text-xs font-mono cursor-pointer py-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-3 w-full">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">{opt.label}</span>
+                          <span className="text-[10px] text-slate-400 font-sans">{opt.desc}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <p className="text-[10px] text-slate-400 font-mono leading-tight">
+                  {reasoningEffort === "off" ? (
+                    <span>不发送思考参数 (使用模型默认)</span>
+                  ) : (
+                    <span>
+                      注入: <code className="text-amber-600 dark:text-amber-400 font-semibold">{getReasoningInjectionPreview(activeProtocol, reasoningEffort)}</code>
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Temperature Slider */}
+              <div
+                className={cn(
+                  "space-y-1.5 rounded-2xl border transition-all p-3",
+                  enableTemperature
+                    ? "border-blue-200/70 bg-blue-50/20 shadow-2xs dark:border-blue-900/50 dark:bg-blue-950/15"
+                    : "border-slate-100 bg-slate-50/60 dark:border-slate-800/60 dark:bg-slate-950/40",
+                )}
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={enableTemperature}
+                      onCheckedChange={setEnableTemperature}
+                      className="scale-75 origin-left"
+                    />
+                    <span
+                      className={cn(
+                        "text-xs font-semibold transition-colors",
+                        enableTemperature ? "text-slate-800 dark:text-slate-200" : "text-slate-500 dark:text-slate-400",
+                      )}
+                    >
+                      {t("playground.temperature")}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {!enableTemperature && (
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {t("playground.paramDisabled", "不发送")}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "font-mono text-xs font-bold transition-colors",
+                        enableTemperature ? "text-blue-600 dark:text-blue-400" : "text-slate-400 line-through opacity-60",
+                      )}
+                    >
+                      {temperature}
+                    </span>
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    "transition-opacity duration-200",
+                    enableTemperature ? "opacity-100" : "opacity-35 pointer-events-none select-none",
+                  )}
+                >
+                  <Slider
+                    value={[temperature]}
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    onValueChange={(vals) => vals[0] !== undefined && setTemperature(vals[0])}
+                    className="py-1"
+                    disabled={!enableTemperature}
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>精确严谨 (0.0)</span>
+                    <span>富有创意 (2.0)</span>
+                  </div>
                 </div>
               </div>
 
               {/* Max Tokens */}
-              <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800/60 dark:bg-slate-950/40">
+              <div
+                className={cn(
+                  "space-y-1.5 rounded-2xl border transition-all p-3",
+                  enableMaxTokens
+                    ? "border-blue-200/70 bg-blue-50/20 shadow-2xs dark:border-blue-900/50 dark:bg-blue-950/15"
+                    : "border-slate-100 bg-slate-50/60 dark:border-slate-800/60 dark:bg-slate-950/40",
+                )}
+              >
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{t("playground.maxTokens")}</span>
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{maxTokens}</span>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={enableMaxTokens}
+                      onCheckedChange={setEnableMaxTokens}
+                      className="scale-75 origin-left"
+                    />
+                    <span
+                      className={cn(
+                        "text-xs font-semibold transition-colors",
+                        enableMaxTokens ? "text-slate-800 dark:text-slate-200" : "text-slate-500 dark:text-slate-400",
+                      )}
+                    >
+                      {t("playground.maxTokens")}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {!enableMaxTokens && (
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {t("playground.paramDisabled", "不发送")}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "font-mono text-xs font-bold transition-colors",
+                        enableMaxTokens ? "text-blue-600 dark:text-blue-400" : "text-slate-400 line-through opacity-60",
+                      )}
+                    >
+                      {maxTokens}
+                    </span>
+                  </div>
                 </div>
-                <Slider
-                  value={[maxTokens]}
-                  min={128}
-                  max={16384}
-                  step={128}
-                  onValueChange={(vals) => vals[0] !== undefined && setMaxTokens(vals[0])}
-                  className="py-1"
-                />
+                <div
+                  className={cn(
+                    "transition-opacity duration-200",
+                    enableMaxTokens ? "opacity-100" : "opacity-35 pointer-events-none select-none",
+                  )}
+                >
+                  <Slider
+                    value={[maxTokens]}
+                    min={128}
+                    max={16384}
+                    step={128}
+                    onValueChange={(vals) => vals[0] !== undefined && setMaxTokens(vals[0])}
+                    className="py-1"
+                    disabled={!enableMaxTokens}
+                  />
+                </div>
               </div>
 
               {/* Top P */}
-              <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800/60 dark:bg-slate-950/40">
+              <div
+                className={cn(
+                  "space-y-1.5 rounded-2xl border transition-all p-3",
+                  enableTopP
+                    ? "border-blue-200/70 bg-blue-50/20 shadow-2xs dark:border-blue-900/50 dark:bg-blue-950/15"
+                    : "border-slate-100 bg-slate-50/60 dark:border-slate-800/60 dark:bg-slate-950/40",
+                )}
+              >
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{t("playground.topP")}</span>
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{topP}</span>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={enableTopP}
+                      onCheckedChange={setEnableTopP}
+                      className="scale-75 origin-left"
+                    />
+                    <span
+                      className={cn(
+                        "text-xs font-semibold transition-colors",
+                        enableTopP ? "text-slate-800 dark:text-slate-200" : "text-slate-500 dark:text-slate-400",
+                      )}
+                    >
+                      {t("playground.topP")}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {!enableTopP && (
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {t("playground.paramDisabled", "不发送")}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "font-mono text-xs font-bold transition-colors",
+                        enableTopP ? "text-blue-600 dark:text-blue-400" : "text-slate-400 line-through opacity-60",
+                      )}
+                    >
+                      {topP}
+                    </span>
+                  </div>
                 </div>
-                <Slider
-                  value={[topP]}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  onValueChange={(vals) => vals[0] !== undefined && setTopP(vals[0])}
-                  className="py-1"
-                />
+                <div
+                  className={cn(
+                    "transition-opacity duration-200",
+                    enableTopP ? "opacity-100" : "opacity-35 pointer-events-none select-none",
+                  )}
+                >
+                  <Slider
+                    value={[topP]}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    onValueChange={(vals) => vals[0] !== undefined && setTopP(vals[0])}
+                    className="py-1"
+                    disabled={!enableTopP}
+                  />
+                </div>
               </div>
 
               {/* Stream Switch */}
@@ -2855,6 +3098,7 @@ export function PlaygroundPage() {
 
               {/* Custom Headers and Body Parameters */}
               <CustomParamsSection
+                protocol={activeProtocol}
                 customHeaders={customHeaders}
                 setCustomHeaders={setCustomHeaders}
                 customBodyFields={customBodyFields}
