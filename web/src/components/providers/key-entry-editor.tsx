@@ -569,6 +569,7 @@ function ExtraFieldsEditor({ kind, draft, onApply }: { kind: KindMeta; draft: En
   known.add("request-scoped-errors");
   known.add("cloak");
   known.add("fingerprint-profile");
+  known.add("experimental-cch-signing");
   for (const row of KIND_BEHAVIOR[kind.id] ?? []) known.add(row.key);
   const [text, setText] = useState(() => {
     const rest: Entry = {};
