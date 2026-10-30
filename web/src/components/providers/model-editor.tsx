@@ -1,6 +1,6 @@
 // Shared model-list / excluded-models / fetch / combobox pieces used by both
 // the OpenAI-compatible provider editor and the typed key-entry editors.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -8,8 +8,10 @@ import {
   ChevronsUpDown,
   CircleCheck,
   CircleX,
+  FileCode2,
   FlaskConical,
   Loader2,
+  PanelsTopLeft,
   Plus,
   Settings2,
   Trash2,
@@ -646,49 +648,266 @@ export function ProbeStatusBadge({ result, busy, label, code, compact }: { resul
 
 // ------------------------------------------------------------- scoped errors
 
-/** Raw JSON editing for the request-scoped-errors rules array. */
-export function ScopedErrorsEditor({ value, onChange }: { value?: unknown[]; onChange: (value: unknown[] | undefined) => void }) {
+export interface ScopedErrorRule {
+  status: number;
+  match?: string[];
+  "match-regexr"?: string[];
+  action: string;
+}
+
+/** Interactive form and raw JSON editor for the request-scoped-errors rules array. */
+export function ScopedErrorsEditor({
+  value,
+  onChange,
+}: {
+  value?: unknown[];
+  onChange: (value: unknown[] | undefined) => void;
+}) {
   const { t } = useTranslation();
-  const [text, setText] = useState(() => (value ? JSON.stringify(value, null, 2) : ""));
-  const [dirty, setDirty] = useState(false);
+  const [mode, setMode] = useState<"form" | "json">("form");
+  const [jsonText, setJsonText] = useState(() => (value && value.length > 0 ? JSON.stringify(value, null, 2) : ""));
+
+  const rules = useMemo<ScopedErrorRule[]>(() => {
+    if (!Array.isArray(value)) return [];
+    return value.map((item) => {
+      if (typeof item !== "object" || item === null) return { status: 400, action: "continue" };
+      const raw = item as Record<string, unknown>;
+      return {
+        status: typeof raw.status === "number" ? raw.status : Number(raw.status) || 400,
+        match: Array.isArray(raw.match) ? (raw.match as string[]) : [],
+        "match-regexr": Array.isArray(raw["match-regexr"]) ? (raw["match-regexr"] as string[]) : [],
+        action: typeof raw.action === "string" ? raw.action : "continue",
+      };
+    });
+  }, [value]);
+
+  const commitRules = (next: ScopedErrorRule[]) => {
+    if (next.length === 0) {
+      onChange(undefined);
+      setJsonText("");
+      return;
+    }
+    const cleaned = next.map((r) => {
+      const res: Record<string, unknown> = {
+        status: r.status || 400,
+        action: r.action || "continue",
+      };
+      if (r.match && r.match.length > 0) res.match = r.match;
+      if (r["match-regexr"] && r["match-regexr"].length > 0) res["match-regexr"] = r["match-regexr"];
+      return res;
+    });
+    onChange(cleaned);
+    setJsonText(JSON.stringify(cleaned, null, 2));
+  };
+
+  const addRule = () => {
+    commitRules([
+      ...rules,
+      {
+        status: 400,
+        action: "stop-and-cooldown",
+        match: [],
+      },
+    ]);
+  };
+
+  const updateRule = (index: number, changes: Partial<ScopedErrorRule>) => {
+    const next = rules.map((r, i) => (i === index ? { ...r, ...changes } : r));
+    commitRules(next);
+  };
+
+  const removeRule = (index: number) => {
+    const next = rules.filter((_, i) => i !== index);
+    commitRules(next);
+  };
+
+  const toggleMode = () => {
+    if (mode === "json") {
+      if (jsonText.trim()) {
+        try {
+          const parsed = JSON.parse(jsonText);
+          if (!Array.isArray(parsed)) throw new Error("Expected an array of rule objects");
+          onChange(parsed);
+        } catch (err) {
+          toast.error(String(err));
+          return;
+        }
+      } else {
+        onChange(undefined);
+      }
+      setMode("form");
+    } else {
+      setJsonText(value && value.length > 0 ? JSON.stringify(value, null, 2) : "");
+      setMode("json");
+    }
+  };
+
   return (
-    <div className="space-y-2">
-      <textarea
-        className="bg-secondary/50 h-40 w-full resize-y rounded-xl border border-border/60 p-3 font-mono text-xs"
-        value={text}
-        spellCheck={false}
-        placeholder='[{"match": "...", "status-code": 500}]'
-        onChange={(event) => {
-          setText(event.target.value);
-          setDirty(true);
-        }}
-      />
-      <div className="flex justify-end">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={!dirty}
-          onClick={() => {
-            if (!text.trim()) {
-              onChange(undefined);
-              setDirty(false);
-              return;
-            }
-            try {
-              const parsed = JSON.parse(text);
-              if (!Array.isArray(parsed)) throw new Error("expected an array");
-              onChange(parsed);
-              setDirty(false);
-              toast.success(t("common.saved"));
-            } catch (error) {
-              toast.error(String(error));
-            }
-          }}
-        >
-          {t("common.apply")}
-        </Button>
+    <div className="space-y-3">
+      {/* Top toolbar */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {rules.length > 0 ? (
+            <Badge variant="outline" className="text-[11px] font-mono font-normal">
+              {rules.length} {rules.length === 1 ? "rule" : "rules"}
+            </Badge>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {mode === "form" ? (
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={addRule}>
+              <Plus className="size-3.5" />
+              <span>{t("providers.addScopedErrorRule")}</span>
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1"
+            onClick={toggleMode}
+          >
+            {mode === "form" ? <FileCode2 className="size-3.5" /> : <PanelsTopLeft className="size-3.5" />}
+            <span>{mode === "form" ? t("providers.jsonMode") : t("providers.formMode")}</span>
+          </Button>
+        </div>
       </div>
+
+      {mode === "json" ? (
+        <div className="space-y-2">
+          <textarea
+            className="bg-secondary/50 h-40 w-full resize-y rounded-xl border border-border/60 p-3 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
+            value={jsonText}
+            spellCheck={false}
+            placeholder='[{"status": 400, "match": ["context_window_exceeded"], "action": "stop-and-cooldown"}]'
+            onChange={(e) => setJsonText(e.target.value)}
+          />
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                if (!jsonText.trim()) {
+                  onChange(undefined);
+                  toast.success(t("common.saved"));
+                  return;
+                }
+                try {
+                  const parsed = JSON.parse(jsonText);
+                  if (!Array.isArray(parsed)) throw new Error("Expected an array of rule objects");
+                  onChange(parsed);
+                  toast.success(t("common.saved"));
+                } catch (error) {
+                  toast.error(String(error));
+                }
+              }}
+            >
+              {t("common.apply")}
+            </Button>
+          </div>
+        </div>
+      ) : rules.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 py-7 px-4 text-center bg-muted/10">
+          <p className="text-xs font-medium text-foreground">{t("providers.scopedErrorsEmpty")}</p>
+          <p className="text-[11px] text-muted-foreground mt-1 max-w-sm">{t("providers.scopedErrorsEmptyHint")}</p>
+          <Button variant="outline" size="sm" className="mt-3 h-7 text-xs gap-1" onClick={addRule}>
+            <Plus className="size-3.5" />
+            <span>{t("providers.addScopedErrorRule")}</span>
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {rules.map((rule, index) => (
+            <div
+              key={index}
+              className="rounded-xl border border-border/70 bg-card/70 p-3 space-y-3 relative shadow-2xs transition-colors hover:border-border"
+            >
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-border/40">
+                <div className="flex items-center gap-3 flex-wrap flex-1">
+                  <span className="font-mono text-[11px] font-semibold text-muted-foreground bg-secondary px-2 py-0.5 rounded-md">
+                    #{index + 1}
+                  </span>
+
+                  {/* Status Code */}
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs text-muted-foreground shrink-0">{t("providers.scopedErrorStatus")}:</Label>
+                    <Input
+                      type="number"
+                      className="h-7 w-20 text-xs font-mono"
+                      value={rule.status || ""}
+                      placeholder="400"
+                      onChange={(e) => updateRule(index, { status: Number(e.target.value) || 0 })}
+                    />
+                  </div>
+
+                  {/* Action */}
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs text-muted-foreground shrink-0">{t("providers.scopedErrorAction")}:</Label>
+                    <Select
+                      value={rule.action || "stop-and-cooldown"}
+                      onValueChange={(val) => updateRule(index, { action: val })}
+                    >
+                      <SelectTrigger className="h-7 w-52 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="stop">{t("providers.actionStop")}</SelectItem>
+                        <SelectItem value="stop-and-cooldown">{t("providers.actionStopAndCooldown")}</SelectItem>
+                        <SelectItem value="continue">{t("providers.actionContinue")}</SelectItem>
+                        <SelectItem value="continue-and-cooldown">{t("providers.actionContinueAndCooldown")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={() => removeRule(index)}
+                  title={t("common.delete")}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+
+              {/* Match Substrings */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] text-muted-foreground">{t("providers.matchSubstrings")}</Label>
+                  <span className="text-[10px] text-muted-foreground/60">{t("providers.commaSeparatedHint")}</span>
+                </div>
+                <Input
+                  className="h-7 text-xs font-mono"
+                  value={Array.isArray(rule.match) ? rule.match.join(", ") : ""}
+                  placeholder={t("providers.matchSubstringsPlaceholder")}
+                  onChange={(e) => {
+                    const words = e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+                    updateRule(index, { match: words });
+                  }}
+                />
+              </div>
+
+              {/* Match Regex */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] text-muted-foreground">{t("providers.matchRegex")}</Label>
+                  <span className="text-[10px] text-muted-foreground/60">{t("providers.commaSeparatedHint")}</span>
+                </div>
+                <Input
+                  className="h-7 text-xs font-mono"
+                  value={Array.isArray(rule["match-regexr"]) ? rule["match-regexr"].join(", ") : ""}
+                  placeholder={t("providers.matchRegexPlaceholder")}
+                  onChange={(e) => {
+                    const words = e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+                    updateRule(index, { "match-regexr": words });
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
