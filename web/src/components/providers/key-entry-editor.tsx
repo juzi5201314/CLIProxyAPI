@@ -135,7 +135,38 @@ export function KeyEntryEditorSheet({
   const [draft, setDraft] = useState<Entry>(() => structuredClone(entry));
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [probing, setProbing] = useState(false);
-  const patch = (key: string, value: unknown) => setDraft((current) => ({ ...current, [key]: value }));
+  const patch = (key: string, value: unknown) =>
+    setDraft((current) => {
+      if (value === undefined) {
+        const { [key]: _drop, ...rest } = current;
+        return rest;
+      }
+      return { ...current, [key]: value };
+    });
+
+  const patchCloak = (changes: Record<string, unknown>) => {
+    const currentCloak = (draft.cloak as Record<string, unknown> | undefined) ?? {};
+    const merged = { ...currentCloak, ...changes };
+    const mode = typeof merged.mode === "string" ? merged.mode.trim() : "";
+    const strictMode = Boolean(merged["strict-mode"]);
+    const cacheUserId = Boolean(merged["cache-user-id"]);
+    const sensitiveWords = Array.isArray(merged["sensitive-words"])
+      ? (merged["sensitive-words"] as string[]).map((w) => String(w).trim()).filter(Boolean)
+      : [];
+
+    if (!mode && !strictMode && !cacheUserId && sensitiveWords.length === 0) {
+      patch("cloak", undefined);
+      return;
+    }
+
+    const cleanCloak: Record<string, unknown> = {};
+    if (mode) cleanCloak.mode = mode;
+    if (strictMode) cleanCloak["strict-mode"] = true;
+    if (cacheUserId) cleanCloak["cache-user-id"] = true;
+    if (sensitiveWords.length > 0) cleanCloak["sensitive-words"] = sensitiveWords;
+
+    patch("cloak", cleanCloak);
+  };
 
   const fields = KEY_EDITOR_FIELDS[kind.id] ?? [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY];
   const behavior = KIND_BEHAVIOR[kind.id] ?? [COOLING_ROW, RETRY_ROW];
@@ -256,6 +287,10 @@ export function KeyEntryEditorSheet({
               ))}
             </div>
           </EditorSection>
+
+          {kind.id === "claude" ? (
+            <ClaudeCloakSection draft={draft} onPatch={patch} onPatchCloak={patchCloak} />
+          ) : null}
 
           <HeadersEditor headers={draft.headers as Record<string, string> | undefined} onChange={(headers) => patch("headers", headers)} />
 
@@ -427,8 +462,101 @@ function BehaviorControl({ row, draft, onPatch }: { row: BehaviorRow; draft: Ent
   );
 }
 
-/** Edit fields outside the typed schema (cloak, fingerprint-profile, ...) by
- *  re-serializing the entry without the known keys. */
+function ClaudeCloakSection({
+  draft,
+  onPatch,
+  onPatchCloak,
+}: {
+  draft: Entry;
+  onPatch: (key: string, value: unknown) => void;
+  onPatchCloak: (changes: Record<string, unknown>) => void;
+}) {
+  const { t } = useTranslation();
+  const currentCloak = (draft.cloak as Record<string, unknown> | undefined) ?? {};
+  const currentMode = typeof currentCloak.mode === "string" && currentCloak.mode ? currentCloak.mode : "follow";
+
+  return (
+    <EditorSection title={t("providers.claudeCloakingTitle")} hint={t("providers.claudeCloakingHint")}>
+      <div className="space-y-1">
+        <SwitchRow
+          label={t("providers.claudeFingerprintProfile")}
+          hint={t("providers.claudeFingerprintProfileHint")}
+          control={
+            <Select
+              value={draft["fingerprint-profile"] === "claude-code-cli" ? "claude-code-cli" : "default"}
+              onValueChange={(val) => onPatch("fingerprint-profile", val === "claude-code-cli" ? "claude-code-cli" : undefined)}
+            >
+              <SelectTrigger className="h-8 w-56 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">{t("providers.claudeFingerprintDefault")}</SelectItem>
+                <SelectItem value="claude-code-cli">{t("providers.claudeFingerprintCli")}</SelectItem>
+              </SelectContent>
+            </Select>
+          }
+        />
+
+        <SwitchRow
+          label={t("providers.claudeCloakMode")}
+          hint={t("providers.claudeCloakModeHint")}
+          control={
+            <Select
+              value={currentMode}
+              onValueChange={(val) => onPatchCloak({ mode: val === "follow" ? "" : val })}
+            >
+              <SelectTrigger className="h-8 w-56 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="follow">{t("providers.claudeCloakModeFollow")}</SelectItem>
+                <SelectItem value="auto">{t("providers.claudeCloakModeAuto")}</SelectItem>
+                <SelectItem value="always">{t("providers.claudeCloakModeAlways")}</SelectItem>
+                <SelectItem value="never">{t("providers.claudeCloakModeNever")}</SelectItem>
+              </SelectContent>
+            </Select>
+          }
+        />
+
+        <SwitchRow
+          label={t("providers.claudeCloakStrict")}
+          hint={t("providers.claudeCloakStrictHint")}
+          checked={Boolean(currentCloak["strict-mode"])}
+          onCheckedChange={(checked) => onPatchCloak({ "strict-mode": checked })}
+        />
+
+        <SwitchRow
+          label={t("providers.claudeCloakCacheUser")}
+          hint={t("providers.claudeCloakCacheUserHint")}
+          checked={Boolean(currentCloak["cache-user-id"])}
+          onCheckedChange={(checked) => onPatchCloak({ "cache-user-id": checked })}
+        />
+
+        <SwitchRow
+          label={t("providers.claudeCloakSensitiveWords")}
+          hint={t("providers.claudeCloakSensitiveWordsHint")}
+          control={
+            <Input
+              className="h-8 w-56 font-mono text-xs"
+              value={
+                Array.isArray(currentCloak["sensitive-words"])
+                  ? (currentCloak["sensitive-words"] as string[]).join(", ")
+                  : ""
+              }
+              placeholder="API, proxy"
+              onChange={(e) => {
+                const words = e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+                onPatchCloak({ "sensitive-words": words });
+              }}
+            />
+          }
+        />
+      </div>
+    </EditorSection>
+  );
+}
+
+/** Edit fields outside the typed schema by re-serializing the entry without the known keys. */
 function ExtraFieldsEditor({ kind, draft, onApply }: { kind: KindMeta; draft: Entry; onApply: (next: Entry) => void }) {
   const { t } = useTranslation();
   const known = new Set((KEY_EDITOR_FIELDS[kind.id] ?? []).map((field) => field.key));
@@ -439,6 +567,8 @@ function ExtraFieldsEditor({ kind, draft, onApply }: { kind: KindMeta; draft: En
   known.add("disable-cooling");
   known.add("request-retry");
   known.add("request-scoped-errors");
+  known.add("cloak");
+  known.add("fingerprint-profile");
   for (const row of KIND_BEHAVIOR[kind.id] ?? []) known.add(row.key);
   const [text, setText] = useState(() => {
     const rest: Entry = {};
