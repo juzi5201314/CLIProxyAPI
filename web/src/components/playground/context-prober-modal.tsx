@@ -11,6 +11,7 @@ import {
   Gauge,
   RotateCw,
   ScanLine,
+  Settings2,
   StopCircle,
   Target,
   XCircle,
@@ -29,14 +30,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { CustomHeader } from "@/components/playground/custom-params-editor";
+import type { CustomHeader, VisualFieldNode } from "@/components/playground/custom-params-editor";
 import {
   type ApiProtocol,
+  type ReasoningEffortLevel,
   type MessageMetrics,
   type BuiltPlaygroundRequest,
   buildPlaygroundRequest,
+  extractDeltaFromChunk,
   extractErrorMessage,
   extractResponseFromData,
 } from "@/pages/playground";
@@ -61,10 +73,18 @@ export const PROBE_TIERS: ProbeTierConfig[] = [
   { id: "custom", label: "自定义", tokens: 128000, description: "自定义目标 Token", approxSize: "可调" },
 ];
 
+const PROTOCOL_OPTIONS: { id: ApiProtocol; label: string; endpointTemplate: string }[] = [
+  { id: "openai", label: "OpenAI 兼容", endpointTemplate: "/v1/chat/completions" },
+  { id: "claude", label: "Claude 原生", endpointTemplate: "/v1/messages" },
+  { id: "codex", label: "Codex 原生", endpointTemplate: "/v1/responses" },
+  { id: "gemini", label: "Gemini 原生", endpointTemplate: "/v1beta/models/..." },
+];
+
 export interface ProbeResult {
   status: "success" | "warning" | "limit_detected" | "error";
   statusCode: number;
   latencyMs: number;
+  ttftMs?: number;
   pin: string;
   pinMatched: boolean;
   targetTokens: number;
@@ -241,7 +261,6 @@ export function buildProbePayload(targetTokens: number, pin: string): {
   let codeBody = "";
   let chunkIndex = 0;
 
-  // Header and footer character overhead
   const baseChars = header.length + footer.length;
   const remainingBudget = Math.max(0, targetChars - baseChars);
 
@@ -306,9 +325,18 @@ export interface ContextProberModalProps {
   onClose: () => void;
   model: string;
   protocol: ApiProtocol;
+  stream: boolean;
+  enableTemperature: boolean;
+  temperature: number;
+  enableMaxTokens: boolean;
+  maxTokens: number;
+  enableTopP: boolean;
+  topP: number;
+  reasoningEffort: ReasoningEffortLevel;
+  customHeaders?: CustomHeader[];
+  customBodyFields?: VisualFieldNode[];
   clientApiKey?: string;
   managementKey?: string;
-  customHeaders?: CustomHeader[];
   onSaveToSession?: (
     userPrompt: string,
     assistantReply: string,
@@ -322,20 +350,67 @@ export function ContextProberModal({
   isOpen,
   onClose,
   model,
-  protocol,
+  protocol: initialProtocol,
+  stream: initialStream,
+  enableTemperature: initialEnableTemperature,
+  temperature: initialTemperature,
+  enableMaxTokens: initialEnableMaxTokens,
+  maxTokens: initialMaxTokens,
+  reasoningEffort: initialReasoningEffort,
+  customHeaders = [],
+  customBodyFields = [],
   clientApiKey,
   managementKey,
-  customHeaders = [],
   onSaveToSession,
 }: ContextProberModalProps) {
+  // Prober tier & target tokens
   const [selectedTier, setSelectedTier] = useState<ProbeTier>("256k");
   const [customTokens, setCustomTokens] = useState<number>(128000);
   const [pin, setPin] = useState<string>(() => `PIN-${Math.random().toString(36).substring(2, 8).toUpperCase()}`);
+  
+  // Execution & Live feedback state
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [elapsedMs, setElapsedMs] = useState<number>(0);
+  const [liveStreamText, setLiveStreamText] = useState<string>("");
   const [result, setResult] = useState<ProbeResult | null>(null);
+  
+  // UI collapse sections
   const [previewExpanded, setPreviewExpanded] = useState<boolean>(false);
+  const [paramsExpanded, setParamsExpanded] = useState<boolean>(false);
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
+
+  // Synchronized probe parameters (Inherited from Playground, configurable inside modal)
+  const [probeProtocol, setProbeProtocol] = useState<ApiProtocol>(initialProtocol);
+  const [probeStream, setProbeStream] = useState<boolean>(initialStream);
+  const [probeEnableTemp, setProbeEnableTemp] = useState<boolean>(initialEnableTemperature);
+  const [probeTemp, setProbeTemp] = useState<number>(initialTemperature);
+  const [probeEnableMaxTokens, setProbeEnableMaxTokens] = useState<boolean>(true); // default true for probe budget
+  const [probeMaxTokens, setProbeMaxTokens] = useState<number>(32); // default 32 to minimize output cost
+  const [probeReasoningEffort, setProbeReasoningEffort] = useState<ReasoningEffortLevel>(initialReasoningEffort);
+
+  // Sync state whenever modal is opened
+  useEffect(() => {
+    if (isOpen) {
+      setProbeProtocol(initialProtocol);
+      setProbeStream(initialStream);
+      setProbeEnableTemp(initialEnableTemperature);
+      setProbeTemp(initialTemperature);
+      setProbeEnableMaxTokens(initialEnableMaxTokens || true);
+      setProbeMaxTokens(initialEnableMaxTokens ? initialMaxTokens : 32);
+      setProbeReasoningEffort(initialReasoningEffort);
+      setResult(null);
+      setLiveStreamText("");
+    }
+  }, [
+    isOpen,
+    initialProtocol,
+    initialStream,
+    initialEnableTemperature,
+    initialTemperature,
+    initialEnableMaxTokens,
+    initialMaxTokens,
+    initialReasoningEffort,
+  ]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -361,11 +436,23 @@ export function ContextProberModal({
     };
   }, []);
 
+  const handleResetToPg = () => {
+    setProbeProtocol(initialProtocol);
+    setProbeStream(initialStream);
+    setProbeEnableTemp(initialEnableTemperature);
+    setProbeTemp(initialTemperature);
+    setProbeEnableMaxTokens(initialEnableMaxTokens || true);
+    setProbeMaxTokens(initialEnableMaxTokens ? initialMaxTokens : 32);
+    setProbeReasoningEffort(initialReasoningEffort);
+    toast.info("已恢复与当前 Playground 设置一致");
+  };
+
   const handleRegeneratePin = () => {
     if (isRunning) return;
     const newPin = `PIN-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     setPin(newPin);
     setResult(null);
+    setLiveStreamText("");
   };
 
   const handleAbort = () => {
@@ -385,10 +472,13 @@ export function ContextProberModal({
   const handleRunSingleProbe = async () => {
     if (isRunning) return;
     setResult(null);
+    setLiveStreamText("");
     setIsRunning(true);
     setElapsedMs(0);
 
     const startTime = performance.now();
+    let ttftTime: number | undefined = undefined;
+
     timerRef.current = window.setInterval(() => {
       setElapsedMs(Math.round(performance.now() - startTime));
     }, 100);
@@ -396,27 +486,24 @@ export function ContextProberModal({
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // Build playground request with cost-optimized settings:
-    // max_tokens: 16 (we only need the PIN output)
-    // temperature: 0 (deterministic)
-    // stream: false (clean non-stream capture)
+    // Build playground request with configured probe parameters
     const built = buildPlaygroundRequest({
       model: model || "gpt-4o",
-      protocol,
+      protocol: probeProtocol,
       history: [],
       inputText: payloadData.payload,
       inputImages: [],
       systemPrompt: "",
-      temperature: 0,
-      enableTemperature: true,
-      maxTokens: 16,
-      enableMaxTokens: true,
+      temperature: probeTemp,
+      enableTemperature: probeEnableTemp,
+      maxTokens: probeMaxTokens,
+      enableMaxTokens: probeEnableMaxTokens,
       topP: 1,
       enableTopP: false,
-      stream: false,
-      reasoningEffort: "off",
+      stream: probeStream,
+      reasoningEffort: probeReasoningEffort,
       customHeaders,
-      customBodyFields: [],
+      customBodyFields,
       clientApiKey,
       managementKey,
     });
@@ -429,10 +516,10 @@ export function ContextProberModal({
         signal: controller.signal,
       });
 
-      const totalLatency = Math.round(performance.now() - startTime);
+      const statusCode = response.status;
 
       if (!response.ok) {
-        const statusCode = response.status;
+        const totalLatency = Math.round(performance.now() - startTime);
         const errText = await response.text();
         let parsedError: unknown = null;
         try {
@@ -452,6 +539,8 @@ export function ContextProberModal({
           finalErrorMsg = `上游模型返回了明确的最大上下文限制：${detectedLimit.toLocaleString()} tokens`;
         } else if (statusCode === 413) {
           finalErrorMsg = `HTTP 413 (Payload Too Large): 请求体体积过大 (${(payloadData.byteSize / 1024 / 1024).toFixed(2)} MB)，被中间 Nginx / Cloudflare 网关拦截，未达模型后端。`;
+        } else if (rawMsg.includes("invalid_argument") && probeEnableTemp) {
+          finalErrorMsg = `上游拒绝参数 (invalid_argument): 该模型（如 SWE-2、o1、o3 等现代推理模型）通常不支持指定采样温度 (Temperature)。建议在下方“参数配置”中关闭“采样温度 (不发送)”后再试。\n[原始错误]: ${rawMsg}`;
         }
 
         setResult({
@@ -469,7 +558,77 @@ export function ContextProberModal({
         return;
       }
 
-      // HTTP 200 OK
+      // ----------------- STREAMING RESPONSE PATH -----------------
+      if (probeStream) {
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = "";
+        let streamUsage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined = undefined;
+
+        if (reader) {
+          let buffer = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith("data: ")) continue;
+              const dataStr = trimmed.slice(6).trim();
+              if (dataStr === "[DONE]") break;
+
+              try {
+                const chunkObj = JSON.parse(dataStr);
+                const deltaRes = extractDeltaFromChunk(chunkObj);
+                if (deltaRes.usage) {
+                  streamUsage = deltaRes.usage;
+                }
+                if (deltaRes.contentChunk) {
+                  if (ttftTime === undefined) {
+                    ttftTime = Math.round(performance.now() - startTime);
+                  }
+                  accumulated += deltaRes.contentChunk;
+                  setLiveStreamText(accumulated);
+                }
+              } catch {
+                // Ignore incomplete SSE chunk
+              }
+            }
+          }
+        }
+
+        const totalLatency = Math.round(performance.now() - startTime);
+        const reply = accumulated.trim();
+        const pinMatched = reply.toUpperCase().includes(pin.toUpperCase());
+
+        setResult({
+          status: pinMatched ? "success" : "warning",
+          statusCode: 200,
+          latencyMs: totalLatency,
+          ttftMs: ttftTime,
+          pin,
+          pinMatched,
+          targetTokens,
+          replyContent: reply,
+          usage: streamUsage,
+          rawRequest: built,
+          rawResponse: { stream: true, content: reply },
+        });
+
+        if (pinMatched) {
+          toast.success(`探测通过！模型完整读取 ${targetTokens.toLocaleString()} tokens 并准确核对 PIN`);
+        } else {
+          toast.warning("请求虽返回成功，但未识别到头部 PIN，疑似存在静默截断！");
+        }
+        return;
+      }
+
+      // ----------------- NON-STREAMING RESPONSE PATH -----------------
+      const totalLatency = Math.round(performance.now() - startTime);
       const data = await response.json();
       const nonStreamRes = extractResponseFromData(data);
       const reply = (nonStreamRes.content || "").trim();
@@ -479,6 +638,7 @@ export function ContextProberModal({
         status: pinMatched ? "success" : "warning",
         statusCode: response.status,
         latencyMs: totalLatency,
+        ttftMs: totalLatency,
         pin,
         pinMatched,
         targetTokens,
@@ -501,6 +661,11 @@ export function ContextProberModal({
       const errMsg = (err as Error)?.message || String(err);
       const detectedLimit = extractContextLimitFromError(errMsg);
 
+      let finalErrorMsg = errMsg;
+      if (errMsg.includes("invalid_argument") && probeEnableTemp) {
+        finalErrorMsg = `上游参数拒绝 (invalid_argument): 现代推理模型通常不支持设置 Temperature。建议关闭“采样温度 (不发送)”后再试。\n[详细报错]: ${errMsg}`;
+      }
+
       setResult({
         status: detectedLimit ? "limit_detected" : "error",
         statusCode: 0,
@@ -509,7 +674,7 @@ export function ContextProberModal({
         pinMatched: false,
         targetTokens,
         detectedLimit: detectedLimit ?? undefined,
-        errorMessage: errMsg,
+        errorMessage: finalErrorMsg,
         rawRequest: built,
       });
       toast.error(`探测失败: ${errMsg}`);
@@ -544,7 +709,7 @@ export function ContextProberModal({
 
     const metrics: MessageMetrics = {
       latencyMs: result.latencyMs,
-      ttftMs: result.latencyMs,
+      ttftMs: result.ttftMs ?? result.latencyMs,
       statusCode: result.statusCode,
       tokens: {
         input: result.usage?.prompt_tokens ?? payloadData.estimatedTokens,
@@ -562,7 +727,7 @@ export function ContextProberModal({
     <Dialog open={isOpen} onOpenChange={(open) => !isRunning && !open && onClose()}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl">
         {/* Modal Header */}
-        <DialogHeader className="p-5 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40">
+        <DialogHeader className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/40">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="flex size-9 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-950/80 dark:text-blue-400">
@@ -572,7 +737,7 @@ export function ContextProberModal({
                 <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   最大上下文探测
                   <Badge variant="outline" className="text-[10px] font-mono border-blue-200 text-blue-600 dark:border-blue-900 dark:text-blue-400">
-                    Context Window Prober
+                    Context Prober
                   </Badge>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -581,20 +746,26 @@ export function ContextProberModal({
               </div>
             </div>
 
-            {/* Current Target Specs */}
-            <div className="hidden sm:flex items-center gap-2 text-xs">
-              <Badge variant="secondary" className="font-mono text-[11px] px-2 py-0.5">
+            {/* Target Model & Protocol Badges */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <Badge variant="secondary" className="font-mono text-[11px] px-2 py-0.5 max-w-44 truncate">
                 {model || "未选择模型"}
               </Badge>
-              <Badge variant="outline" className="font-mono text-[10px] text-slate-500 uppercase">
-                {protocol}
+              <Badge
+                variant="outline"
+                className={cn(
+                  "font-mono text-[10px] uppercase",
+                  probeProtocol !== initialProtocol && "border-amber-300 text-amber-600 dark:text-amber-400",
+                )}
+              >
+                {probeProtocol}
               </Badge>
             </div>
           </div>
         </DialogHeader>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs">
           {/* Preset Quick Tiers */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -618,6 +789,7 @@ export function ContextProberModal({
                     onClick={() => {
                       setSelectedTier(tier.id);
                       setResult(null);
+                      setLiveStreamText("");
                     }}
                     className={cn(
                       "flex flex-col items-start p-2.5 rounded-xl border text-left transition-all cursor-pointer relative",
@@ -665,6 +837,7 @@ export function ContextProberModal({
                       const val = parseInt(e.target.value, 10);
                       setCustomTokens(isNaN(val) ? 0 : val);
                       setResult(null);
+                      setLiveStreamText("");
                     }}
                     className="h-8 font-mono text-xs bg-white dark:bg-slate-900"
                     placeholder="输入目标 token 数量，例如 128000"
@@ -680,6 +853,7 @@ export function ContextProberModal({
                       onClick={() => {
                         setCustomTokens(quick);
                         setResult(null);
+                        setLiveStreamText("");
                       }}
                       className="h-6 px-2 text-[10px] font-mono"
                     >
@@ -736,6 +910,171 @@ export function ContextProberModal({
             </div>
           </div>
 
+          {/* Model Parameters Accordion (Follows PG, Configurable) */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setParamsExpanded(!paramsExpanded)}
+              className="flex items-center justify-between w-full p-2.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Settings2 className="size-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="font-semibold">探测参数与接口格式</span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  (已同步 Playground：{probeProtocol.toUpperCase()} · 流式 {probeStream ? "开" : "关"} · Temperature {probeEnableTemp ? probeTemp : "不发送"})
+                </span>
+              </div>
+              <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                <span>{paramsExpanded ? "收起设置" : "展开调整"}</span>
+                {paramsExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+              </div>
+            </button>
+
+            {paramsExpanded && (
+              <div className="p-3.5 border-t border-slate-100 dark:border-slate-800 space-y-3 bg-slate-50/50 dark:bg-slate-950/40">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-slate-800/60">
+                  <span className="text-[11px] text-slate-500">
+                    可在此覆盖或微调本次探测的参数配置，默认完全继承 Playground 当前设置：
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isRunning}
+                    onClick={handleResetToPg}
+                    className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    重置与 Playground 同步
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Protocol Selector */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                      API 协议格式 (Protocol)
+                    </Label>
+                    <Select
+                      value={probeProtocol}
+                      onValueChange={(val) => setProbeProtocol(val as ApiProtocol)}
+                      disabled={isRunning}
+                    >
+                      <SelectTrigger className="h-8 font-mono text-xs bg-white dark:bg-slate-900">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROTOCOL_OPTIONS.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="text-xs font-mono">
+                            {p.label} ({p.endpointTemplate})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Stream Mode Toggle */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                        传输模式 (Stream SSE)
+                      </Label>
+                      <Switch
+                        checked={probeStream}
+                        onCheckedChange={setProbeStream}
+                        disabled={isRunning}
+                        className="scale-75 origin-right"
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      {probeStream ? "流式传输：实时展现首字延迟 (TTFT) 与输出字符" : "非流式：单次 JSON 响应"}
+                    </p>
+                  </div>
+
+                  {/* Temperature Toggle */}
+                  <div className="space-y-1 p-2 rounded-lg border border-slate-200/70 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          checked={probeEnableTemp}
+                          onCheckedChange={setProbeEnableTemp}
+                          disabled={isRunning}
+                          className="scale-75 origin-left"
+                        />
+                        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                          采样温度 (Temperature)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {probeEnableTemp ? probeTemp : "不发送 (默认)"}
+                      </span>
+                    </div>
+                    {probeEnableTemp ? (
+                      <Slider
+                        value={[probeTemp]}
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        disabled={isRunning || !probeEnableTemp}
+                        onValueChange={(vals) => vals[0] !== undefined && setProbeTemp(vals[0])}
+                        className="py-1"
+                      />
+                    ) : (
+                      <p className="text-[9px] text-amber-600 dark:text-amber-400 leading-tight">
+                        提示：SWE-2、o1、o3 等现代推理模型不支持 Temperature，不发送可防止 502/invalid_argument。
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Max Output Tokens */}
+                  <div className="space-y-1 p-2 rounded-lg border border-slate-200/70 bg-white/70 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          checked={probeEnableMaxTokens}
+                          onCheckedChange={setProbeEnableMaxTokens}
+                          disabled={isRunning}
+                          className="scale-75 origin-left"
+                        />
+                        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                          输出上限 (Max Tokens)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {probeEnableMaxTokens ? `${probeMaxTokens} tok` : "不发送"}
+                      </span>
+                    </div>
+                    {probeEnableMaxTokens && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <Input
+                          type="number"
+                          min={8}
+                          max={4096}
+                          value={probeMaxTokens}
+                          disabled={isRunning || !probeEnableMaxTokens}
+                          onChange={(e) => setProbeMaxTokens(parseInt(e.target.value, 10) || 32)}
+                          className="h-6 text-[10px] font-mono w-24 bg-white dark:bg-slate-900"
+                        />
+                        <span className="text-[9px] text-slate-400">
+                          单次探测仅需核对 PIN，建议设置 16~64 严格控制输出费用。
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Custom Body & Headers Summary */}
+                <div className="flex items-center justify-between pt-1 text-[10px] text-slate-500">
+                  <span>
+                    携带配置: {customHeaders.filter((h) => h.enabled).length} 个自定义 Header · {customBodyFields.filter((f) => f.enabled).length} 个自定义 Body 字段
+                  </span>
+                  {probeReasoningEffort !== "off" && (
+                    <Badge variant="outline" className="text-[9px] font-mono">
+                      Reasoning: {probeReasoningEffort}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Expandable Code Preview */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
             <button
@@ -773,6 +1112,22 @@ export function ContextProberModal({
             )}
           </div>
 
+          {/* Live Streaming Indicator (when running with stream: true) */}
+          {isRunning && probeStream && liveStreamText && (
+            <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/50 dark:border-blue-900/60 dark:bg-blue-950/30 space-y-1">
+              <div className="flex items-center justify-between text-blue-700 dark:text-blue-300 text-[11px]">
+                <span className="font-semibold flex items-center gap-1.5">
+                  <Zap className="size-3 animate-pulse" />
+                  模型正在流式回复...
+                </span>
+                <span className="font-mono">{Math.round(elapsedMs / 1000)}s</span>
+              </div>
+              <div className="p-2 rounded bg-white/80 dark:bg-slate-900/80 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
+                {liveStreamText}
+              </div>
+            </div>
+          )}
+
           {/* Diagnostic Result Card */}
           {result && (
             <div
@@ -805,6 +1160,7 @@ export function ContextProberModal({
 
                 <div className="flex items-center gap-2 font-mono text-[11px] text-slate-500">
                   <span>耗时: {result.latencyMs}ms</span>
+                  {result.ttftMs !== undefined && <span>TTFT: {result.ttftMs}ms</span>}
                   {result.usage?.prompt_tokens && (
                     <span>上游 Prompt Tokens: {result.usage.prompt_tokens.toLocaleString()}</span>
                   )}
@@ -820,7 +1176,7 @@ export function ContextProberModal({
                   <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
                     验证确认：上游及中间网关均未发生静默截断，模型在该长度下能够精准召回首部信息。
                   </p>
-                  <div className="p-2 rounded bg-white/70 dark:bg-black/30 font-mono text-[11px] text-slate-800 dark:text-slate-200">
+                  <div className="p-2 rounded bg-white/70 dark:bg-black/30 font-mono text-[11px] text-slate-800 dark:text-slate-200 break-all">
                     模型回复: "{result.replyContent}"
                   </div>
                 </div>
@@ -831,7 +1187,7 @@ export function ContextProberModal({
                   <p>
                     ⚠️ 虽成功获得 HTTP 200 回复，但回复中未包含头部 PIN <code>{result.pin}</code>。
                   </p>
-                  <div className="p-2 rounded bg-white/70 dark:bg-black/30 font-mono text-[11px] text-slate-800 dark:text-slate-200">
+                  <div className="p-2 rounded bg-white/70 dark:bg-black/30 font-mono text-[11px] text-slate-800 dark:text-slate-200 break-all">
                     模型实际回复: "{result.replyContent || "(空回复)"}"
                   </div>
                   <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-normal">
@@ -855,7 +1211,7 @@ export function ContextProberModal({
                   <p className="text-[11px] text-purple-700 dark:text-purple-300 leading-normal">
                     上游服务端在拒绝请求时明确返回了该模型的真实最大上下文窗口，已通过正则精确捕获。
                   </p>
-                  <div className="p-2 rounded bg-white/70 dark:bg-black/30 font-mono text-[10px] text-slate-700 dark:text-slate-300">
+                  <div className="p-2 rounded bg-white/70 dark:bg-black/30 font-mono text-[10px] text-slate-700 dark:text-slate-300 break-all">
                     {result.errorMessage}
                   </div>
                 </div>
@@ -863,7 +1219,7 @@ export function ContextProberModal({
 
               {result.status === "error" && (
                 <div className="text-xs text-rose-900 dark:text-rose-200 space-y-1">
-                  <p>{result.errorMessage}</p>
+                  <p className="whitespace-pre-wrap break-all">{result.errorMessage}</p>
                 </div>
               )}
             </div>

@@ -357,13 +357,13 @@ function getProtocolEndpoint(protocol: ApiProtocol, model: string, isStream: boo
   }
 }
 
-interface StreamDeltaResult {
+export interface StreamDeltaResult {
   contentChunk: string;
   reasoningChunk: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
-function extractDeltaFromChunk(parsed: unknown): StreamDeltaResult {
+export function extractDeltaFromChunk(parsed: unknown): StreamDeltaResult {
   let contentChunk = "";
   let reasoningChunk = "";
   let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined = undefined;
@@ -3573,9 +3573,18 @@ export function PlaygroundPage() {
         onClose={() => setContextProberOpen(false)}
         model={selectedModel}
         protocol={activeProtocol}
+        stream={stream}
+        enableTemperature={enableTemperature}
+        temperature={temperature}
+        enableMaxTokens={enableMaxTokens}
+        maxTokens={maxTokens}
+        enableTopP={enableTopP}
+        topP={topP}
+        reasoningEffort={reasoningEffort}
+        customHeaders={customHeaders}
+        customBodyFields={customBodyFields}
         clientApiKey={clientApiKey}
         managementKey={currentKey() || undefined}
-        customHeaders={customHeaders}
         onSaveToSession={handleSaveProbeToSession}
       />
     </div>
