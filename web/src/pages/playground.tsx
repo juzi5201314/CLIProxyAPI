@@ -12,6 +12,7 @@ import {
   Copy,
   Cpu,
   Eraser,
+  Gauge,
   ImagePlus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -62,11 +63,12 @@ import {
   customFieldsToBody,
   customHeadersToRecord,
 } from "@/components/playground/custom-params-editor";
+import { ContextProberModal } from "@/components/playground/context-prober-modal";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------- Types
 
-interface MessageMetrics {
+export interface MessageMetrics {
   latencyMs?: number;
   ttftMs?: number;
   tokens?: {
@@ -78,7 +80,7 @@ interface MessageMetrics {
   statusCode?: number;
 }
 
-interface PlaygroundMessage {
+export interface PlaygroundMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
@@ -458,7 +460,7 @@ interface NonStreamResult {
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
-function extractResponseFromData(data: unknown): NonStreamResult {
+export function extractResponseFromData(data: unknown): NonStreamResult {
   let content = "";
   let reasoning: string | undefined = undefined;
   let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined = undefined;
@@ -627,7 +629,7 @@ interface ApiError extends Error {
   payload?: unknown;
 }
 
-function extractErrorMessage(parsed: unknown, fallback: string): string {
+export function extractErrorMessage(parsed: unknown, fallback: string): string {
   if (parsed && typeof parsed === "object") {
     const obj = parsed as Record<string, unknown>;
     if (obj.error && typeof obj.error === "object") {
@@ -1132,6 +1134,7 @@ export function PlaygroundPage() {
   const [inspectorMsgId, setInspectorMsgId] = useState<string | null>(null);
   const [inspectorViewMode, setInspectorViewMode] = useState<"live" | "snapshot">("live");
   const [systemPromptExpanded, setSystemPromptExpanded] = useState(false);
+  const [contextProberOpen, setContextProberOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Resizable Right Panel
@@ -1518,6 +1521,49 @@ export function PlaygroundPage() {
         };
       }),
     );
+  };
+
+  const handleSaveProbeToSession = (
+    userPrompt: string,
+    assistantReply: string,
+    rawRequest?: BuiltPlaygroundRequest,
+    rawResponse?: unknown,
+    metrics?: MessageMetrics,
+  ) => {
+    const timestamp = Date.now();
+    const userMsg: PlaygroundMessage = {
+      id: `probe-user-${timestamp}`,
+      role: "user",
+      content: userPrompt,
+      timestamp,
+      model: selectedModel,
+      rawRequest: rawRequest
+        ? {
+            url: rawRequest.endpointPath,
+            headers: rawRequest.displayHeaders || rawRequest.headers,
+            body: rawRequest.body,
+          }
+        : undefined,
+    };
+    const assistantMsg: PlaygroundMessage = {
+      id: `probe-assistant-${timestamp + 1}`,
+      role: "assistant",
+      content: assistantReply,
+      timestamp: timestamp + 1,
+      model: selectedModel,
+      metrics,
+      rawResponse,
+    };
+
+    updateActiveSessionMessages((prev) => [...prev, userMsg, assistantMsg]);
+
+    // Update title if it was an empty or default session
+    if (activeSession.messages.length === 0 || activeSession.title.startsWith("接口调试会话 #")) {
+      const targetSummary = `上下文探测 (${selectedModel.split("/").pop() || selectedModel})`;
+      setSessions((currentSessions) =>
+        currentSessions.map((s) => (s.id === activeSessionId ? { ...s, title: targetSummary } : s)),
+      );
+    }
   };
 
   // Inspect specific message in JSON Inspector
@@ -2335,6 +2381,17 @@ export function PlaygroundPage() {
           {/* Action Tools (System Prompt, Parameters, Inspector, Clear) */}
           <div className="flex items-center gap-1.5">
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setContextProberOpen(true)}
+              className="h-8 gap-1.5 rounded-xl text-xs border-blue-200 bg-blue-50/50 text-blue-700 hover:bg-blue-100 hover:text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300 font-medium"
+              title="最大上下文探测 (Context Prober)"
+            >
+              <Gauge className="size-3.5" />
+              <span className="hidden sm:inline">上下文探测</span>
+            </Button>
+
+            <Button
               variant={systemPromptExpanded ? "secondary" : "ghost"}
               size="sm"
               onClick={() => setSystemPromptExpanded(!systemPromptExpanded)}
@@ -2440,6 +2497,28 @@ export function PlaygroundPage() {
                       </p>
                     </button>
                   ))}
+                </div>
+
+                <div className="pt-1 text-left">
+                  <button
+                    type="button"
+                    onClick={() => setContextProberOpen(true)}
+                    className="flex items-center justify-between p-3 rounded-2xl border border-blue-200/70 hover:border-blue-400 bg-blue-50/40 hover:bg-blue-50/80 text-left transition-all dark:border-blue-900/50 dark:hover:border-blue-800 dark:bg-blue-950/20 w-full group cursor-pointer shadow-2xs"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-900 dark:text-blue-200">
+                        <Gauge className="size-3.5 text-blue-600 dark:text-blue-400" />
+                        <span>最大上下文与防静默截断探测 (Context Prober)</span>
+                        <Badge variant="outline" className="text-[9px] font-mono border-blue-300 text-blue-700 dark:border-blue-800 dark:text-blue-300">
+                          64k / 256k / 500k / 1M
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        单次精准发送目标容量，验证上游真实窗口上限与防截断 PIN，载荷可直接导入复用前缀缓存
+                      </p>
+                    </div>
+                    <ArrowUp className="size-4 text-blue-500 rotate-45 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -2991,6 +3070,28 @@ export function PlaygroundPage() {
                 </p>
               </div>
 
+              {/* Context Window Prober Card */}
+              <div className="flex items-center justify-between p-3 rounded-2xl border border-blue-200/80 bg-blue-50/40 dark:border-blue-900/60 dark:bg-blue-950/20">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-blue-900 dark:text-blue-200">
+                    <Gauge className="size-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>最大上下文探测 (Prober)</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    单次发送 64k/256k/500k/1M 验证上限与截断
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  onClick={() => setContextProberOpen(true)}
+                  className="h-7 text-xs px-2.5 rounded-xl border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-900/50 cursor-pointer"
+                >
+                  开始探测
+                </Button>
+              </div>
+
               {/* Reasoning Effort (思考等级) */}
               <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800/70 dark:bg-slate-950/40">
                 <div className="flex items-center justify-between">
@@ -3466,6 +3567,17 @@ export function PlaygroundPage() {
           )}
         </div>
       </div>
+
+      <ContextProberModal
+        isOpen={contextProberOpen}
+        onClose={() => setContextProberOpen(false)}
+        model={selectedModel}
+        protocol={activeProtocol}
+        clientApiKey={clientApiKey}
+        managementKey={currentKey() || undefined}
+        customHeaders={customHeaders}
+        onSaveToSession={handleSaveProbeToSession}
+      />
     </div>
   );
 }
