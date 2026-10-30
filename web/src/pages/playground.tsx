@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -34,20 +34,33 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ALL_KINDS, type Entry } from "@/components/providers/provider-tools";
 import { MarkdownViewer } from "@/components/shared/markdown-viewer";
-import { providerLists } from "@/api/management";
+import { credentials, providerLists } from "@/api/management";
+import type { AuthFileEntry } from "@/api/types";
 import { currentKey } from "@/stores/auth";
 import { dayjs, formatDuration, formatTPS } from "@/lib/format";
+import {
+  CustomParamsSection,
+  type CustomHeader,
+  type VisualFieldNode,
+  customFieldsToBody,
+  customHeadersToRecord,
+} from "@/components/playground/custom-params-editor";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------- Types
@@ -86,6 +99,7 @@ interface PlaygroundSession {
   id: string;
   title: string;
   model: string;
+  protocol?: ApiProtocol;
   createdAt: number;
   messages: PlaygroundMessage[];
 }
@@ -95,9 +109,418 @@ interface ModelItem {
   provider: string;
 }
 
+// ----------------------------------------------------------- Protocols & Inference
+
+export type ApiProtocol = "openai" | "claude" | "codex" | "gemini";
+
+interface ProtocolMeta {
+  id: ApiProtocol;
+  label: string;
+  badge: string;
+  endpointTemplate: string;
+  desc: string;
+}
+
+const PROTOCOL_OPTIONS: ProtocolMeta[] = [
+  {
+    id: "openai",
+    label: "OpenAI 兼容",
+    badge: "OpenAI",
+    endpointTemplate: "/v1/chat/completions",
+    desc: "OpenAI Chat Completions 协议 (/v1/chat/completions)",
+  },
+  {
+    id: "claude",
+    label: "Claude 原生",
+    badge: "Claude",
+    endpointTemplate: "/v1/messages",
+    desc: "Anthropic Claude Messages 协议 (/v1/messages)",
+  },
+  {
+    id: "codex",
+    label: "Codex 原生",
+    badge: "Codex",
+    endpointTemplate: "/v1/responses",
+    desc: "OpenAI Responses / Codex 协议 (/v1/responses)",
+  },
+  {
+    id: "gemini",
+    label: "Gemini 原生",
+    badge: "Gemini",
+    endpointTemplate: "/v1beta/models/{model}",
+    desc: "Google Gemini 协议 (/v1beta/models/...)",
+  },
+];
+
+interface InferredResult {
+  protocol: ApiProtocol;
+  reason: string;
+}
+
+/**
+ * Maps a CPA provider kind (from config.yaml / API lists) to its native upstream API protocol.
+ */
+function providerKindToProtocol(kind: string): { protocol: ApiProtocol; label: string } {
+  const k = (kind || "").toLowerCase();
+  if (k.includes("claude") || k.includes("anthropic")) {
+    return { protocol: "claude", label: "Claude 原生" };
+  }
+  if (k.includes("codex")) {
+    return { protocol: "codex", label: "Codex 原生" };
+  }
+  if (k.includes("gemini") || k.includes("vertex") || k.includes("interaction") || k.includes("aistudio") || k.includes("antigravity")) {
+    return { protocol: "gemini", label: "Gemini 原生" };
+  }
+  return { protocol: "openai", label: "OpenAI 兼容" };
+}
+
+/**
+ * Maps a CPA auth/credential type (e.g. OAuth / token files) to its native upstream API protocol.
+ * In CPA, providers like Kimi, xAI/Grok, and Meta OAuth natively use OpenAI-compatible completions.
+ */
+function authTypeToProtocol(type: string, provider?: string): { protocol: ApiProtocol; label: string } {
+  const t = (type || "").toLowerCase();
+  const p = (provider || "").toLowerCase();
+  const combined = `${t} ${p}`;
+
+  if (combined.includes("kimi") || combined.includes("xai") || combined.includes("grok") || combined.includes("meta") || combined.includes("devin")) {
+    return { protocol: "openai", label: "OpenAI 兼容" };
+  }
+  if (combined.includes("claude") || combined.includes("anthropic")) {
+    return { protocol: "claude", label: "Claude 原生" };
+  }
+  if (combined.includes("codex") || combined.includes("chatgpt")) {
+    return { protocol: "codex", label: "Codex 原生" };
+  }
+  if (combined.includes("gemini") || combined.includes("google") || combined.includes("vertex") || combined.includes("antigravity") || combined.includes("aistudio")) {
+    return { protocol: "gemini", label: "Gemini 原生" };
+  }
+  return { protocol: "openai", label: "OpenAI 兼容" };
+}
+
+function inferProtocol(
+  model: string,
+  providerData?: Record<string, Entry[]>,
+  credentialsList?: AuthFileEntry[],
+  modelOptions?: ModelItem[],
+): InferredResult {
+  const targetId = (model || "").trim().toLowerCase();
+  if (!targetId) {
+    return { protocol: "openai", reason: "默认 OpenAI 兼容协议 (/v1/chat/completions)" };
+  }
+
+  // 1. Direct match on configured providers (config.yaml)
+  // Treat the entire model string as a whole ID, matching against any published ID of the provider.
+  if (providerData) {
+    for (const [kind, entries] of Object.entries(providerData)) {
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        const entryPrefix = typeof entry.prefix === "string" ? entry.prefix.trim() : "";
+        const entryName = String(entry.name || entryPrefix || kind);
+        const rawModels = Array.isArray(entry.models) ? entry.models : [];
+
+        for (const m of rawModels) {
+          const names: string[] = [];
+          if (typeof m === "string" && m.trim()) {
+            names.push(m.trim());
+            if (entryPrefix) names.push(`${entryPrefix}/${m.trim()}`);
+          } else if (m && typeof m === "object") {
+            const rec = m as Record<string, unknown>;
+            for (const key of ["alias", "name", "id", "model"]) {
+              const val = typeof rec[key] === "string" ? (rec[key] as string).trim() : "";
+              if (val) {
+                names.push(val);
+                if (entryPrefix) names.push(`${entryPrefix}/${val}`);
+              }
+            }
+          }
+
+          if (names.some((n) => n.toLowerCase() === targetId)) {
+            const meta = providerKindToProtocol(kind);
+            return { protocol: meta.protocol, reason: `匹配供应商 "${entryName}" (${meta.label})` };
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Direct match on credentials / OAuth subscription files
+  if (credentialsList && credentialsList.length > 0) {
+    for (const file of credentialsList) {
+      const filePrefix = typeof file.prefix === "string" ? file.prefix.trim() : "";
+      const rawModels = Array.isArray(file.models) ? file.models : [];
+      const names: string[] = [];
+
+      for (const m of rawModels) {
+        if (typeof m === "string" && m.trim()) {
+          names.push(m.trim());
+          if (filePrefix) names.push(`${filePrefix}/${m.trim()}`);
+        } else if (m && typeof m === "object") {
+          const rec = m as Record<string, unknown>;
+          const val = String(rec.id || rec.name || "").trim();
+          if (val) {
+            names.push(val);
+            if (filePrefix) names.push(`${filePrefix}/${val}`);
+          }
+        }
+      }
+
+      if (names.some((n) => n.toLowerCase() === targetId)) {
+        const meta = authTypeToProtocol(file.type || "", file.provider || "");
+        return { protocol: meta.protocol, reason: `匹配授权凭据 "${file.name}" (${meta.label})` };
+      }
+    }
+  }
+
+  // 3. Match from known model registry entries (modelOptions)
+  if (modelOptions) {
+    const found = modelOptions.find((m) => m.id.toLowerCase() === targetId);
+    if (found) {
+      const p = found.provider.toLowerCase();
+      if (p.includes("anthropic") || p.includes("claude")) {
+        return { protocol: "claude", reason: `模型登记归属 ${found.provider} (Claude 原生)` };
+      }
+      if (p.includes("codex")) {
+        return { protocol: "codex", reason: `模型登记归属 ${found.provider} (Codex 原生)` };
+      }
+      if (p.includes("google") || p.includes("gemini")) {
+        return { protocol: "gemini", reason: `模型登记归属 ${found.provider} (Gemini 原生)` };
+      }
+      return { protocol: "openai", reason: `模型登记归属 ${found.provider} (OpenAI 兼容)` };
+    }
+  }
+
+  // 4. Fallback name heuristics on the model ID
+  if (targetId.includes("claude")) {
+    return { protocol: "claude", reason: "依据模型名称推断为 Claude 原生 (/v1/messages)" };
+  }
+  if (targetId.includes("gemini")) {
+    return { protocol: "gemini", reason: "依据模型名称推断为 Gemini 原生 (/v1beta/models/...)" };
+  }
+  if (targetId.includes("codex")) {
+    return { protocol: "codex", reason: "依据模型名称推断为 Codex 原生 (/v1/responses)" };
+  }
+
+  // 5. Default to OpenAI compatibility
+  return { protocol: "openai", reason: "默认 OpenAI 兼容协议 (/v1/chat/completions)" };
+}
+
+function getProtocolEndpoint(protocol: ApiProtocol, model: string, isStream: boolean): string {
+  switch (protocol) {
+    case "claude":
+      return "/v1/messages";
+    case "codex":
+      return "/v1/responses";
+    case "gemini":
+      return `/v1beta/models/${model}:${isStream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+    case "openai":
+    default:
+      return "/v1/chat/completions";
+  }
+}
+
+interface StreamDeltaResult {
+  contentChunk: string;
+  reasoningChunk: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+}
+
+function extractDeltaFromChunk(parsed: unknown): StreamDeltaResult {
+  let contentChunk = "";
+  let reasoningChunk = "";
+  let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined = undefined;
+
+  if (!parsed || typeof parsed !== "object") {
+    return { contentChunk, reasoningChunk, usage };
+  }
+  const obj = parsed as Record<string, unknown>;
+
+  // 1. OpenAI format
+  if (Array.isArray(obj.choices) && obj.choices[0] && typeof obj.choices[0] === "object") {
+    const firstChoice = obj.choices[0] as Record<string, unknown>;
+    const delta = firstChoice.delta as Record<string, unknown> | undefined;
+    if (delta) {
+      if (typeof delta.content === "string") contentChunk = delta.content;
+      const reasoning = delta.reasoning_content || delta.reasoning || delta.thought;
+      if (typeof reasoning === "string") reasoningChunk = reasoning;
+    }
+  }
+
+  // 2. Claude format
+  if (obj.type === "content_block_delta" && obj.delta && typeof obj.delta === "object") {
+    const delta = obj.delta as Record<string, unknown>;
+    if (delta.type === "text_delta" || typeof delta.text === "string") {
+      contentChunk = String(delta.text || "");
+    } else if (delta.type === "thinking_delta" || typeof delta.thinking === "string") {
+      reasoningChunk = String(delta.thinking || "");
+    }
+  }
+
+  // 3. Codex / Responses format
+  if (obj.type === "response.output_text.delta" && typeof obj.delta === "string") {
+    contentChunk = obj.delta;
+  } else if (obj.type === "response.reasoning_text.delta" && typeof obj.delta === "string") {
+    reasoningChunk = obj.delta;
+  }
+
+  // 4. Gemini format
+  if (Array.isArray(obj.candidates) && obj.candidates[0] && typeof obj.candidates[0] === "object") {
+    const cand = obj.candidates[0] as Record<string, unknown>;
+    const content = cand.content as Record<string, unknown> | undefined;
+    if (content && Array.isArray(content.parts)) {
+      for (const p of content.parts) {
+        if (p && typeof p === "object") {
+          const part = p as Record<string, unknown>;
+          if (part.thought || part.thought === true) {
+            reasoningChunk += String(part.text || part.thought || "");
+          } else if (typeof part.text === "string") {
+            contentChunk += part.text;
+          }
+        }
+      }
+    }
+  }
+
+  // Usage extraction
+  if (obj.usage && typeof obj.usage === "object") {
+    const u = obj.usage as Record<string, unknown>;
+    const pt = typeof u.prompt_tokens === "number" ? u.prompt_tokens : (typeof u.input_tokens === "number" ? u.input_tokens : undefined);
+    const ct = typeof u.completion_tokens === "number" ? u.completion_tokens : (typeof u.output_tokens === "number" ? u.output_tokens : undefined);
+    const tt = typeof u.total_tokens === "number" ? u.total_tokens : ((pt ?? 0) + (ct ?? 0));
+    usage = { prompt_tokens: pt, completion_tokens: ct, total_tokens: tt };
+  } else if (obj.message && typeof obj.message === "object") {
+    const m = obj.message as Record<string, unknown>;
+    if (m.usage && typeof m.usage === "object") {
+      const u = m.usage as Record<string, unknown>;
+      const it = typeof u.input_tokens === "number" ? u.input_tokens : undefined;
+      const ot = typeof u.output_tokens === "number" ? u.output_tokens : undefined;
+      usage = { prompt_tokens: it, completion_tokens: ot, total_tokens: (it ?? 0) + (ot ?? 0) };
+    }
+  } else if (obj.response && typeof obj.response === "object") {
+    const r = obj.response as Record<string, unknown>;
+    if (r.usage && typeof r.usage === "object") {
+      const u = r.usage as Record<string, unknown>;
+      const it = typeof u.input_tokens === "number" ? u.input_tokens : undefined;
+      const ot = typeof u.output_tokens === "number" ? u.output_tokens : undefined;
+      const tt = typeof u.total_tokens === "number" ? u.total_tokens : ((it ?? 0) + (ot ?? 0));
+      usage = { prompt_tokens: it, completion_tokens: ot, total_tokens: tt };
+    }
+  } else if (obj.usageMetadata && typeof obj.usageMetadata === "object") {
+    const u = obj.usageMetadata as Record<string, unknown>;
+    const pt = typeof u.promptTokenCount === "number" ? u.promptTokenCount : undefined;
+    const ct = typeof u.candidatesTokenCount === "number" ? u.candidatesTokenCount : undefined;
+    const tt = typeof u.totalTokenCount === "number" ? u.totalTokenCount : ((pt ?? 0) + (ct ?? 0));
+    usage = { prompt_tokens: pt, completion_tokens: ct, total_tokens: tt };
+  }
+
+  return { contentChunk, reasoningChunk, usage };
+}
+
+interface NonStreamResult {
+  content: string;
+  reasoning?: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+}
+
+function extractResponseFromData(data: unknown): NonStreamResult {
+  let content = "";
+  let reasoning: string | undefined = undefined;
+  let usage: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined = undefined;
+
+  if (!data || typeof data !== "object") {
+    return { content: String(data || "(无回复内容)"), reasoning, usage };
+  }
+  const obj = data as Record<string, unknown>;
+
+  // 1. OpenAI format
+  if (Array.isArray(obj.choices) && obj.choices[0] && typeof obj.choices[0] === "object") {
+    const choice = obj.choices[0] as Record<string, unknown>;
+    const msg = choice.message as Record<string, unknown> | undefined;
+    if (msg) {
+      if (typeof msg.content === "string") content = msg.content;
+      const r = msg.reasoning_content || msg.reasoning || msg.thought;
+      if (typeof r === "string") reasoning = r;
+    }
+  }
+  // 2. Claude format
+  else if (Array.isArray(obj.content)) {
+    for (const b of obj.content) {
+      if (b && typeof b === "object") {
+        const block = b as Record<string, unknown>;
+        if (block.type === "text" && typeof block.text === "string") {
+          content += block.text;
+        } else if (block.type === "thinking" && typeof block.thinking === "string") {
+          reasoning = (reasoning || "") + block.thinking;
+        }
+      }
+    }
+  }
+  // 3. Codex / Responses format
+  else if (Array.isArray(obj.output)) {
+    for (const it of obj.output) {
+      if (it && typeof it === "object") {
+        const item = it as Record<string, unknown>;
+        if (item.type === "message" && Array.isArray(item.content)) {
+          for (const p of item.content) {
+            if (p && typeof p === "object") {
+              const part = p as Record<string, unknown>;
+              if (part.type === "output_text" && typeof part.text === "string") {
+                content += part.text;
+              }
+            }
+          }
+        } else if (typeof item.text === "string") {
+          content += item.text;
+        }
+      }
+    }
+  }
+  // 4. Gemini format
+  else if (Array.isArray(obj.candidates) && obj.candidates[0] && typeof obj.candidates[0] === "object") {
+    const cand = obj.candidates[0] as Record<string, unknown>;
+    const c = cand.content as Record<string, unknown> | undefined;
+    if (c && Array.isArray(c.parts)) {
+      for (const p of c.parts) {
+        if (p && typeof p === "object") {
+          const part = p as Record<string, unknown>;
+          if (part.thought || part.thought === true) {
+            reasoning = (reasoning || "") + String(part.text || part.thought || "");
+          } else if (typeof part.text === "string") {
+            content += part.text;
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback to text if still empty
+  if (!content && typeof obj.text === "string") {
+    content = obj.text;
+  }
+
+  // Usage extraction
+  if (obj.usage && typeof obj.usage === "object") {
+    const u = obj.usage as Record<string, unknown>;
+    const pt = typeof u.prompt_tokens === "number" ? u.prompt_tokens : (typeof u.input_tokens === "number" ? u.input_tokens : undefined);
+    const ct = typeof u.completion_tokens === "number" ? u.completion_tokens : (typeof u.output_tokens === "number" ? u.output_tokens : undefined);
+    const tt = typeof u.total_tokens === "number" ? u.total_tokens : ((pt ?? 0) + (ct ?? 0));
+    usage = { prompt_tokens: pt, completion_tokens: ct, total_tokens: tt };
+  } else if (obj.usageMetadata && typeof obj.usageMetadata === "object") {
+    const u = obj.usageMetadata as Record<string, unknown>;
+    const pt = typeof u.promptTokenCount === "number" ? u.promptTokenCount : undefined;
+    const ct = typeof u.candidatesTokenCount === "number" ? u.candidatesTokenCount : undefined;
+    const tt = typeof u.totalTokenCount === "number" ? u.totalTokenCount : ((pt ?? 0) + (ct ?? 0));
+    usage = { prompt_tokens: pt, completion_tokens: ct, total_tokens: tt };
+  }
+
+  return { content: content || "(无回复内容)", reasoning, usage };
+}
+
 // ---------------------------------------------------------------- Default Data
 
 const STORAGE_KEY = "cpa-playground-sessions-v2";
+const HEADERS_STORAGE_KEY = "cpa-playground-custom-headers";
+const BODY_STORAGE_KEY = "cpa-playground-custom-body";
 
 const POPULAR_MODELS: ModelItem[] = [
   { id: "gpt-4o", provider: "OpenAI" },
@@ -163,6 +586,156 @@ function loadPersistedSessions(): PlaygroundSession[] {
   ];
 }
 
+interface ApiError extends Error {
+  statusCode?: number;
+  payload?: unknown;
+}
+
+function extractErrorMessage(parsed: unknown, fallback: string): string {
+  if (parsed && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    if (obj.error && typeof obj.error === "object") {
+      const inner = obj.error as Record<string, unknown>;
+      if (typeof inner.message === "string" && inner.message) {
+        return inner.message;
+      }
+    }
+    if (typeof obj.message === "string" && obj.message) {
+      return obj.message;
+    }
+  }
+  return fallback;
+}
+
+// ------------------------------------------------------------- JSON Parsing & Highlighting Helpers
+
+function normalizePayloadForDisplay(val: unknown): unknown {
+  if (val === null || val === undefined) return val;
+
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    // Check for "[HTTP 500] {...}" format
+    const httpMatch = trimmed.match(/^\[HTTP\s+(\d+)\]\s*([\s\S]*)$/);
+    if (httpMatch && httpMatch[1]) {
+      const status = parseInt(httpMatch[1], 10);
+      const rest = (httpMatch[2] ?? "").trim();
+      if (rest) {
+        try {
+          const parsed = JSON.parse(rest);
+          return {
+            status,
+            ...(typeof parsed === "object" && parsed !== null
+              ? (parsed as Record<string, unknown>)
+              : { message: parsed }),
+          };
+        } catch {
+          return { status, error: rest };
+        }
+      }
+      return { status };
+    }
+
+    // Check if it's a JSON string
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return normalizePayloadForDisplay(parsed);
+      } catch {
+        return val;
+      }
+    }
+    return val;
+  }
+
+  if (Array.isArray(val)) {
+    return val.map((item) => normalizePayloadForDisplay(item));
+  }
+
+  if (typeof val === "object") {
+    const res: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val)) {
+      res[k] = normalizePayloadForDisplay(v);
+    }
+    return res;
+  }
+
+  return val;
+}
+
+function formatJsonForDisplay(payload: unknown): string {
+  if (payload === undefined || payload === null) return "";
+  const normalized = normalizePayloadForDisplay(payload);
+  if (typeof normalized === "string") {
+    return normalized;
+  }
+  try {
+    return JSON.stringify(normalized, null, 2);
+  } catch {
+    return String(normalized);
+  }
+}
+
+function renderJsonHighlighted(jsonString: string): React.ReactNode {
+  if (!jsonString) return null;
+  const regex =
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(jsonString)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(jsonString.slice(lastIndex, match.index));
+    }
+    const token = match[0];
+    if (/^"/.test(token)) {
+      if (/:$/.test(token)) {
+        // Object Key
+        parts.push(
+          <span key={match.index} className="text-cyan-400 font-semibold">
+            {token.slice(0, -1)}
+          </span>,
+          ":",
+        );
+      } else {
+        // String value
+        parts.push(
+          <span key={match.index} className="text-emerald-300">
+            {token}
+          </span>,
+        );
+      }
+    } else if (/true|false/.test(token)) {
+      parts.push(
+        <span key={match.index} className="text-purple-400 font-semibold">
+          {token}
+        </span>,
+      );
+    } else if (/null/.test(token)) {
+      parts.push(
+        <span key={match.index} className="text-rose-400 italic">
+          {token}
+        </span>,
+      );
+    } else {
+      // Number
+      parts.push(
+        <span key={match.index} className="text-amber-400">
+          {token}
+        </span>,
+      );
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < jsonString.length) {
+    parts.push(jsonString.slice(lastIndex));
+  }
+  return parts;
+}
+
 // ------------------------------------------------------------- Main Component
 
 export function PlaygroundPage() {
@@ -190,8 +763,45 @@ export function PlaygroundPage() {
   const [topP, setTopP] = useState(1.0);
   const [systemPrompt, setSystemPrompt] = useState("You are a helpful and concise AI assistant.");
   const [selectedModel, setSelectedModel] = useState<string>(activeSession.model || "gpt-4o");
-  const [customModelInput, setCustomModelInput] = useState("");
+  const [manualProtocol, setManualProtocol] = useState<ApiProtocol | null>(() => activeSession.protocol ?? null);
+  const [modelSearch, setModelSearch] = useState("");
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [clientApiKey, setClientApiKey] = useState<string>("");
+  const [customHeaders, setCustomHeaders] = useState<CustomHeader[]>(() => {
+    try {
+      const raw = localStorage.getItem(HEADERS_STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // quota or localstorage disabled
+    }
+    return [];
+  });
+  const [customBodyFields, setCustomBodyFields] = useState<VisualFieldNode[]>(() => {
+    try {
+      const raw = localStorage.getItem(BODY_STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // quota or localstorage disabled
+    }
+    return [];
+  });
+
+  // Sync custom headers and body fields to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(HEADERS_STORAGE_KEY, JSON.stringify(customHeaders));
+    } catch {
+      // quota or localstorage disabled
+    }
+  }, [customHeaders]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BODY_STORAGE_KEY, JSON.stringify(customBodyFields));
+    } catch {
+      // quota or localstorage disabled
+    }
+  }, [customBodyFields]);
 
   // Panels & Tabs
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -204,6 +814,66 @@ export function PlaygroundPage() {
   const [inspectorMsgId, setInspectorMsgId] = useState<string | null>(null);
   const [systemPromptExpanded, setSystemPromptExpanded] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Resizable Right Panel
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("cpa-playground-panel-width");
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 320 && val <= 1000) return val;
+      }
+    } catch {
+      // quota or localstorage disabled
+    }
+    return 384;
+  });
+  const [isDraggingPanel, setIsDraggingPanel] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
+  );
+
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cpa-playground-panel-width", String(panelWidth));
+    } catch {
+      // quota or localstorage disabled
+    }
+  }, [panelWidth]);
+
+  const handlePanelResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingPanel(true);
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (ev: PointerEvent) => {
+      const delta = startX - ev.clientX;
+      const minW = 320;
+      const maxW = Math.min(1000, window.innerWidth - 320);
+      const newWidth = Math.max(minW, Math.min(maxW, Math.round(startWidth + delta)));
+      setPanelWidth(newWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingPanel(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -218,10 +888,12 @@ export function PlaygroundPage() {
     if (rightPanelTab) setLastPanelTab(rightPanelTab);
   }, [rightPanelTab]);
 
-  // Reset message editing when session switches
+  // Reset message editing and restore model & protocol when session switches
   useEffect(() => {
     setEditingMsgId(null);
-  }, [activeSessionId]);
+    setSelectedModel(activeSession.model || "gpt-4o");
+    setManualProtocol(activeSession.protocol ?? null);
+  }, [activeSessionId, activeSession.model, activeSession.protocol]);
 
   // Read model from URL params if passed from provider card
   useEffect(() => {
@@ -278,6 +950,20 @@ export function PlaygroundPage() {
     staleTime: 60_000,
   });
 
+  // Load credentials / auth files (including OAuth subscriptions)
+  const credentialsQuery = useQuery({
+    queryKey: ["auth-files"],
+    queryFn: async (): Promise<AuthFileEntry[]> => {
+      try {
+        const res = await credentials.list();
+        return res.files ?? [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 60_000,
+  });
+
   // Consolidate discovered models
   const [modelOptions, setModelOptions] = useState<ModelItem[]>(POPULAR_MODELS);
   useEffect(() => {
@@ -291,22 +977,42 @@ export function PlaygroundPage() {
       list.push({ id: clean, provider });
     };
 
-    // 1. From /v1/models
-    for (const item of modelsApiQuery.data ?? []) {
-      addModel(item.id, item.provider);
-    }
-
-    // 2. From provider lists
+    // 1. From provider lists (highest fidelity with specific upstream provider names)
     const data = providersQuery.data ?? {};
     for (const [kindId, entries] of Object.entries(data)) {
       for (const entry of entries) {
         const providerName = String(entry.name || entry.prefix || kindId);
-        const models = (entry.models as { name?: string; alias?: string }[] | undefined) ?? [];
-        for (const m of models) {
-          if (m.alias) addModel(m.alias, providerName);
-          if (m.name) addModel(m.name, providerName);
+        const prefix = typeof entry.prefix === "string" ? entry.prefix.trim() : "";
+        const rawModels = Array.isArray(entry.models) ? entry.models : [];
+        for (const m of rawModels) {
+          if (typeof m === "string" && m.trim()) {
+            if (prefix) addModel(`${prefix}/${m.trim()}`, providerName);
+            addModel(m.trim(), providerName);
+          } else if (m && typeof m === "object") {
+            const rec = m as Record<string, unknown>;
+            const alias = typeof rec.alias === "string" ? rec.alias.trim() : "";
+            const name = typeof rec.name === "string" ? rec.name.trim() : "";
+            const id = typeof rec.id === "string" ? rec.id.trim() : "";
+            if (alias) {
+              if (prefix) addModel(`${prefix}/${alias}`, providerName);
+              addModel(alias, providerName);
+            }
+            if (name) {
+              if (prefix) addModel(`${prefix}/${name}`, providerName);
+              addModel(name, providerName);
+            }
+            if (id) {
+              if (prefix) addModel(`${prefix}/${id}`, providerName);
+              addModel(id, providerName);
+            }
+          }
         }
       }
+    }
+
+    // 2. From /v1/models gateway discovery
+    for (const item of modelsApiQuery.data ?? []) {
+      addModel(item.id, item.provider);
     }
 
     // 3. Append standard popular models if not yet in list
@@ -316,6 +1022,26 @@ export function PlaygroundPage() {
 
     setModelOptions(list);
   }, [modelsApiQuery.data, providersQuery.data]);
+
+  // Filter models based on search query
+  const filteredModels = useMemo(() => {
+    const q = modelSearch.trim().toLowerCase();
+    if (!q) return modelOptions;
+    return modelOptions.filter((item) => {
+      return (
+        item.id.toLowerCase().includes(q) ||
+        item.provider.toLowerCase().includes(q)
+      );
+    });
+  }, [modelOptions, modelSearch]);
+
+  // Inferred protocol derived from current model, providers and credentials
+  const inferred = useMemo(
+    () => inferProtocol(selectedModel, providersQuery.data, credentialsQuery.data, modelOptions),
+    [selectedModel, providersQuery.data, credentialsQuery.data, modelOptions],
+  );
+
+  const activeProtocol: ApiProtocol = manualProtocol ?? inferred.protocol;
 
   // Auto scroll messages to bottom
   useEffect(() => {
@@ -343,6 +1069,7 @@ export function PlaygroundPage() {
       id: newId,
       title: `${t("playground.sessionPrefix")}${sessions.length + 1}`,
       model: selectedModel || "gpt-4o",
+      protocol: manualProtocol ?? undefined,
       createdAt: Date.now(),
       messages: [],
     };
@@ -355,8 +1082,31 @@ export function PlaygroundPage() {
     const clean = model.trim();
     if (!clean) return;
     setSelectedModel(clean);
+    setManualProtocol(null);
     setSessions((currentSessions) =>
-      currentSessions.map((s) => (s.id === activeSessionId ? { ...s, model: clean } : s)),
+      currentSessions.map((s) => (s.id === activeSessionId ? { ...s, model: clean, protocol: undefined } : s)),
+    );
+  };
+
+  const handleModelInputChange = (val: string) => {
+    setSelectedModel(val);
+    setManualProtocol(null);
+    setSessions((currentSessions) =>
+      currentSessions.map((s) => (s.id === activeSessionId ? { ...s, model: val, protocol: undefined } : s)),
+    );
+  };
+
+  const handleSelectProtocol = (protocol: ApiProtocol) => {
+    setManualProtocol(protocol);
+    setSessions((currentSessions) =>
+      currentSessions.map((s) => (s.id === activeSessionId ? { ...s, protocol } : s)),
+    );
+  };
+
+  const handleResetProtocol = () => {
+    setManualProtocol(null);
+    setSessions((currentSessions) =>
+      currentSessions.map((s) => (s.id === activeSessionId ? { ...s, protocol: undefined } : s)),
     );
   };
 
@@ -535,65 +1285,195 @@ export function PlaygroundPage() {
         ? activeSession.messages.slice(0, truncateIndex)
         : activeSession.messages;
 
-    const buildContent = (m: PlaygroundMessage) => {
-      if (m.images && m.images.length > 0) {
-        return [
-          ...(m.content.trim() ? [{ type: "text", text: m.content }] : [{ type: "text", text: " " }]),
-          ...m.images.map((img) => ({
-            type: "image_url",
-            image_url: { url: img },
-          })),
-        ];
-      }
-      return m.content;
-    };
-
-    // Assemble OpenAI-standard chat payload, excluding empty or errored entries
-    const validHistory = baseHistory
-      .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
-      .map((m) => ({ role: m.role, content: buildContent(m) }));
-
-    const userPayloadContent =
-      imagesToSend.length > 0
-        ? [
-            ...(textToSend.trim() ? [{ type: "text", text: textToSend }] : [{ type: "text", text: " " }]),
-            ...imagesToSend.map((img) => ({ type: "image_url", image_url: { url: img } })),
-          ]
-        : textToSend;
-
-    const messagesPayload = [
-      ...(systemPrompt.trim() ? [{ role: "system", content: systemPrompt.trim() }] : []),
-      ...validHistory,
-      { role: "user", content: userPayloadContent },
-    ];
-
-    const requestPayload = {
-      model: targetModel,
-      messages: messagesPayload,
-      temperature,
-      max_tokens: maxTokens,
-      top_p: topP,
-      stream,
-    };
-
     const authKey = clientApiKey.trim() || currentKey() || "";
+    const customHeadersMap = customHeadersToRecord(customHeaders);
+    const customBody = customFieldsToBody(customBodyFields);
+
+    let endpointPath = "/v1/chat/completions";
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      ...(authKey ? { Authorization: `Bearer ${authKey}` } : {}),
+      ...customHeadersMap,
     };
-    if (authKey) {
-      headers["Authorization"] = `Bearer ${authKey}`;
+    let requestPayload: Record<string, unknown> = {};
+
+    if (activeProtocol === "claude") {
+      endpointPath = "/v1/messages";
+      headers["anthropic-version"] = "2023-06-01";
+      if (authKey && !headers["x-api-key"]) {
+        headers["x-api-key"] = authKey;
+      }
+
+      const buildClaudeContent = (text: string, images?: string[]) => {
+        if (!images || images.length === 0) return text;
+        const blocks: unknown[] = [];
+        if (text.trim()) blocks.push({ type: "text", text });
+        for (const img of images) {
+          const match = img.match(/^data:(image\/[a-zA-Z0-9.-]+);base64,(.+)$/);
+          if (match && match[1] && match[2]) {
+            blocks.push({
+              type: "image",
+              source: { type: "base64", media_type: match[1], data: match[2] },
+            });
+          }
+        }
+        return blocks.length > 0 ? blocks : text;
+      };
+
+      const claudeMessages = [
+        ...baseHistory
+          .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+          .map((m) => ({ role: m.role, content: buildClaudeContent(m.content, m.images) })),
+        { role: "user", content: buildClaudeContent(textToSend, imagesToSend) },
+      ];
+
+      requestPayload = {
+        model: targetModel,
+        ...(systemPrompt.trim() ? { system: systemPrompt.trim() } : {}),
+        messages: claudeMessages,
+        max_tokens: maxTokens || 2048,
+        temperature,
+        top_p: topP,
+        stream,
+        ...customBody,
+      };
+    } else if (activeProtocol === "codex") {
+      endpointPath = "/v1/responses";
+      const buildCodexContent = (m: PlaygroundMessage) => {
+        if (m.images && m.images.length > 0) {
+          return [
+            ...(m.content.trim() ? [{ type: "text", text: m.content }] : [{ type: "text", text: " " }]),
+            ...m.images.map((img) => ({ type: "image_url", image_url: { url: img } })),
+          ];
+        }
+        return m.content;
+      };
+
+      const codexHistory = baseHistory
+        .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+        .map((m) => ({ role: m.role, content: buildCodexContent(m) }));
+
+      const codexUserContent =
+        imagesToSend.length > 0
+          ? [
+              ...(textToSend.trim() ? [{ type: "text", text: textToSend }] : [{ type: "text", text: " " }]),
+              ...imagesToSend.map((img) => ({ type: "image_url", image_url: { url: img } })),
+            ]
+          : textToSend;
+
+      requestPayload = {
+        model: targetModel,
+        ...(systemPrompt.trim() ? { instructions: systemPrompt.trim() } : {}),
+        input: [...codexHistory, { role: "user", content: codexUserContent }],
+        temperature,
+        max_output_tokens: maxTokens,
+        stream,
+        ...customBody,
+      };
+    } else if (activeProtocol === "gemini") {
+      endpointPath = `/v1beta/models/${targetModel}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+      if (authKey && !headers["x-goog-api-key"]) {
+        headers["x-goog-api-key"] = authKey;
+      }
+
+      const buildGeminiParts = (text: string, images?: string[]) => {
+        const parts: unknown[] = [];
+        if (text.trim()) parts.push({ text });
+        if (images && images.length > 0) {
+          for (const img of images) {
+            const match = img.match(/^data:(image\/[a-zA-Z0-9.-]+);base64,(.+)$/);
+            if (match && match[1] && match[2]) {
+              parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+            }
+          }
+        }
+        if (parts.length === 0) parts.push({ text: " " });
+        return parts;
+      };
+
+      const geminiContents = [
+        ...baseHistory
+          .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+          .map((m) => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: buildGeminiParts(m.content, m.images),
+          })),
+        { role: "user", parts: buildGeminiParts(textToSend, imagesToSend) },
+      ];
+
+      requestPayload = {
+        contents: geminiContents,
+        ...(systemPrompt.trim() ? { systemInstruction: { parts: [{ text: systemPrompt.trim() }] } } : {}),
+        generationConfig: {
+          temperature,
+          maxOutputTokens: maxTokens,
+          topP: topP,
+        },
+        ...customBody,
+      };
+    } else {
+      // "openai"
+      endpointPath = "/v1/chat/completions";
+      const buildContent = (m: PlaygroundMessage) => {
+        if (m.images && m.images.length > 0) {
+          return [
+            ...(m.content.trim() ? [{ type: "text", text: m.content }] : [{ type: "text", text: " " }]),
+            ...m.images.map((img) => ({
+              type: "image_url",
+              image_url: { url: img },
+            })),
+          ];
+        }
+        return m.content;
+      };
+
+      const validHistory = baseHistory
+        .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+        .map((m) => ({ role: m.role, content: buildContent(m) }));
+
+      const userPayloadContent =
+        imagesToSend.length > 0
+          ? [
+              ...(textToSend.trim() ? [{ type: "text", text: textToSend }] : [{ type: "text", text: " " }]),
+              ...imagesToSend.map((img) => ({ type: "image_url", image_url: { url: img } })),
+            ]
+          : textToSend;
+
+      const messagesPayload = [
+        ...(systemPrompt.trim() ? [{ role: "system", content: systemPrompt.trim() }] : []),
+        ...validHistory,
+        { role: "user", content: userPayloadContent },
+      ];
+
+      requestPayload = {
+        model: targetModel,
+        messages: messagesPayload,
+        temperature,
+        max_tokens: maxTokens,
+        top_p: topP,
+        stream,
+        ...customBody,
+      };
     }
 
-    const endpointUrl = `${window.location.origin}/v1/chat/completions`;
+    const endpointUrl = `${window.location.origin}${endpointPath}`;
     const startTime = performance.now();
     let ttftTime: number | undefined = undefined;
 
+    const displayHeaders = { ...headers };
+    if (authKey && !customHeadersMap["Authorization"] && !customHeadersMap["authorization"]) {
+      displayHeaders["Authorization"] = `Bearer ${authKey.slice(0, 8)}...`;
+    }
+    if (authKey && displayHeaders["x-api-key"]) {
+      displayHeaders["x-api-key"] = `${authKey.slice(0, 8)}...`;
+    }
+    if (authKey && displayHeaders["x-goog-api-key"]) {
+      displayHeaders["x-goog-api-key"] = `${authKey.slice(0, 8)}...`;
+    }
+
     const rawReqRecord = {
-      url: "POST /v1/chat/completions",
-      headers: {
-        ...headers,
-        ...(authKey ? { Authorization: `Bearer ${authKey.slice(0, 8)}...` } : {}),
-      },
+      url: `POST ${endpointPath}`,
+      headers: displayHeaders,
       body: requestPayload,
     };
 
@@ -642,7 +1522,16 @@ export function PlaygroundPage() {
         const statusCode = response.status;
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`[HTTP ${statusCode}] ${errText || response.statusText}`);
+          let parsedError: unknown = null;
+          try {
+            parsedError = JSON.parse(errText);
+          } catch {
+            parsedError = null;
+          }
+          const customErr: ApiError = new Error(extractErrorMessage(parsedError, errText || response.statusText));
+          customErr.statusCode = statusCode;
+          customErr.payload = parsedError || { status: statusCode, error: errText || response.statusText };
+          throw customErr;
         }
 
         const reader = response.body?.getReader();
@@ -667,45 +1556,43 @@ export function PlaygroundPage() {
               rawChunks.push(dataStr);
               try {
                 const parsed = JSON.parse(dataStr);
-                if (parsed.usage) {
-                  streamUsage = parsed.usage;
+                const deltaRes = extractDeltaFromChunk(parsed);
+                if (deltaRes.usage) {
+                  streamUsage = deltaRes.usage;
                 }
-                const delta = parsed.choices?.[0]?.delta;
-                if (delta) {
-                  const contentChunk = delta.content || "";
-                  const reasoningChunk = delta.reasoning_content || delta.reasoning || delta.thought || "";
+                const contentChunk = deltaRes.contentChunk;
+                const reasoningChunk = deltaRes.reasoningChunk;
 
-                  if (contentChunk) {
-                    if (ttftTime === undefined) {
-                      ttftTime = Math.round(performance.now() - startTime);
-                    }
-                    accumulatedContent += contentChunk;
+                if (contentChunk) {
+                  if (ttftTime === undefined) {
+                    ttftTime = Math.round(performance.now() - startTime);
                   }
-                  if (reasoningChunk) {
-                    if (ttftTime === undefined) {
-                      ttftTime = Math.round(performance.now() - startTime);
-                    }
-                    accumulatedReasoning += reasoningChunk;
+                  accumulatedContent += contentChunk;
+                }
+                if (reasoningChunk) {
+                  if (ttftTime === undefined) {
+                    ttftTime = Math.round(performance.now() - startTime);
                   }
+                  accumulatedReasoning += reasoningChunk;
+                }
 
-                  if (contentChunk || reasoningChunk) {
-                    updateActiveSessionMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === assistantMsgId
-                          ? {
-                              ...msg,
-                              content: accumulatedContent,
-                              reasoningContent: accumulatedReasoning || undefined,
-                              metrics: {
-                                statusCode: 200,
-                                ttftMs: ttftTime,
-                                latencyMs: Math.round(performance.now() - startTime),
-                              },
-                            }
-                          : msg,
-                      ),
-                    );
-                  }
+                if (contentChunk || reasoningChunk) {
+                  updateActiveSessionMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMsgId
+                        ? {
+                            ...msg,
+                            content: accumulatedContent,
+                            reasoningContent: accumulatedReasoning || undefined,
+                            metrics: {
+                              statusCode: 200,
+                              ttftMs: ttftTime,
+                              latencyMs: Math.round(performance.now() - startTime),
+                            },
+                          }
+                        : msg,
+                    ),
+                  );
                 }
               } catch {
                 // Ignore incomplete JSON chunks
@@ -718,10 +1605,10 @@ export function PlaygroundPage() {
             if (dataStr && dataStr !== "[DONE]") {
               try {
                 const parsed = JSON.parse(dataStr);
-                if (parsed.usage) streamUsage = parsed.usage;
-                const delta = parsed.choices?.[0]?.delta;
-                if (delta?.content) accumulatedContent += delta.content;
-                if (delta?.reasoning_content) accumulatedReasoning += delta.reasoning_content;
+                const deltaRes = extractDeltaFromChunk(parsed);
+                if (deltaRes.usage) streamUsage = deltaRes.usage;
+                if (deltaRes.contentChunk) accumulatedContent += deltaRes.contentChunk;
+                if (deltaRes.reasoningChunk) accumulatedReasoning += deltaRes.reasoningChunk;
               } catch {
                 // ignore
               }
@@ -759,7 +1646,13 @@ export function PlaygroundPage() {
                   rawResponse: {
                     type: "sse-stream",
                     chunks_count: rawChunks.length,
-                    first_chunks: rawChunks.slice(0, 5),
+                    first_chunks: rawChunks.slice(0, 5).map((chunkStr) => {
+                      try {
+                        return JSON.parse(chunkStr);
+                      } catch {
+                        return chunkStr;
+                      }
+                    }),
                     final_content: accumulatedContent,
                     ...(streamUsage ? { usage: streamUsage } : {}),
                   },
@@ -779,17 +1672,28 @@ export function PlaygroundPage() {
         const statusCode = response.status;
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`[HTTP ${statusCode}] ${errText || response.statusText}`);
+          let parsedError: unknown = null;
+          try {
+            parsedError = JSON.parse(errText);
+          } catch {
+            parsedError = null;
+          }
+          const customErr: ApiError = new Error(extractErrorMessage(parsedError, errText || response.statusText));
+          customErr.statusCode = statusCode;
+          customErr.payload = parsedError || { status: statusCode, error: errText || response.statusText };
+          throw customErr;
         }
 
         const data = await response.json();
         const totalLatency = Math.round(performance.now() - startTime);
-        const answer = data.choices?.[0]?.message?.content || "(无回复内容)";
-        const reasoning = data.choices?.[0]?.message?.reasoning_content || undefined;
+        const nonStreamRes = extractResponseFromData(data);
+        const answer = nonStreamRes.content;
+        const reasoning = nonStreamRes.reasoning;
+        const streamUsageData = nonStreamRes.usage;
 
-        const inTokens = data.usage?.prompt_tokens ?? Math.ceil(textToSend.length / 3);
-        const outTokens = data.usage?.completion_tokens ?? Math.ceil(answer.length / 3);
-        const totalTokens = data.usage?.total_tokens ?? (inTokens + outTokens);
+        const inTokens = streamUsageData?.prompt_tokens ?? Math.ceil(textToSend.length / 3);
+        const outTokens = streamUsageData?.completion_tokens ?? Math.ceil(answer.length / 3);
+        const totalTokens = streamUsageData?.total_tokens ?? (inTokens + outTokens);
         const calcTPS = totalLatency > 0 ? Number((outTokens / (totalLatency / 1000)).toFixed(1)) : 0;
 
         const metrics: MessageMetrics = {
@@ -849,19 +1753,26 @@ export function PlaygroundPage() {
           ),
         );
       } else {
-        const errorMsg = (err as Error).message || String(err);
+        const errObj = err as ApiError;
+        const statusCode = typeof errObj?.statusCode === "number" ? errObj.statusCode : 500;
+        const errorMsg = errObj?.message || String(err);
         toast.error(`调用失败: ${errorMsg}`);
+
+        const responsePayload =
+          errObj?.payload ||
+          (normalizePayloadForDisplay(errorMsg) as Record<string, unknown>) ||
+          { error: errorMsg };
 
         updateActiveSessionMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMsgId
               ? {
                   ...msg,
-                  content: `⚠️ API 请求异常: ${errorMsg}\n\n排查建议：\n1. 检查凭据与供应商列表，确认是否配置了对应上游模型\n2. 检查访问密钥或管理密钥是否具有代理权限\n3. 查看请求日志与运行日志获取详细 upstream 诊断信息`,
+                  content: `⚠️ API 请求异常 (${statusCode}): ${errorMsg}\n\n排查建议：\n1. 检查凭据与供应商列表，确认是否配置了对应上游模型\n2. 检查访问密钥或管理密钥是否具有代理权限\n3. 查看请求日志与运行日志获取详细 upstream 诊断信息`,
                   error: errorMsg,
-                  metrics: { latencyMs: totalLatency, statusCode: 500 },
+                  metrics: { latencyMs: totalLatency, statusCode },
                   rawRequest: rawReqRecord,
-                  rawResponse: { error: errorMsg },
+                  rawResponse: responsePayload,
                 }
               : msg,
           ),
@@ -1063,7 +1974,13 @@ export function PlaygroundPage() {
             </Tooltip>
 
             {/* Model Selector Dropdown */}
-            <DropdownMenu>
+            <DropdownMenu
+              open={modelDropdownOpen}
+              onOpenChange={(open) => {
+                setModelDropdownOpen(open);
+                if (!open) setModelSearch("");
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-xl text-xs font-mono border-slate-200 dark:border-slate-700">
                   <Zap className="size-3 text-amber-500" />
@@ -1071,50 +1988,128 @@ export function PlaygroundPage() {
                   <ChevronDown className="size-3 text-slate-400" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-72 max-h-80 overflow-y-auto rounded-2xl p-1.5">
-                <DropdownMenuLabel className="text-[10px] text-slate-400 uppercase tracking-wider px-2 py-1">
-                  选择测试模型
-                </DropdownMenuLabel>
-                <div className="p-1">
-                  <Input
-                    placeholder="输入自定义模型名..."
-                    value={customModelInput}
-                    onChange={(e) => setCustomModelInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && customModelInput.trim()) {
-                        handleSelectModel(customModelInput.trim());
-                        setCustomModelInput("");
-                      }
-                    }}
-                    className="h-7 text-xs font-mono rounded-lg mb-1"
-                  />
-                  {customModelInput.trim() && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="w-full h-6 text-[10px] mb-1"
-                      onClick={() => {
-                        handleSelectModel(customModelInput.trim());
-                        setCustomModelInput("");
+              <DropdownMenuContent align="start" className="w-80 sm:w-96 rounded-2xl p-0 shadow-xl overflow-hidden">
+                {/* Search Bar Header */}
+                <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="relative flex items-center">
+                    <Search className="absolute left-2.5 size-3.5 text-slate-400 pointer-events-none" />
+                    <Input
+                      autoFocus
+                      placeholder="搜索模型名称或厂商 (如 gpt, codex, ag/)..."
+                      value={modelSearch}
+                      onChange={(e) => setModelSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const trimmed = modelSearch.trim();
+                          if (!trimmed) return;
+                          const firstMatch = filteredModels[0];
+                          if (firstMatch) {
+                            handleSelectModel(firstMatch.id);
+                          } else {
+                            handleSelectModel(trimmed);
+                          }
+                          setModelDropdownOpen(false);
+                          setModelSearch("");
+                        }
                       }}
+                      className="h-8 pl-8 pr-7 text-xs font-mono rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 focus-visible:ring-1"
+                    />
+                    {modelSearch && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setModelSearch("");
+                        }}
+                        className="absolute right-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between mt-1.5 px-0.5 text-[10px] text-slate-400">
+                    <span>选择测试模型</span>
+                    <span>{filteredModels.length} / {modelOptions.length} 个模型</span>
+                  </div>
+                </div>
+
+                {/* Custom Model Quick Action when typed text does not match an existing model */}
+                {modelSearch.trim() && !modelOptions.some((m) => m.id.toLowerCase() === modelSearch.trim().toLowerCase()) && (
+                  <div className="p-1.5 border-b border-slate-100 dark:border-slate-800 bg-blue-50/40 dark:bg-blue-950/20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSelectModel(modelSearch.trim());
+                        setModelDropdownOpen(false);
+                        setModelSearch("");
+                      }}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-mono rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-300 transition-colors"
                     >
-                      使用自定义: {customModelInput.trim()}
-                    </Button>
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Plus className="size-3 shrink-0" />
+                        <span>使用自定义模型: <strong className="font-semibold">{modelSearch.trim()}</strong></span>
+                      </span>
+                      <Badge variant="outline" className="text-[10px] shrink-0 border-blue-300 dark:border-blue-700">
+                        Enter ↵
+                      </Badge>
+                    </button>
+                  </div>
+                )}
+
+                {/* Scrollable Model List */}
+                <div className="max-h-80 overflow-y-auto p-1 space-y-0.5">
+                  {filteredModels.length === 0 ? (
+                    <div className="py-6 px-4 text-center text-xs text-slate-400">
+                      <p>未找到匹配的模型</p>
+                      {modelSearch.trim() && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 text-xs font-mono h-7"
+                          onClick={() => {
+                            handleSelectModel(modelSearch.trim());
+                            setModelDropdownOpen(false);
+                            setModelSearch("");
+                          }}
+                        >
+                          使用 "{modelSearch.trim()}" 作为自定义模型
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    filteredModels.map((item) => {
+                      const isSelected = item.id === selectedModel;
+                      return (
+                        <DropdownMenuItem
+                          key={item.id}
+                          onClick={() => {
+                            handleSelectModel(item.id);
+                            setModelDropdownOpen(false);
+                            setModelSearch("");
+                          }}
+                          className={cn(
+                            "flex items-center justify-between text-xs font-mono py-1.5 px-2.5 rounded-xl cursor-pointer transition-colors",
+                            isSelected && "bg-slate-100 font-medium dark:bg-slate-800/80",
+                          )}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isSelected ? (
+                              <Check className="size-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                            ) : (
+                              <div className="size-3.5 shrink-0" />
+                            )}
+                            <span className="truncate">{item.id}</span>
+                          </div>
+                          <Badge variant="secondary" className="text-[9px] font-normal shrink-0 ml-2">
+                            {item.provider}
+                          </Badge>
+                        </DropdownMenuItem>
+                      );
+                    })
                   )}
                 </div>
-                <DropdownMenuSeparator />
-                {modelOptions.map((item) => (
-                  <DropdownMenuItem
-                    key={item.id}
-                    onClick={() => handleSelectModel(item.id)}
-                    className="flex items-center justify-between text-xs font-mono py-1.5 rounded-xl cursor-pointer"
-                  >
-                    <span>{item.id}</span>
-                    <Badge variant="secondary" className="text-[9px] font-normal">
-                      {item.provider}
-                    </Badge>
-                  </DropdownMenuItem>
-                ))}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -1122,7 +2117,12 @@ export function PlaygroundPage() {
             {!rightPanelTab && (
               <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400 pl-1 font-mono">
                 <span className="size-2 rounded-full bg-emerald-500" />
-                <span>/v1/chat/completions</span>
+                <span className="font-semibold text-slate-600 dark:text-slate-300">
+                  {PROTOCOL_OPTIONS.find((p) => p.id === activeProtocol)?.badge}
+                </span>
+                <span className="text-slate-400">
+                  {getProtocolEndpoint(activeProtocol, selectedModel, stream)}
+                </span>
               </div>
             )}
           </div>
@@ -1206,7 +2206,7 @@ export function PlaygroundPage() {
                 CLIProxyAPI · 接口调试测控台
               </h3>
               <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                向当前网关后端真实发起 <code className="font-mono text-blue-600 dark:text-blue-400 font-semibold">/v1/chat/completions</code> 请求，实时检验流式吞吐、首字延迟 (TTFT) 与模型推理质量。
+                向当前网关后端真实发起 <code className="font-mono text-blue-600 dark:text-blue-400 font-semibold">{getProtocolEndpoint(activeProtocol, selectedModel, stream)}</code> 请求，实时检验流式吞吐、首字延迟 (TTFT) 与模型推理质量。
               </p>
 
               {/* Preset Quick Prompts */}
@@ -1629,15 +2629,46 @@ export function PlaygroundPage() {
         />
       )}
       <div
+        style={{
+          width: rightPanelTab ? (isDesktop ? `${panelWidth}px` : undefined) : 0,
+        }}
         className={cn(
-          "fixed inset-y-0 right-0 z-50 w-80 overflow-hidden transition-transform duration-200 ease-in-out",
-          "md:static md:z-auto md:shrink-0 md:translate-x-0 md:transition-[width]",
-          rightPanelTab ? "translate-x-0 md:w-96" : "translate-x-full md:w-0",
+          "fixed inset-y-0 right-0 z-50 overflow-hidden",
+          !isDraggingPanel && "transition-[width,transform] duration-200 ease-in-out",
+          "md:static md:z-auto md:shrink-0 md:translate-x-0",
+          rightPanelTab ? "translate-x-0 w-80 max-w-[90vw] md:w-auto" : "translate-x-full w-0 md:w-0",
         )}
       >
-        <div className="flex h-full w-80 md:w-96 flex-col border-l border-slate-200/70 bg-white/95 dark:border-slate-800/70 dark:bg-slate-900/95 backdrop-blur-xl">
+        <div
+          style={{
+            width: isDesktop ? `${panelWidth}px` : undefined,
+          }}
+          className={cn(
+            "relative flex h-full w-80 max-w-[90vw] md:w-auto flex-col border-l border-slate-200/70 bg-white/95 dark:border-slate-800/70 dark:bg-slate-900/95 backdrop-blur-xl",
+            isDraggingPanel && "select-none",
+          )}
+        >
+          {/* Left Resize Handle on Desktop */}
+          {rightPanelTab && isDesktop && (
+            <div
+              onPointerDown={handlePanelResizeStart}
+              className={cn(
+                "absolute top-0 bottom-0 -left-1.5 w-3 cursor-col-resize z-50 flex items-center justify-center group/resizer select-none touch-none",
+                isDraggingPanel && "cursor-col-resize",
+              )}
+              title="按住并左右拖动调整面板宽度"
+            >
+              <div
+                className={cn(
+                  "w-1 h-8 rounded-full bg-slate-300 dark:bg-slate-700 transition-all duration-150 group-hover/resizer:bg-blue-500 group-hover/resizer:h-16 group-hover/resizer:w-1.5",
+                  isDraggingPanel && "bg-blue-600 h-28 w-1.5 shadow-sm",
+                )}
+              />
+            </div>
+          )}
+
           {/* Panel Header Tabs */}
-          <div className="flex h-[53px] items-center justify-between border-b border-slate-200/70 px-3 dark:border-slate-800/70">
+          <div className="flex h-[53px] items-center justify-between border-b border-slate-200/70 px-3 dark:border-slate-800/70 shrink-0">
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl">
               <button
                 type="button"
@@ -1681,18 +2712,68 @@ export function PlaygroundPage() {
 
           {/* Tab Content: Parameters */}
           {panelTab === "params" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs select-none">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 text-xs select-none">
               {/* Target Model Input */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">目标模型 (Model)</Label>
                 <Input
                   value={selectedModel}
-                  onChange={(e) => handleSelectModel(e.target.value)}
+                  onChange={(e) => handleModelInputChange(e.target.value)}
                   placeholder="例如: gpt-4o, claude-3-7-sonnet..."
                   className="h-8 font-mono text-xs rounded-xl"
                 />
                 <p className="text-[10px] text-slate-400">
                   支持官方模型 ID 或 config.yaml 中配置的模型别名
+                </p>
+              </div>
+
+              {/* API Protocol Selector */}
+              <div className="space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800/60 dark:bg-slate-950/40">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {t("playground.protocol", "接口协议 (API Protocol)")}
+                  </span>
+                  {manualProtocol ? (
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[9px] font-normal border-amber-300 text-amber-600 dark:text-amber-400">
+                        {t("playground.manualOverrideBadge", "手动指定")}
+                      </Badge>
+                      <button
+                        type="button"
+                        onClick={handleResetProtocol}
+                        className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                      >
+                        {t("playground.resetToAuto", "恢复自动推断")}
+                      </button>
+                    </div>
+                  ) : (
+                    <Badge variant="secondary" className="text-[9px] font-normal bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400" title={inferred.reason}>
+                      ⚡ {t("playground.autoInferBadge", "自动推断")}
+                    </Badge>
+                  )}
+                </div>
+
+                <Select
+                  value={activeProtocol}
+                  onValueChange={(val) => handleSelectProtocol(val as ApiProtocol)}
+                >
+                  <SelectTrigger className="h-8 w-full rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {PROTOCOL_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id} className="text-xs font-mono cursor-pointer py-1.5">
+                        <div className="flex flex-col gap-0.5 text-left">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">{opt.label}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{opt.endpointTemplate}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  {manualProtocol ? "已手动切换请求协议格式" : `已根据模型与凭据推断: ${inferred.reason}`}
                 </p>
               </div>
 
@@ -1771,12 +2852,20 @@ export function PlaygroundPage() {
                   用于模拟下游应用带 Key 访问，测试 API Key 权限策略
                 </p>
               </div>
+
+              {/* Custom Headers and Body Parameters */}
+              <CustomParamsSection
+                customHeaders={customHeaders}
+                setCustomHeaders={setCustomHeaders}
+                customBodyFields={customBodyFields}
+                setCustomBodyFields={setCustomBodyFields}
+              />
             </div>
           )}
 
           {/* Tab Content: JSON Inspector */}
           {panelTab === "inspector" && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
               {inspectedMessage && (inspectedMessage.rawRequest || inspectedMessage.rawResponse) ? (
                 <>
                   {/* Request JSON Section */}
@@ -1789,7 +2878,7 @@ export function PlaygroundPage() {
                         type="button"
                         onClick={() =>
                           handleCopy(
-                            JSON.stringify(inspectedMessage.rawRequest, null, 2),
+                            formatJsonForDisplay(inspectedMessage.rawRequest),
                             "req-json",
                           )
                         }
@@ -1801,7 +2890,9 @@ export function PlaygroundPage() {
                     </div>
 
                     <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] font-mono text-slate-200 overflow-x-auto max-h-56">
-                      <pre>{JSON.stringify(inspectedMessage.rawRequest, null, 2)}</pre>
+                      <pre className="leading-relaxed whitespace-pre font-mono">
+                        {renderJsonHighlighted(formatJsonForDisplay(inspectedMessage.rawRequest))}
+                      </pre>
                     </div>
                   </div>
 
@@ -1825,7 +2916,7 @@ export function PlaygroundPage() {
                         type="button"
                         onClick={() =>
                           handleCopy(
-                            JSON.stringify(inspectedMessage.rawResponse, null, 2),
+                            formatJsonForDisplay(inspectedMessage.rawResponse),
                             "res-json",
                           )
                         }
@@ -1837,7 +2928,9 @@ export function PlaygroundPage() {
                     </div>
 
                     <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] font-mono text-slate-200 overflow-x-auto max-h-64">
-                      <pre>{JSON.stringify(inspectedMessage.rawResponse, null, 2)}</pre>
+                      <pre className="leading-relaxed whitespace-pre font-mono">
+                        {renderJsonHighlighted(formatJsonForDisplay(inspectedMessage.rawResponse))}
+                      </pre>
                     </div>
                   </div>
 
