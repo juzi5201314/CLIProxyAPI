@@ -772,6 +772,284 @@ function renderJsonHighlighted(jsonString: string): React.ReactNode {
   return parts;
 }
 
+export interface BuildRequestOptions {
+  protocol: ApiProtocol;
+  model: string;
+  systemPrompt: string;
+  inputText: string;
+  inputImages?: string[];
+  history: PlaygroundMessage[];
+  stream: boolean;
+  enableTemperature: boolean;
+  temperature: number;
+  enableMaxTokens: boolean;
+  maxTokens: number;
+  enableTopP: boolean;
+  topP: number;
+  reasoningEffort: ReasoningEffortLevel;
+  customHeaders: CustomHeader[];
+  customBodyFields: VisualFieldNode[];
+  clientApiKey?: string;
+  managementKey?: string;
+}
+
+export interface BuiltPlaygroundRequest {
+  endpointPath: string;
+  headers: Record<string, string>;
+  displayHeaders: Record<string, string>;
+  body: Record<string, unknown>;
+}
+
+export function buildPlaygroundRequest(opts: BuildRequestOptions): BuiltPlaygroundRequest {
+  const targetModel = opts.model.trim() || "gpt-4o";
+  const authKey = opts.clientApiKey?.trim() || opts.managementKey?.trim() || "";
+  const customHeadersMap = customHeadersToRecord(opts.customHeaders);
+  const customBody = customFieldsToBody(opts.customBodyFields);
+
+  let endpointPath = "/v1/chat/completions";
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(authKey ? { Authorization: `Bearer ${authKey}` } : {}),
+    ...customHeadersMap,
+  };
+  const displayHeaders: Record<string, string> = { ...headers };
+  if (authKey && !customHeadersMap["Authorization"] && !customHeadersMap["authorization"]) {
+    displayHeaders["Authorization"] = `Bearer ${authKey.slice(0, 8)}...`;
+  }
+
+  let body: Record<string, unknown> = {};
+
+  const userText = opts.inputText.trim();
+  const userImages = opts.inputImages || [];
+  const hasUserTurn = userText.length > 0 || userImages.length > 0;
+
+  if (opts.protocol === "claude") {
+    endpointPath = "/v1/messages";
+    headers["anthropic-version"] = "2023-06-01";
+    displayHeaders["anthropic-version"] = "2023-06-01";
+    if (authKey && !headers["x-api-key"]) {
+      headers["x-api-key"] = authKey;
+      displayHeaders["x-api-key"] = `${authKey.slice(0, 8)}...`;
+    }
+
+    const buildClaudeContent = (text: string, images?: string[]) => {
+      if (!images || images.length === 0) return text || " ";
+      const blocks: unknown[] = [];
+      if (text.trim()) blocks.push({ type: "text", text });
+      for (const img of images) {
+        const match = img.match(/^data:(image\/[a-zA-Z0-9.-]+);base64,(.+)$/);
+        if (match && match[1] && match[2]) {
+          blocks.push({
+            type: "image",
+            source: { type: "base64", media_type: match[1], data: match[2] },
+          });
+        }
+      }
+      return blocks.length > 0 ? blocks : text || " ";
+    };
+
+    const claudeHistory = opts.history
+      .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+      .map((m) => ({ role: m.role, content: buildClaudeContent(m.content, m.images) }));
+
+    const claudeMessages = [
+      ...claudeHistory,
+      ...(hasUserTurn
+        ? [{ role: "user", content: buildClaudeContent(userText, userImages) }]
+        : claudeHistory.length === 0
+          ? [{ role: "user", content: " " }]
+          : []),
+    ];
+
+    body = {
+      model: targetModel,
+      ...(opts.systemPrompt.trim() ? { system: opts.systemPrompt.trim() } : {}),
+      messages: claudeMessages,
+      ...(opts.enableMaxTokens ? { max_tokens: opts.maxTokens || 2048 } : {}),
+      ...(opts.enableTemperature ? { temperature: opts.temperature } : {}),
+      ...(opts.enableTopP ? { top_p: opts.topP } : {}),
+      stream: opts.stream,
+      ...(opts.reasoningEffort !== "off"
+        ? {
+            thinking: { type: "adaptive" },
+            output_config: { effort: opts.reasoningEffort },
+          }
+        : {}),
+      ...customBody,
+    };
+  } else if (opts.protocol === "codex") {
+    endpointPath = "/v1/responses";
+    const buildCodexContent = (m: PlaygroundMessage) => {
+      if (m.images && m.images.length > 0) {
+        return [
+          ...(m.content.trim() ? [{ type: "text", text: m.content }] : [{ type: "text", text: " " }]),
+          ...m.images.map((img) => ({ type: "image_url", image_url: { url: img } })),
+        ];
+      }
+      return m.content || " ";
+    };
+
+    const codexHistory = opts.history
+      .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+      .map((m) => ({ role: m.role, content: buildCodexContent(m) }));
+
+    const codexUserContent =
+      userImages.length > 0
+        ? [
+            ...(userText.length > 0 ? [{ type: "text", text: userText }] : [{ type: "text", text: " " }]),
+            ...userImages.map((img) => ({ type: "image_url", image_url: { url: img } })),
+          ]
+        : userText || " ";
+
+    const codexInput = [
+      ...codexHistory,
+      ...(hasUserTurn
+        ? [{ role: "user", content: codexUserContent }]
+        : codexHistory.length === 0
+          ? [{ role: "user", content: " " }]
+          : []),
+    ];
+
+    body = {
+      model: targetModel,
+      ...(opts.systemPrompt.trim() ? { instructions: opts.systemPrompt.trim() } : {}),
+      input: codexInput,
+      ...(opts.enableTemperature ? { temperature: opts.temperature } : {}),
+      ...(opts.enableMaxTokens ? { max_output_tokens: opts.maxTokens } : {}),
+      stream: opts.stream,
+      ...(opts.reasoningEffort !== "off"
+        ? {
+            reasoning: { effort: opts.reasoningEffort },
+          }
+        : {}),
+      ...customBody,
+    };
+  } else if (opts.protocol === "gemini") {
+    endpointPath = `/v1beta/models/${targetModel}:${opts.stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+    if (authKey && !headers["x-goog-api-key"]) {
+      headers["x-goog-api-key"] = authKey;
+      displayHeaders["x-goog-api-key"] = `${authKey.slice(0, 8)}...`;
+    }
+
+    const buildGeminiParts = (text: string, images?: string[]) => {
+      const parts: unknown[] = [];
+      if (text.trim()) parts.push({ text });
+      if (images && images.length > 0) {
+        for (const img of images) {
+          const match = img.match(/^data:(image\/[a-zA-Z0-9.-]+);base64,(.+)$/);
+          if (match && match[1] && match[2]) {
+            parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+          }
+        }
+      }
+      if (parts.length === 0) parts.push({ text: " " });
+      return parts;
+    };
+
+    const geminiHistory = opts.history
+      .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: buildGeminiParts(m.content, m.images),
+      }));
+
+    const geminiContents = [
+      ...geminiHistory,
+      ...(hasUserTurn
+        ? [{ role: "user", parts: buildGeminiParts(userText, userImages) }]
+        : geminiHistory.length === 0
+          ? [{ role: "user", parts: [{ text: " " }] }]
+          : []),
+    ];
+
+    const generationConfig: Record<string, unknown> = {};
+    if (opts.enableTemperature) generationConfig.temperature = opts.temperature;
+    if (opts.enableMaxTokens) generationConfig.maxOutputTokens = opts.maxTokens;
+    if (opts.enableTopP) generationConfig.topP = opts.topP;
+    if (opts.reasoningEffort !== "off") {
+      generationConfig.thinkingConfig = {
+        thinkingLevel: opts.reasoningEffort,
+      };
+    }
+
+    body = {
+      contents: geminiContents,
+      ...(opts.systemPrompt.trim() ? { systemInstruction: { parts: [{ text: opts.systemPrompt.trim() }] } } : {}),
+      ...(Object.keys(generationConfig).length > 0 ? { generationConfig } : {}),
+      ...customBody,
+    };
+  } else {
+    // "openai"
+    endpointPath = "/v1/chat/completions";
+    const buildContent = (m: PlaygroundMessage) => {
+      if (m.images && m.images.length > 0) {
+        return [
+          ...(m.content.trim() ? [{ type: "text", text: m.content }] : [{ type: "text", text: " " }]),
+          ...m.images.map((img) => ({
+            type: "image_url",
+            image_url: { url: img },
+          })),
+        ];
+      }
+      return m.content || " ";
+    };
+
+    const validHistory = opts.history
+      .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
+      .map((m) => ({ role: m.role, content: buildContent(m) }));
+
+    const userPayloadContent =
+      userImages.length > 0
+        ? [
+            ...(userText.length > 0 ? [{ type: "text", text: userText }] : [{ type: "text", text: " " }]),
+            ...userImages.map((img) => ({ type: "image_url", image_url: { url: img } })),
+          ]
+        : userText || " ";
+
+    const messagesPayload = [
+      ...(opts.systemPrompt.trim() ? [{ role: "system", content: opts.systemPrompt.trim() }] : []),
+      ...validHistory,
+      ...(hasUserTurn
+        ? [{ role: "user", content: userPayloadContent }]
+        : validHistory.length === 0
+          ? [{ role: "user", content: " " }]
+          : []),
+    ];
+
+    body = {
+      model: targetModel,
+      messages: messagesPayload,
+      ...(opts.enableTemperature ? { temperature: opts.temperature } : {}),
+      ...(opts.enableMaxTokens ? { max_tokens: opts.maxTokens } : {}),
+      ...(opts.enableTopP ? { top_p: opts.topP } : {}),
+      stream: opts.stream,
+      ...(opts.reasoningEffort !== "off" ? { reasoning_effort: opts.reasoningEffort } : {}),
+      ...customBody,
+    };
+  }
+
+  return {
+    endpointPath,
+    headers,
+    displayHeaders,
+    body,
+  };
+}
+
+function generateCurlSnippet(req: {
+  endpointPath: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}): string {
+  const url = `${typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8317"}${req.endpointPath}`;
+  const headerLines = Object.entries(req.headers)
+    .map(([k, v]) => `  -H "${k}: ${v.replace(/"/g, '\\"')}"`)
+    .join(" \\\n");
+  const bodyJson = JSON.stringify(req.body, null, 2);
+
+  return `curl -X POST "${url}" \\\n${headerLines} \\\n  -d '${bodyJson.replace(/'/g, "'\\''")}'`;
+}
+
 // ------------------------------------------------------------- Main Component
 
 export function PlaygroundPage() {
@@ -852,6 +1130,7 @@ export function PlaygroundPage() {
   const [lastPanelTab, setLastPanelTab] = useState<"params" | "inspector">("params");
   const panelTab = rightPanelTab ?? lastPanelTab;
   const [inspectorMsgId, setInspectorMsgId] = useState<string | null>(null);
+  const [inspectorViewMode, setInspectorViewMode] = useState<"live" | "snapshot">("live");
   const [systemPromptExpanded, setSystemPromptExpanded] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -1082,6 +1361,48 @@ export function PlaygroundPage() {
   );
 
   const activeProtocol: ApiProtocol = manualProtocol ?? inferred.protocol;
+
+  // Live real-time assembled request payload based on current parameters and state
+  const liveRequest = useMemo(() => {
+    return buildPlaygroundRequest({
+      protocol: activeProtocol,
+      model: selectedModel,
+      systemPrompt,
+      inputText: input,
+      inputImages,
+      history: activeSession.messages,
+      stream,
+      enableTemperature,
+      temperature,
+      enableMaxTokens,
+      maxTokens,
+      enableTopP,
+      topP,
+      reasoningEffort,
+      customHeaders,
+      customBodyFields,
+      clientApiKey,
+      managementKey: currentKey(),
+    });
+  }, [
+    activeProtocol,
+    selectedModel,
+    systemPrompt,
+    input,
+    inputImages,
+    activeSession.messages,
+    stream,
+    enableTemperature,
+    temperature,
+    enableMaxTokens,
+    maxTokens,
+    enableTopP,
+    topP,
+    reasoningEffort,
+    customHeaders,
+    customBodyFields,
+    clientApiKey,
+  ]);
 
   // Auto scroll messages to bottom
   useEffect(() => {
@@ -1325,209 +1646,35 @@ export function PlaygroundPage() {
         ? activeSession.messages.slice(0, truncateIndex)
         : activeSession.messages;
 
-    const authKey = clientApiKey.trim() || currentKey() || "";
-    const customHeadersMap = customHeadersToRecord(customHeaders);
-    const customBody = customFieldsToBody(customBodyFields);
+    const built = buildPlaygroundRequest({
+      protocol: activeProtocol,
+      model: targetModel,
+      systemPrompt,
+      inputText: textToSend,
+      inputImages: imagesToSend,
+      history: baseHistory,
+      stream,
+      enableTemperature,
+      temperature,
+      enableMaxTokens,
+      maxTokens,
+      enableTopP,
+      topP,
+      reasoningEffort,
+      customHeaders,
+      customBodyFields,
+      clientApiKey,
+      managementKey: currentKey(),
+    });
 
-    let endpointPath = "/v1/chat/completions";
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(authKey ? { Authorization: `Bearer ${authKey}` } : {}),
-      ...customHeadersMap,
-    };
-    let requestPayload: Record<string, unknown> = {};
-
-    if (activeProtocol === "claude") {
-      endpointPath = "/v1/messages";
-      headers["anthropic-version"] = "2023-06-01";
-      if (authKey && !headers["x-api-key"]) {
-        headers["x-api-key"] = authKey;
-      }
-
-      const buildClaudeContent = (text: string, images?: string[]) => {
-        if (!images || images.length === 0) return text;
-        const blocks: unknown[] = [];
-        if (text.trim()) blocks.push({ type: "text", text });
-        for (const img of images) {
-          const match = img.match(/^data:(image\/[a-zA-Z0-9.-]+);base64,(.+)$/);
-          if (match && match[1] && match[2]) {
-            blocks.push({
-              type: "image",
-              source: { type: "base64", media_type: match[1], data: match[2] },
-            });
-          }
-        }
-        return blocks.length > 0 ? blocks : text;
-      };
-
-      const claudeMessages = [
-        ...baseHistory
-          .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
-          .map((m) => ({ role: m.role, content: buildClaudeContent(m.content, m.images) })),
-        { role: "user", content: buildClaudeContent(textToSend, imagesToSend) },
-      ];
-
-      requestPayload = {
-        model: targetModel,
-        ...(systemPrompt.trim() ? { system: systemPrompt.trim() } : {}),
-        messages: claudeMessages,
-        ...(enableMaxTokens ? { max_tokens: maxTokens || 2048 } : {}),
-        ...(enableTemperature ? { temperature } : {}),
-        ...(enableTopP ? { top_p: topP } : {}),
-        stream,
-        ...(reasoningEffort !== "off"
-          ? {
-              thinking: { type: "adaptive" },
-              output_config: { effort: reasoningEffort },
-            }
-          : {}),
-        ...customBody,
-      };
-    } else if (activeProtocol === "codex") {
-      endpointPath = "/v1/responses";
-      const buildCodexContent = (m: PlaygroundMessage) => {
-        if (m.images && m.images.length > 0) {
-          return [
-            ...(m.content.trim() ? [{ type: "text", text: m.content }] : [{ type: "text", text: " " }]),
-            ...m.images.map((img) => ({ type: "image_url", image_url: { url: img } })),
-          ];
-        }
-        return m.content;
-      };
-
-      const codexHistory = baseHistory
-        .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
-        .map((m) => ({ role: m.role, content: buildCodexContent(m) }));
-
-      const codexUserContent =
-        imagesToSend.length > 0
-          ? [
-              ...(textToSend.trim() ? [{ type: "text", text: textToSend }] : [{ type: "text", text: " " }]),
-              ...imagesToSend.map((img) => ({ type: "image_url", image_url: { url: img } })),
-            ]
-          : textToSend;
-
-      requestPayload = {
-        model: targetModel,
-        ...(systemPrompt.trim() ? { instructions: systemPrompt.trim() } : {}),
-        input: [...codexHistory, { role: "user", content: codexUserContent }],
-        ...(enableTemperature ? { temperature } : {}),
-        ...(enableMaxTokens ? { max_output_tokens: maxTokens } : {}),
-        stream,
-        ...(reasoningEffort !== "off"
-          ? {
-              reasoning: { effort: reasoningEffort },
-            }
-          : {}),
-        ...customBody,
-      };
-    } else if (activeProtocol === "gemini") {
-      endpointPath = `/v1beta/models/${targetModel}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
-      if (authKey && !headers["x-goog-api-key"]) {
-        headers["x-goog-api-key"] = authKey;
-      }
-
-      const buildGeminiParts = (text: string, images?: string[]) => {
-        const parts: unknown[] = [];
-        if (text.trim()) parts.push({ text });
-        if (images && images.length > 0) {
-          for (const img of images) {
-            const match = img.match(/^data:(image\/[a-zA-Z0-9.-]+);base64,(.+)$/);
-            if (match && match[1] && match[2]) {
-              parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
-            }
-          }
-        }
-        if (parts.length === 0) parts.push({ text: " " });
-        return parts;
-      };
-
-      const geminiContents = [
-        ...baseHistory
-          .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
-          .map((m) => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: buildGeminiParts(m.content, m.images),
-          })),
-        { role: "user", parts: buildGeminiParts(textToSend, imagesToSend) },
-      ];
-
-      const generationConfig: Record<string, unknown> = {};
-      if (enableTemperature) generationConfig.temperature = temperature;
-      if (enableMaxTokens) generationConfig.maxOutputTokens = maxTokens;
-      if (enableTopP) generationConfig.topP = topP;
-      if (reasoningEffort !== "off") {
-        generationConfig.thinkingConfig = {
-          thinkingLevel: reasoningEffort,
-        };
-      }
-
-      requestPayload = {
-        contents: geminiContents,
-        ...(systemPrompt.trim() ? { systemInstruction: { parts: [{ text: systemPrompt.trim() }] } } : {}),
-        ...(Object.keys(generationConfig).length > 0 ? { generationConfig } : {}),
-        ...customBody,
-      };
-    } else {
-      // "openai"
-      endpointPath = "/v1/chat/completions";
-      const buildContent = (m: PlaygroundMessage) => {
-        if (m.images && m.images.length > 0) {
-          return [
-            ...(m.content.trim() ? [{ type: "text", text: m.content }] : [{ type: "text", text: " " }]),
-            ...m.images.map((img) => ({
-              type: "image_url",
-              image_url: { url: img },
-            })),
-          ];
-        }
-        return m.content;
-      };
-
-      const validHistory = baseHistory
-        .filter((m) => !m.error && (m.content.trim().length > 0 || (m.images && m.images.length > 0)) && (m.role === "user" || m.role === "assistant"))
-        .map((m) => ({ role: m.role, content: buildContent(m) }));
-
-      const userPayloadContent =
-        imagesToSend.length > 0
-          ? [
-              ...(textToSend.trim() ? [{ type: "text", text: textToSend }] : [{ type: "text", text: " " }]),
-              ...imagesToSend.map((img) => ({ type: "image_url", image_url: { url: img } })),
-            ]
-          : textToSend;
-
-      const messagesPayload = [
-        ...(systemPrompt.trim() ? [{ role: "system", content: systemPrompt.trim() }] : []),
-        ...validHistory,
-        { role: "user", content: userPayloadContent },
-      ];
-
-      requestPayload = {
-        model: targetModel,
-        messages: messagesPayload,
-        ...(enableTemperature ? { temperature } : {}),
-        ...(enableMaxTokens ? { max_tokens: maxTokens } : {}),
-        ...(enableTopP ? { top_p: topP } : {}),
-        stream,
-        ...(reasoningEffort !== "off" ? { reasoning_effort: reasoningEffort } : {}),
-        ...customBody,
-      };
-    }
+    const endpointPath = built.endpointPath;
+    const headers = built.headers;
+    const displayHeaders = built.displayHeaders;
+    const requestPayload = built.body;
 
     const endpointUrl = `${window.location.origin}${endpointPath}`;
     const startTime = performance.now();
     let ttftTime: number | undefined = undefined;
-
-    const displayHeaders = { ...headers };
-    if (authKey && !customHeadersMap["Authorization"] && !customHeadersMap["authorization"]) {
-      displayHeaders["Authorization"] = `Bearer ${authKey.slice(0, 8)}...`;
-    }
-    if (authKey && displayHeaders["x-api-key"]) {
-      displayHeaders["x-api-key"] = `${authKey.slice(0, 8)}...`;
-    }
-    if (authKey && displayHeaders["x-goog-api-key"]) {
-      displayHeaders["x-goog-api-key"] = `${authKey.slice(0, 8)}...`;
-    }
 
     const rawReqRecord = {
       url: `POST ${endpointPath}`,
@@ -2550,7 +2697,9 @@ export function PlaygroundPage() {
                                 type="button"
                                 onClick={() => {
                                   setInspectorMsgId(msg.id);
+                                  setInspectorViewMode("snapshot");
                                   setRightPanelTab("inspector");
+                                  setLastPanelTab("inspector");
                                 }}
                                 className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/60 transition"
                                 title="在 JSON Inspector 中查看"
@@ -2730,7 +2879,10 @@ export function PlaygroundPage() {
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl">
               <button
                 type="button"
-                onClick={() => setRightPanelTab("params")}
+                onClick={() => {
+                  setRightPanelTab("params");
+                  setLastPanelTab("params");
+                }}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition",
                   panelTab === "params"
@@ -2744,7 +2896,11 @@ export function PlaygroundPage() {
 
               <button
                 type="button"
-                onClick={() => setRightPanelTab("inspector")}
+                onClick={() => {
+                  setRightPanelTab("inspector");
+                  setLastPanelTab("inspector");
+                  setInspectorViewMode("live");
+                }}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition",
                   panelTab === "inspector"
@@ -3110,115 +3266,200 @@ export function PlaygroundPage() {
           {/* Tab Content: JSON Inspector */}
           {panelTab === "inspector" && (
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4">
-              {inspectedMessage && (inspectedMessage.rawRequest || inspectedMessage.rawResponse) ? (
-                <>
-                  {/* Request JSON Section */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
-                        Request Payload
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleCopy(
-                            formatJsonForDisplay(inspectedMessage.rawRequest),
-                            "req-json",
-                          )
-                        }
-                        className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium"
+              {/* Request JSON Section (Live Assembled by Default) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
+                      Request Payload
+                    </span>
+                    {inspectedMessage?.rawRequest ? (
+                      <div className="flex items-center rounded-lg border border-slate-200 dark:border-slate-800 p-0.5 bg-slate-100 dark:bg-slate-900 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("live")}
+                          className={cn(
+                            "px-2 py-0.5 rounded-md font-medium transition cursor-pointer",
+                            inspectorViewMode === "live"
+                              ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs font-semibold"
+                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400",
+                          )}
+                        >
+                          ● 实时组装 (Live)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("snapshot")}
+                          className={cn(
+                            "px-2 py-0.5 rounded-md font-medium transition cursor-pointer",
+                            inspectorViewMode === "snapshot"
+                              ? "bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 shadow-2xs font-semibold"
+                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400",
+                          )}
+                        >
+                          历史快照 (Snapshot)
+                        </button>
+                      </div>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] font-mono px-1.5 text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20"
                       >
-                        {copiedKey === "req-json" ? <Check className="size-3" /> : <Copy className="size-3" />}
-                        <span>复制请求 JSON</span>
-                      </button>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] font-mono text-slate-200 overflow-x-auto max-h-56">
-                      <pre className="leading-relaxed whitespace-pre font-mono">
-                        {renderJsonHighlighted(formatJsonForDisplay(inspectedMessage.rawRequest))}
-                      </pre>
-                    </div>
+                        ● 实时组装 (Live)
+                      </Badge>
+                    )}
                   </div>
 
-                  {/* Response JSON Section */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
-                          Response Payload
-                        </span>
-                        {inspectedMessage.metrics?.statusCode && (
-                          <Badge
-                            variant={inspectedMessage.metrics.statusCode === 200 ? "default" : "destructive"}
-                            className="text-[9px] font-mono px-1.5"
-                          >
-                            {inspectedMessage.metrics.statusCode}
-                          </Badge>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleCopy(
-                            formatJsonForDisplay(inspectedMessage.rawResponse),
-                            "res-json",
-                          )
-                        }
-                        className="flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700 dark:text-purple-400 font-medium"
-                      >
-                        {copiedKey === "res-json" ? <Check className="size-3" /> : <Copy className="size-3" />}
-                        <span>复制响应 JSON</span>
-                      </button>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] font-mono text-slate-200 overflow-x-auto max-h-64">
-                      <pre className="leading-relaxed whitespace-pre font-mono">
-                        {renderJsonHighlighted(formatJsonForDisplay(inspectedMessage.rawResponse))}
-                      </pre>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSnapshot = inspectorViewMode === "snapshot" && Boolean(inspectedMessage?.rawRequest);
+                        const reqToCopy = isSnapshot
+                          ? {
+                              endpointPath: inspectedMessage!.rawRequest!.url.replace(/^POST\s+/, ""),
+                              headers: inspectedMessage!.rawRequest!.headers,
+                              body: inspectedMessage!.rawRequest!.body as Record<string, unknown>,
+                            }
+                          : {
+                              endpointPath: liveRequest.endpointPath,
+                              headers: liveRequest.headers,
+                              body: liveRequest.body,
+                            };
+                        const snippet = generateCurlSnippet(reqToCopy);
+                        handleCopy(snippet, "req-curl");
+                      }}
+                      className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 font-medium cursor-pointer"
+                      title="复制完整 cURL 命令行"
+                    >
+                      {copiedKey === "req-curl" ? <Check className="size-3 text-emerald-500" /> : <Terminal className="size-3" />}
+                      <span>复制 cURL</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopy(
+                          formatJsonForDisplay(
+                            inspectorViewMode === "snapshot" && inspectedMessage?.rawRequest
+                              ? inspectedMessage.rawRequest
+                              : {
+                                  url: `POST ${liveRequest.endpointPath}`,
+                                  headers: liveRequest.displayHeaders,
+                                  body: liveRequest.body,
+                                },
+                          ),
+                          "req-json",
+                        )
+                      }
+                      className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium cursor-pointer"
+                    >
+                      {copiedKey === "req-json" ? <Check className="size-3" /> : <Copy className="size-3" />}
+                      <span>复制请求 JSON</span>
+                    </button>
                   </div>
+                </div>
 
-                  {/* Metrics Summary Table */}
-                  {inspectedMessage.metrics && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/60 space-y-1 text-[11px] font-mono">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">总响应耗时 (Latency):</span>
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">
-                          {inspectedMessage.metrics.latencyMs} ms
-                        </span>
-                      </div>
-                      {inspectedMessage.metrics.ttftMs !== undefined && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">首字生成时间 (TTFT):</span>
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
-                            {inspectedMessage.metrics.ttftMs} ms
-                          </span>
-                        </div>
-                      )}
-                      {inspectedMessage.metrics.tokens && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Token 消耗 (Prompt / Completion):</span>
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
-                            {inspectedMessage.metrics.tokens.input} / {inspectedMessage.metrics.tokens.output}
-                          </span>
-                        </div>
-                      )}
-                      {inspectedMessage.metrics.tps ? (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">平均生成速率 (TPS):</span>
-                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                            {inspectedMessage.metrics.tps} tok/s
-                          </span>
-                        </div>
-                      ) : null}
+                <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] font-mono text-slate-200 overflow-x-auto max-h-72">
+                  <pre className="leading-relaxed whitespace-pre font-mono">
+                    {renderJsonHighlighted(
+                      formatJsonForDisplay(
+                        inspectorViewMode === "snapshot" && inspectedMessage?.rawRequest
+                          ? inspectedMessage.rawRequest
+                          : {
+                              url: `POST ${liveRequest.endpointPath}`,
+                              headers: liveRequest.displayHeaders,
+                              body: liveRequest.body,
+                            },
+                      ),
+                    )}
+                  </pre>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {inspectorViewMode === "snapshot"
+                    ? "显示该消息被发送时的历史原始请求快照"
+                    : "根据右侧参数面板与会话实时组装，点击发送时将完全以此报文为准"}
+                </p>
+              </div>
+
+              {/* Response JSON Section */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
+                      Response Payload
+                    </span>
+                    {inspectedMessage?.metrics?.statusCode && (
+                      <Badge
+                        variant={inspectedMessage.metrics.statusCode === 200 ? "default" : "destructive"}
+                        className="text-[9px] font-mono px-1.5"
+                      >
+                        {inspectedMessage.metrics.statusCode}
+                      </Badge>
+                    )}
+                  </div>
+                  {Boolean(inspectedMessage?.rawResponse) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopy(
+                          formatJsonForDisplay(inspectedMessage?.rawResponse),
+                          "res-json",
+                        )
+                      }
+                      className="flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700 dark:text-purple-400 font-medium cursor-pointer"
+                    >
+                      {copiedKey === "res-json" ? <Check className="size-3" /> : <Copy className="size-3" />}
+                      <span>复制响应 JSON</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] font-mono text-slate-200 overflow-x-auto max-h-64">
+                  {inspectedMessage?.rawResponse ? (
+                    <pre className="leading-relaxed whitespace-pre font-mono">
+                      {renderJsonHighlighted(formatJsonForDisplay(inspectedMessage.rawResponse))}
+                    </pre>
+                  ) : (
+                    <div className="text-slate-500 italic py-6 text-center text-xs">
+                      等待发送请求... 点击「发送」按钮后将在此实时透视真实响应报文与指标
                     </div>
                   )}
-                </>
-              ) : (
-                <div className="flex h-64 flex-col items-center justify-center text-center text-slate-400">
-                  <Code2 className="size-8 mb-2 opacity-50" />
-                  <p className="text-xs">暂无请求与响应数据</p>
-                  <p className="text-[10px] mt-1">在左侧发送测试请求后即可在此检查底层 JSON 负载与指标</p>
+                </div>
+              </div>
+
+              {/* Metrics Summary Table */}
+              {inspectedMessage?.metrics && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/60 space-y-1 text-[11px] font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">总响应耗时 (Latency):</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      {inspectedMessage.metrics.latencyMs} ms
+                    </span>
+                  </div>
+                  {inspectedMessage.metrics.ttftMs !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">首字生成时间 (TTFT):</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        {inspectedMessage.metrics.ttftMs} ms
+                      </span>
+                    </div>
+                  )}
+                  {inspectedMessage.metrics.tokens && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Token 消耗 (Prompt / Completion):</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        {inspectedMessage.metrics.tokens.input} / {inspectedMessage.metrics.tokens.output}
+                      </span>
+                    </div>
+                  )}
+                  {inspectedMessage.metrics.tps ? (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">平均生成速率 (TPS):</span>
+                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                        {inspectedMessage.metrics.tps} tok/s
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
