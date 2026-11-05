@@ -141,6 +141,51 @@ func TestCodexHTTPRelayProtocolsAndReuse(t *testing.T) {
 	}
 }
 
+func TestCodexHTTPRelayRedirectAndReuse(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprint(stream), func(t *testing.T) {
+			var redirects, connections atomic.Int32
+			upgrader := websocket.Upgrader{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/responses" {
+					redirects.Add(1)
+					http.Redirect(w, r, "/v1/responses", http.StatusMovedPermanently)
+					return
+				}
+				conn, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				connections.Add(1)
+				for {
+					if _, _, errRead := conn.ReadMessage(); errRead != nil {
+						return
+					}
+					if errWrite := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.completed","response":{"id":"resp-redirect","status":"completed","output":[`+relayTestAnswer+`]}}`)); errWrite != nil {
+						return
+					}
+				}
+			}))
+			defer server.Close()
+			exec, auth, opts := relayExecutorForTest(t, server.URL, nil)
+			for _, payload := range []string{
+				`{"model":"gpt-5.4","input":[` + relayTestUser + `]}`,
+				`{"model":"gpt-5.4","input":[` + relayTestUser + `,` + relayTestAnswer + `,` + relayTestUser + `]}`,
+			} {
+				body := relayConsume(t, exec, t.Context(), auth, cliproxyexecutor.Request{Model: "gpt-5.4", Payload: []byte(payload)}, opts, stream)
+				if !strings.Contains(body, "answer") {
+					t.Fatalf("missing response after redirect: %s", body)
+				}
+			}
+			if redirects.Load() != 1 || connections.Load() != 1 {
+				t.Fatalf("redirects=%d connections=%d, want one reused websocket", redirects.Load(), connections.Load())
+			}
+		})
+	}
+}
+
 func TestCodexHTTPRelayNoHTTPFallback(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		t.Run(fmt.Sprint(stream), func(t *testing.T) {
