@@ -66,10 +66,17 @@ function ModelChainDisplay({ record }: { record: RequestRecord }) {
   const hasAliasDiff = Boolean(record.alias?.trim() && sent && record.alias.trim() !== sent);
   const hasResponseDiff = Boolean(response && response !== sent && response !== requested);
 
+  // Marks requests whose upstream call ran over the Codex WebSocket transport.
+  const wsBadge = record.upstream_websocket ? (
+    <span className="shrink-0 text-amber-500 dark:text-amber-400">{" (ws)"}</span>
+  ) : null;
+
   if (!hasAliasDiff && !hasResponseDiff) {
+    const name = sent || requested || "—";
     return (
-      <span className="font-mono text-xs text-foreground truncate block max-w-full" title={sent || requested || "—"}>
-        {sent || requested || "—"}
+      <span className="flex w-full min-w-0 items-center font-mono text-xs">
+        <span className="block min-w-0 truncate text-foreground" title={name}>{name}</span>
+        {wsBadge}
       </span>
     );
   }
@@ -102,6 +109,7 @@ function ModelChainDisplay({ record }: { record: RequestRecord }) {
           <span className={cn("truncate min-w-0 shrink", isUnexpectedResponse ? "text-amber-600 dark:text-amber-400 font-medium" : "text-muted-foreground")}>{response}</span>
         </>
       ) : null}
+      {wsBadge}
     </div>
   );
 }

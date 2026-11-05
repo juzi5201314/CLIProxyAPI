@@ -34,6 +34,7 @@ type requestDBRecordResponse struct {
 	IsNativeKey              bool            `json:"is_native_key"`
 	Provider                 string          `json:"provider,omitempty"`
 	ExecutorType             string          `json:"executor_type,omitempty"`
+	UpstreamWebsocket        bool            `json:"upstream_websocket,omitempty"`
 	AuthID                   string          `json:"auth_id,omitempty"`
 	AuthIndex                string          `json:"auth_index,omitempty"`
 	AuthType                 string          `json:"auth_type,omitempty"`
@@ -137,22 +138,25 @@ func newRequestDBRecordResponse(e *requestdb.Entry, withContent bool) requestDBR
 	}
 
 	response := requestDBRecordResponse{
-		ID:                       e.ID,
-		RequestedAt:              e.RequestedAtMS,
-		RequestID:                e.RequestID,
-		TraceID:                  e.TraceID,
-		Endpoint:                 e.Endpoint,
-		ClientIP:                 e.ClientIP,
-		ResolvedClientIP:         e.ResolvedClientIP,
-		XForwardedFor:            e.XForwardedFor,
-		UserAgent:                e.UserAgent,
-		SessionID:                e.SessionID,
-		ParentSessionID:          e.ParentSessionID,
-		APIKey:                   e.APIKey,
-		AccessProvider:           e.AccessProvider,
-		IsNativeKey:              e.IsNativeKey,
-		Provider:                 e.Provider,
-		ExecutorType:             e.ExecutorType,
+		ID:               e.ID,
+		RequestedAt:      e.RequestedAtMS,
+		RequestID:        e.RequestID,
+		TraceID:          e.TraceID,
+		Endpoint:         e.Endpoint,
+		ClientIP:         e.ClientIP,
+		ResolvedClientIP: e.ResolvedClientIP,
+		XForwardedFor:    e.XForwardedFor,
+		UserAgent:        e.UserAgent,
+		SessionID:        e.SessionID,
+		ParentSessionID:  e.ParentSessionID,
+		APIKey:           e.APIKey,
+		AccessProvider:   e.AccessProvider,
+		IsNativeKey:      e.IsNativeKey,
+		Provider:         e.Provider,
+		ExecutorType:     e.ExecutorType,
+		// CodexWebsocketsExecutor only stamps its name when the upstream call ran
+		// over the Responses WebSocket transport; HTTP fallbacks record CodexExecutor.
+		UpstreamWebsocket:        e.ExecutorType == "CodexWebsocketsExecutor",
 		AuthID:                   e.AuthID,
 		AuthIndex:                e.AuthIndex,
 		AuthType:                 e.AuthType,
