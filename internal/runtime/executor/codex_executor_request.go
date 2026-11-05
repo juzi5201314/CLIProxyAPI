@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	codexUserAgent             = "codex-tui/0.154.0 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.154.0)"
+	codexClientVersion         = "0.154.0"
+	codexUserAgent             = "codex-tui/" + codexClientVersion + " (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; " + codexClientVersion + ")"
 	codexOriginator            = "codex-tui"
 	codexDefaultImageToolModel = "gpt-image-2"
 	codexResponsesLiteHeader   = "X-OpenAI-Internal-Codex-Responses-Lite"
@@ -320,7 +321,7 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
 		attrs = auth.Attributes
 	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
-	applyCodexCloakingHeaders(r.Header, cfg, auth)
+	applyCodexCloakingHeaders(r.Context(), r.Header, cfg, auth)
 }
 
 const codexRoutingHintHeader = "X-Codex-Routing-Hint"
@@ -395,12 +396,13 @@ func isCodexCloakingDisabled(cfg *config.Config, auth *cliproxyauth.Auth) bool {
 	return false
 }
 
-func applyCodexCloakingHeaders(headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth) {
+func applyCodexCloakingHeaders(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth) {
 	if headers == nil || cfg == nil || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
 	headers.Set("User-Agent", codexUserAgent)
 	headers.Set("Originator", codexOriginator)
+	helps.ApplyCodexClientIdentityHeaders(ctx, headers, codexClientVersion)
 }
 
 func normalizeCodexInstructions(body []byte, nativeRequest ...bool) []byte {

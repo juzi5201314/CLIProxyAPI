@@ -113,6 +113,8 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	misc.EnsureHeader(headers, ginHeaders, "x-codex-turn-state", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-codex-turn-metadata", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-client-request-id", "")
+	misc.EnsureHeader(headers, ginHeaders, "Thread-Id", "")
+	misc.EnsureHeader(headers, ginHeaders, "X-Codex-Window-Id", "")
 	misc.EnsureHeader(headers, ginHeaders, "x-responsesapi-include-timing-metrics", "")
 	misc.EnsureHeader(headers, ginHeaders, "Version", "")
 	if nativeRequest {
@@ -169,7 +171,10 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	}
 	req := (&http.Request{Header: headers}).WithContext(ctx)
 	util.ApplyCustomHeadersFromAttrs(req, attrs, ginHeaders)
-	applyCodexCloakingHeaders(headers, cfg, auth)
+	applyCodexCloakingHeaders(ctx, headers, cfg, auth)
+	if cfg != nil && !isCodexCloakingDisabled(cfg, auth) {
+		misc.EnsureHeader(headers, nil, "X-Client-Request-Id", headers.Get("Thread-Id"))
+	}
 	if relay := helps.CodexRelayTurnFromContext(ctx); relay != nil {
 		relay.Headers(headers)
 	}
