@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
@@ -33,20 +34,20 @@ func NewCodexWebsocketsExecutor(cfg *config.Config) *CodexWebsocketsExecutor {
 	}
 }
 
-// CodexAutoExecutor routes Codex requests to the websocket transport only when:
-//  1. The downstream transport is websocket, and
-//  2. The selected auth enables websockets.
-//
-// For non-websocket downstream requests, it always uses the legacy HTTP implementation.
+// CodexAutoExecutor selects native WebSocket transport using websockets, and
+// forwards HTTP generation over WebSocket when an API key enables websocket-relay.
 type CodexAutoExecutor struct {
-	httpExec *CodexExecutor
-	wsExec   *CodexWebsocketsExecutor
+	httpExec  *CodexExecutor
+	wsExec    *CodexWebsocketsExecutor
+	relayPool *helps.CodexRelayPool[*codexHTTPRelaySession]
 }
 
 func NewCodexAutoExecutor(cfg *config.Config) *CodexAutoExecutor {
+	configureCodexHTTPRelayPool(globalCodexHTTPRelayPool, cfg)
 	return &CodexAutoExecutor{
-		httpExec: NewCodexExecutor(cfg),
-		wsExec:   NewCodexWebsocketsExecutor(cfg),
+		httpExec:  NewCodexExecutor(cfg),
+		wsExec:    NewCodexWebsocketsExecutor(cfg),
+		relayPool: globalCodexHTTPRelayPool,
 	}
 }
 
@@ -75,6 +76,12 @@ func (e *CodexAutoExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 	if e == nil || e.httpExec == nil || e.wsExec == nil {
 		return cliproxyexecutor.Response{}, fmt.Errorf("codex auto executor: executor is nil")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !cliproxyexecutor.DownstreamWebsocket(ctx) && opts.Alt != "responses/compact" && codexWebsocketRelayEnabled(auth) {
+		return e.executeHTTPRelay(ctx, auth, req, opts)
+	}
 	if cliproxyexecutor.DownstreamWebsocket(ctx) && codexWebsocketsEnabled(auth) {
 		return e.wsExec.Execute(ctx, auth, req, opts)
 	}
@@ -87,6 +94,12 @@ func (e *CodexAutoExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 func (e *CodexAutoExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 	if e == nil || e.httpExec == nil || e.wsExec == nil {
 		return nil, fmt.Errorf("codex auto executor: executor is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !cliproxyexecutor.DownstreamWebsocket(ctx) && opts.Alt != "responses/compact" && codexWebsocketRelayEnabled(auth) {
+		return e.streamHTTPRelay(ctx, auth, req, opts)
 	}
 	if cliproxyexecutor.DownstreamWebsocket(ctx) && codexWebsocketsEnabled(auth) {
 		return e.wsExec.ExecuteStream(ctx, auth, req, opts)
@@ -115,6 +128,9 @@ func (e *CodexAutoExecutor) CloseExecutionSession(sessionID string) {
 	if e == nil || e.wsExec == nil {
 		return
 	}
+	if sessionID == cliproxyauth.CloseAllExecutionSessionsID && e.relayPool != nil {
+		e.relayPool.CloseAuth("")
+	}
 	e.wsExec.CloseExecutionSession(sessionID)
 }
 
@@ -128,6 +144,9 @@ func (e *CodexAutoExecutor) SharesExecutionSessionsWith(other cliproxyauth.Provi
 func (e *CodexAutoExecutor) CloseAuthExecutionSessions(authID string) {
 	if e == nil || e.wsExec == nil {
 		return
+	}
+	if e.relayPool != nil {
+		e.relayPool.CloseAuth(authID)
 	}
 	e.wsExec.CloseAuthExecutionSessions(authID)
 }

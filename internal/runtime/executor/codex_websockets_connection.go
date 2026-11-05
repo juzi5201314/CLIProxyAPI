@@ -32,10 +32,20 @@ func (e *CodexWebsocketsExecutor) dialCodexWebsocket(ctx context.Context, auth *
 	dialer := newProxyAwareWebsocketDialer(ctx, e.cfg, auth)
 	dialer.HandshakeTimeout = codexResponsesWebsocketHandshakeTO
 	dialer.EnableCompression = true
+	if helps.CodexRelayTurnFromContext(ctx) != nil {
+		dialer.ReadBufferSize, dialer.WriteBufferSize = 4096, 4096
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	conn, resp, err := dialer.DialContext(ctx, wsURL, headers)
+	var conn *websocket.Conn
+	var resp *http.Response
+	var err error
+	if helps.CodexRelayTurnFromContext(ctx) != nil {
+		conn, resp, err = helps.DialCodexRelayWebsocket(ctx, dialer, wsURL, headers)
+	} else {
+		conn, resp, err = dialer.DialContext(ctx, wsURL, headers)
+	}
 	if err != nil {
 		cliproxyexecutor.MarkUpstreamAttempt(ctx)
 	}

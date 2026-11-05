@@ -227,6 +227,8 @@ type AntigravityConnectionPoolConfig struct {
 
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
+	// WebsocketRelay configures the shared idle connection cache for API-key relays.
+	WebsocketRelay CodexWebsocketRelayConfig `yaml:"websocket-relay,omitempty" json:"websocket-relay,omitempty"`
 	// DisableCodexCloaking disables forcing the official Codex identity headers on HTTP/SSE and WebSocket requests.
 	DisableCodexCloaking bool `yaml:"disable-codex-cloaking" json:"disable-codex-cloaking"`
 	// StreamBootstrapBuffering holds back the frames that arrive before generation starts, none of
@@ -746,6 +748,9 @@ type CodexKey struct {
 
 	// Websockets enables the Responses API websocket transport for this credential.
 	Websockets bool `yaml:"websockets,omitempty" json:"websockets,omitempty"`
+
+	// WebsocketRelay forwards HTTP generation requests over Codex Responses WebSocket.
+	WebsocketRelay bool `yaml:"websocket-relay,omitempty" json:"websocket-relay,omitempty"`
 
 	// AlphaSearch allows this Codex API key to serve the Alpha Search endpoint.
 	AlphaSearch bool `yaml:"alpha-search,omitempty" json:"alpha-search,omitempty"`

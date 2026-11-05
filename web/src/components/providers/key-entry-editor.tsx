@@ -79,6 +79,7 @@ const WEBSOCKETS_ROW: BehaviorRow = { key: "websockets", labelKey: "fieldWebsock
 const CODEX_BEHAVIOR: BehaviorRow[] = [
   ...COOLING_RETRY,
   WEBSOCKETS_ROW,
+  { key: "websocket-relay", labelKey: "websocketRelay", hintKey: "websocketRelayHint", type: "switch" },
   { key: "alpha-search", labelKey: "alphaSearch", hintKey: "alphaSearchHint", type: "switch" },
   { key: "disable-codex-cloaking", labelKey: "disableCodexCloaking", hintKey: "disableCodexCloakingHint", type: "tri" },
 ];

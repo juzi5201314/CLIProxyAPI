@@ -296,6 +296,7 @@ func (cfg *Config) SanitizeXAIKeys() {
 	cfg.XAIKey = sanitizeCodexKeyEntries(cfg.XAIKey)
 	for i := range cfg.XAIKey {
 		cfg.XAIKey[i].AlphaSearch = false
+		cfg.XAIKey[i].WebsocketRelay = false
 	}
 }
 
@@ -327,6 +328,7 @@ func sanitizeMetaKeyEntries(entries []MetaKey) []MetaKey {
 		e.Headers = NormalizeHeaders(e.Headers)
 		e.ExcludedModels = NormalizeExcludedModels(e.ExcludedModels)
 		e.AlphaSearch = false
+		e.WebsocketRelay = false
 		out = append(out, e)
 	}
 	return out

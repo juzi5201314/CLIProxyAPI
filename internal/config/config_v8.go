@@ -85,6 +85,7 @@ func buildV8Paths() []configPath {
 		{"auth-dir", "oauth.auth-dir"}, {"auth-auto-refresh-workers", "oauth.auth-auto-refresh-workers"},
 		{"oauth-model-alias", "oauth.model-alias"}, {"oauth-excluded-models", "oauth.excluded-models"},
 		{"oauth-request-scoped-errors", "oauth.request-scoped-errors"}, {"oauth-settings", "oauth.settings"}, {"ws-auth", "oauth.providers.aistudio.ws-auth"},
+		{"codex.websocket-relay", "upstream.codex.websocket-relay"},
 		{"codex.disable-codex-cloaking", "upstream.codex.disable-codex-cloaking"},
 		{"codex.stream-bootstrap-buffering", "upstream.codex.stream-bootstrap-buffering"},
 		{"codex.stream-bootstrap-timeout", "upstream.codex.stream-bootstrap-timeout"},

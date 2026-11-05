@@ -333,6 +333,7 @@ func TestConfigSynthesizer_CodexKeys(t *testing.T) {
 					BaseURL:              "https://api.openai.com",
 					ProxyURL:             "http://proxy.local",
 					Websockets:           true,
+					WebsocketRelay:       true,
 					AlphaSearch:          true,
 					DisableCooling:       boolPointer(true),
 					DisableCodexCloaking: boolPointer(true),
@@ -362,6 +363,9 @@ func TestConfigSynthesizer_CodexKeys(t *testing.T) {
 	}
 	if auths[0].Attributes["websockets"] != "true" {
 		t.Errorf("expected websockets=true, got %s", auths[0].Attributes["websockets"])
+	}
+	if auths[0].Attributes["websocket_relay"] != "true" {
+		t.Errorf("expected websocket_relay=true, got %s", auths[0].Attributes["websocket_relay"])
 	}
 	if auths[0].Attributes[coreauth.AttributeCodexAlphaSearch] != "true" {
 		t.Errorf("expected codex_alpha_search=true, got %s", auths[0].Attributes[coreauth.AttributeCodexAlphaSearch])

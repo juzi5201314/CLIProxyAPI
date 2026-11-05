@@ -140,6 +140,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 		changes = append(changes, fmt.Sprintf("antigravity.connection-pool.max-idle-conns-per-host: %s -> %s", oldMaxIdle, newMaxIdle))
 	}
 
+	if oldCfg.Codex.WebsocketRelay != newCfg.Codex.WebsocketRelay {
+		changes = append(changes, fmt.Sprintf("upstream.codex.websocket-relay: idle-ttl=%q max-memory=%q -> idle-ttl=%q max-memory=%q", oldCfg.Codex.WebsocketRelay.IdleTTL, oldCfg.Codex.WebsocketRelay.MaxMemory, newCfg.Codex.WebsocketRelay.IdleTTL, newCfg.Codex.WebsocketRelay.MaxMemory))
+	}
 	if oldCfg.Codex.DisableCodexCloaking != newCfg.Codex.DisableCodexCloaking {
 		changes = append(changes, fmt.Sprintf("codex.disable-codex-cloaking: %t -> %t", oldCfg.Codex.DisableCodexCloaking, newCfg.Codex.DisableCodexCloaking))
 	}
@@ -353,6 +356,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			}
 			if o.Websockets != n.Websockets {
 				changes = append(changes, fmt.Sprintf("codex[%d].websockets: %t -> %t", i, o.Websockets, n.Websockets))
+			}
+			if o.WebsocketRelay != n.WebsocketRelay {
+				changes = append(changes, fmt.Sprintf("codex[%d].websocket-relay: %t -> %t", i, o.WebsocketRelay, n.WebsocketRelay))
 			}
 			if o.AlphaSearch != n.AlphaSearch {
 				changes = append(changes, fmt.Sprintf("codex[%d].alpha-search: %t -> %t", i, o.AlphaSearch, n.AlphaSearch))

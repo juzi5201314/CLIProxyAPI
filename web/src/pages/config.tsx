@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -100,6 +101,8 @@ const HANDLED_PATHS: Record<string, string[]> = {
     "streaming.keepalive-seconds",
   ],
   upstream: [
+    "codex.websocket-relay.idle-ttl",
+    "codex.websocket-relay.max-memory",
     "codex.response-steering",
     "codex.stream-bootstrap-buffering",
     "codex.model-level-cooling",
@@ -385,7 +388,7 @@ export function ConfigPage() {
   const sections = useMemo(() => {
     const rawKeys = Object.keys(doc.data?.config ?? {});
     const priority = ["routing", "requests", "upstream", "client", "server", "management", "access", "models", "oauth", "multimedia", "observability", "plugins"];
-    const ordered = [...priority.filter((k) => rawKeys.includes(k)), ...rawKeys.filter((k) => !priority.includes(k) && k !== "config-version")];
+    const ordered = [...priority.filter((k) => k === "upstream" || rawKeys.includes(k)), ...rawKeys.filter((k) => !priority.includes(k) && k !== "config-version")];
     return ordered;
   }, [doc.data]);
 
@@ -920,6 +923,7 @@ function RequestsForm({ current, update }: { current: Doc; update: (changes: Par
 
 function UpstreamForm({ current, update }: { current: Doc; update: (changes: Partial<Doc>) => void }) {
   const codex = (current.codex as Doc | undefined) ?? {};
+  const relay = (codex["websocket-relay"] as Doc | undefined) ?? {};
   const claude = (current.claude as Doc | undefined) ?? {};
   const xai = (current.xai as Doc | undefined) ?? {};
 
@@ -956,6 +960,28 @@ function UpstreamForm({ current, update }: { current: Doc; update: (changes: Par
             checked={Boolean(codex["disable-codex-cloaking"])}
             onCheckedChange={(checked) => update({ codex: { ...codex, "disable-codex-cloaking": checked } })}
           />
+          <FieldGroup className="pt-3">
+            <Field>
+              <FieldLabel htmlFor="codex-relay-ttl">WebSocket 转发空闲保留时间</FieldLabel>
+              <Input
+                id="codex-relay-ttl"
+                value={String(relay["idle-ttl"] ?? "")}
+                placeholder="5m"
+                onChange={(event) => update({ codex: { ...codex, "websocket-relay": { ...relay, "idle-ttl": event.target.value } } })}
+              />
+              <FieldDescription>默认 5m，从请求结束起计算；支持 30s、5m、1h。0 关闭跨请求复用，仍使用 WS 转发。</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="codex-relay-memory">WebSocket 转发缓存内存预算</FieldLabel>
+              <Input
+                id="codex-relay-memory"
+                value={String(relay["max-memory"] ?? "")}
+                placeholder="128MiB"
+                onChange={(event) => update({ codex: { ...codex, "websocket-relay": { ...relay, "max-memory": event.target.value } } })}
+              />
+              <FieldDescription>所有第三方 Codex 共用，默认 128MiB（也可写 128m）。按连接开销预留和状态容量计费，超额回收最久未使用的空闲连接。0 关闭缓存；不限制活动请求或整个进程内存。</FieldDescription>
+            </Field>
+          </FieldGroup>
         </div>
       </div>
 

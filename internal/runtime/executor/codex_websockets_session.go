@@ -766,7 +766,11 @@ func (e *CodexWebsocketsExecutor) readUpstreamLoop(sess *codexWebsocketSession, 
 		return
 	}
 	for {
-		_ = conn.SetReadDeadline(time.Now().Add(codexResponsesWebsocketIdleTimeout))
+		if strings.HasPrefix(sess.sessionID, "codex-http-relay:") {
+			_ = conn.SetReadDeadline(time.Time{})
+		} else {
+			_ = conn.SetReadDeadline(time.Now().Add(codexResponsesWebsocketIdleTimeout))
+		}
 		msgType, payload, errRead := conn.ReadMessage()
 		if errRead != nil {
 			sess.markTerminalError(conn, errRead)
@@ -819,7 +823,7 @@ func (e *CodexWebsocketsExecutor) readUpstreamLoop(sess *codexWebsocketSession, 
 			// Record terminal IDs before delivery: downstream may still be
 			// processing this turn after its active read channel is cleared.
 			responseID := gjson.GetBytes(payload, "response.id")
-			if isTerminalEvent(eventType) && eventType != "error" && responseID.Type == gjson.String && responseID.String() != "" {
+			if !strings.HasPrefix(sess.sessionID, "codex-http-relay:") && isTerminalEvent(eventType) && eventType != "error" && responseID.Type == gjson.String && responseID.String() != "" {
 				sess.activeMu.Lock()
 				if sess.responseStateConn == conn {
 					sess.terminalResponseIDs[responseID.String()] = struct{}{}

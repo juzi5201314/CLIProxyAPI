@@ -256,6 +256,9 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 		if entry.Websockets {
 			attrs["websockets"] = "true"
 		}
+		if provider == "codex" && entry.WebsocketRelay {
+			attrs["websocket_relay"] = "true"
+		}
 		if provider == "codex" && entry.AlphaSearch {
 			attrs[coreauth.AttributeCodexAlphaSearch] = "true"
 		}

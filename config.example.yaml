@@ -337,6 +337,18 @@ client:
 # Shared upstream behavior applies to OAuth and API-key credentials.
 upstream:
   codex:
+    # Shared idle cache for third-party keys with websocket-relay enabled.
+    # Retention starts when a request finishes; heartbeats do not extend it.
+    # Either zero disables reuse, while HTTP/SSE requests still use upstream WS.
+    websocket-relay:
+      idle-ttl: "5m" # Go duration; empty uses 5m. Active requests are not expired.
+      # All relay credentials share this weighted idle-cache budget, not process RSS.
+      # Includes owned state, explicit WS buffers, bookkeeping, and a 64 KiB
+      # reservation per connection for opaque TLS/socket/reader overhead.
+      # Active request buffers and other caches are outside this budget.
+      # Oldest idle connections are closed first; oversize entries are not retained.
+      # Supports integer bytes, KiB/MiB/GiB, KB/MB/GB, and binary k/m/g (128m = 128MiB).
+      max-memory: "128MiB"
     # Experimental full-duplex Codex Responses WebSocket steering (default: false).
     # Keeps one upstream account/model per socket; accepted input is never replayed.
     response-steering: false
@@ -671,7 +683,15 @@ upstream:
 #           weight: 5 # optional: weighted-round-robin share; omitted defaults to 1; maximum 1,000,000
 #           disable-codex-cloaking: false # optional: true disables cloaking; OAuth provider settings do not apply here
 #           alpha-search: false # optional: allow this key to serve /v1/alpha/search via base-url + /alpha/search
-#           websockets: false # optional: use the Codex upstream WebSocket transport
+#           websockets: false # optional: use upstream WS for downstream WebSocket requests
+#           # Forward ordinary HTTP/SSE generation over Codex Responses WS.
+#           # Independent of websockets; no HTTP fallback on upgrade failures.
+#           # /responses/compact remains HTTP. Keep Codex cloaking enabled for
+#           # upstreams requiring Codex identity headers. Cache policy is above.
+#           # Reuses connections within caller/credential/model/session boundaries.
+#           # Automatic previous_response_id deltas require exact history matches;
+#           # custom payload rules disable delta trimming, but not socket reuse.
+#           websocket-relay: false
 #
 #   # Claude API keys
 #
