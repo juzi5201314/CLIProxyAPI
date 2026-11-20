@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-	"github.com/tidwall/gjson"
 )
 
 // Issue #5551: Tool schema with 13-branch oneOf causes ChatGPT Codex upstream
@@ -97,13 +97,13 @@ func TestCodexExecutorSimplifiesComplexOneOfToolSchema(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	tools := gjson.GetBytes(gotBody, "tools").Array()
+	tools := ojson.GetBytes(gotBody, "tools").Array()
 	if len(tools) == 0 {
 		t.Fatalf("expected tools in upstream payload, got: %s", gotBody)
 	}
 
 	// Find tool t1
-	var t1Tool gjson.Result
+	var t1Tool ojson.Result
 	for _, tool := range tools {
 		if tool.Get("name").String() == "t1" {
 			t1Tool = tool
@@ -502,8 +502,8 @@ func TestCodexExecutor_DoesNotNormalizeToolIntegerTypesForCodexUserAgent(t *test
 		t.Fatalf("Execute(non-codex) error = %v", errExecuteNonCodex)
 	}
 
-	toolMapNonCodex := make(map[string]gjson.Result)
-	for _, tool := range gjson.GetBytes(gotBody, "tools").Array() {
+	toolMapNonCodex := make(map[string]ojson.Result)
+	for _, tool := range ojson.GetBytes(gotBody, "tools").Array() {
 		toolMapNonCodex[tool.Get("name").String()] = tool
 	}
 	if gotType := toolMapNonCodex["exec_command"].Get("parameters.properties.yield_time_ms.type").String(); gotType != "number" {
@@ -524,8 +524,8 @@ func TestCodexExecutor_DoesNotNormalizeToolIntegerTypesForCodexUserAgent(t *test
 		t.Fatalf("Execute(codex) error = %v", errExecuteCodex)
 	}
 
-	toolMap := make(map[string]gjson.Result)
-	for _, tool := range gjson.GetBytes(gotBody, "tools").Array() {
+	toolMap := make(map[string]ojson.Result)
+	for _, tool := range ojson.GetBytes(gotBody, "tools").Array() {
 		toolMap[tool.Get("name").String()] = tool
 	}
 
@@ -559,15 +559,15 @@ func TestCodexExecutor_DoesNotNormalizeToolIntegerTypesForCodexUserAgent(t *test
 	}
 
 	// Namespace collaboration tool wait_agent must retain number (Issue #6244)
-	if gotType := gjson.GetBytes(gotBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
 		t.Fatalf("collaboration.wait_agent timeout_ms type = %q, want number", gotType)
 	}
 
 	// input[].additional_tools must retain number
-	if gotType := gjson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); gotType != "number" {
 		t.Fatalf("input additional_tools yield_time_ms type = %q, want number", gotType)
 	}
-	if gotType := gjson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
 		t.Fatalf("input additional_tools collaboration.wait_agent timeout_ms type = %q, want number", gotType)
 	}
 
@@ -585,13 +585,13 @@ func TestCodexExecutor_DoesNotNormalizeToolIntegerTypesForCodexUserAgent(t *test
 	}
 	for range streamRes.Chunks {
 	}
-	if gotType := gjson.GetBytes(gotBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); gotType != "number" {
 		t.Fatalf("HTTP stream exec_command yield_time_ms type = %q, want number", gotType)
 	}
-	if gotType := gjson.GetBytes(gotBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
 		t.Fatalf("HTTP stream collaboration.wait_agent timeout_ms type = %q, want number", gotType)
 	}
-	if gotType := gjson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); gotType != "number" {
 		t.Fatalf("HTTP stream input additional_tools yield_time_ms type = %q, want number", gotType)
 	}
 
@@ -608,13 +608,13 @@ func TestCodexExecutor_DoesNotNormalizeToolIntegerTypesForCodexUserAgent(t *test
 	if errCompact != nil {
 		t.Fatalf("ExecuteCompact(codex) error = %v", errCompact)
 	}
-	if gotType := gjson.GetBytes(gotBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); gotType != "number" {
 		t.Fatalf("HTTP compact exec_command yield_time_ms type = %q, want number", gotType)
 	}
-	if gotType := gjson.GetBytes(gotBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); gotType != "number" {
 		t.Fatalf("HTTP compact collaboration.wait_agent timeout_ms type = %q, want number", gotType)
 	}
-	if gotType := gjson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); gotType != "number" {
+	if gotType := ojson.GetBytes(gotBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); gotType != "number" {
 		t.Fatalf("HTTP compact input additional_tools yield_time_ms type = %q, want number", gotType)
 	}
 }
@@ -752,16 +752,16 @@ func TestCodexWebsocketsExecutor_DoesNotNormalizeToolIntegerTypesForCodexUserAge
 
 	select {
 	case payload := <-capturedPayload:
-		if got := gjson.GetBytes(payload, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
+		if got := ojson.GetBytes(payload, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
 			t.Fatalf("WS stream exec_command yield_time_ms type = %q, want number", got)
 		}
-		if got := gjson.GetBytes(payload, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
+		if got := ojson.GetBytes(payload, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
 			t.Fatalf("WS stream collaboration.wait_agent timeout_ms type = %q, want number", got)
 		}
-		if got := gjson.GetBytes(payload, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
+		if got := ojson.GetBytes(payload, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
 			t.Fatalf("WS stream input additional_tools yield_time_ms type = %q, want number", got)
 		}
-		if got := gjson.GetBytes(payload, "input.#(type==\"additional_tools\").tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
+		if got := ojson.GetBytes(payload, "input.#(type==\"additional_tools\").tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
 			t.Fatalf("WS stream input additional_tools collaboration.wait_agent timeout_ms type = %q, want number", got)
 		}
 	case <-time.After(5 * time.Second):
@@ -775,13 +775,13 @@ func TestCodexWebsocketsExecutor_DoesNotNormalizeToolIntegerTypesForCodexUserAge
 	}
 	select {
 	case payload := <-capturedPayload:
-		if got := gjson.GetBytes(payload, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
+		if got := ojson.GetBytes(payload, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
 			t.Fatalf("WS non-stream exec_command yield_time_ms type = %q, want number", got)
 		}
-		if got := gjson.GetBytes(payload, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
+		if got := ojson.GetBytes(payload, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
 			t.Fatalf("WS non-stream collaboration.wait_agent timeout_ms type = %q, want number", got)
 		}
-		if got := gjson.GetBytes(payload, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
+		if got := ojson.GetBytes(payload, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
 			t.Fatalf("WS non-stream input additional_tools yield_time_ms type = %q, want number", got)
 		}
 	case <-time.After(5 * time.Second):
@@ -884,13 +884,13 @@ func TestCodexWebsocketsExecutor_UpgradeFallbackToHTTP_PreservesNumber(t *testin
 	}
 	for range streamRes.Chunks {
 	}
-	if got := gjson.GetBytes(httpCapturedBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
+	if got := ojson.GetBytes(httpCapturedBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
 		t.Fatalf("stream fallback tools exec_command yield_time_ms type = %q, want number", got)
 	}
-	if got := gjson.GetBytes(httpCapturedBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
+	if got := ojson.GetBytes(httpCapturedBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
 		t.Fatalf("stream fallback collaboration.wait_agent timeout_ms type = %q, want number", got)
 	}
-	if got := gjson.GetBytes(httpCapturedBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
+	if got := ojson.GetBytes(httpCapturedBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
 		t.Fatalf("stream fallback input additional_tools yield_time_ms type = %q, want number", got)
 	}
 
@@ -900,13 +900,13 @@ func TestCodexWebsocketsExecutor_UpgradeFallbackToHTTP_PreservesNumber(t *testin
 	if errNonStream != nil {
 		t.Fatalf("Execute fallback error = %v", errNonStream)
 	}
-	if got := gjson.GetBytes(httpCapturedBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
+	if got := ojson.GetBytes(httpCapturedBody, "tools.#(name==\"exec_command\").parameters.properties.yield_time_ms.type").String(); got != "number" {
 		t.Fatalf("non-stream fallback tools exec_command yield_time_ms type = %q, want number", got)
 	}
-	if got := gjson.GetBytes(httpCapturedBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
+	if got := ojson.GetBytes(httpCapturedBody, "tools.#(name==\"collaboration\").tools.0.parameters.properties.timeout_ms.type").String(); got != "number" {
 		t.Fatalf("non-stream fallback collaboration.wait_agent timeout_ms type = %q, want number", got)
 	}
-	if got := gjson.GetBytes(httpCapturedBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
+	if got := ojson.GetBytes(httpCapturedBody, "input.#(type==\"additional_tools\").tools.0.parameters.properties.yield_time_ms.type").String(); got != "number" {
 		t.Fatalf("non-stream fallback input additional_tools yield_time_ms type = %q, want number", got)
 	}
 }
@@ -965,10 +965,208 @@ func TestOpenAICompatExecutor_NormalizesToolIntegerTypesForCodexUserAgent_NonCod
 		t.Fatalf("Execute() error = %v", errExec)
 	}
 
-	if got := gjson.GetBytes(gotBody, "tools.0.function.parameters.properties.yield_time_ms.type").String(); got != "integer" {
+	if got := ojson.GetBytes(gotBody, "tools.0.function.parameters.properties.yield_time_ms.type").String(); got != "integer" {
 		t.Fatalf("expected non-Codex executor to normalize yield_time_ms to integer, got: %s (body=%s)", got, string(gotBody))
 	}
-	if got := gjson.GetBytes(gotBody, "tools.0.function.parameters.properties.timeout_ms.type").String(); got != "integer" {
+	if got := ojson.GetBytes(gotBody, "tools.0.function.parameters.properties.timeout_ms.type").String(); got != "integer" {
 		t.Fatalf("expected non-Codex executor to normalize timeout_ms to integer, got: %s (body=%s)", got, string(gotBody))
 	}
+}
+
+// Issue #7690: Codex Responses rejects function tool schemas containing "uniqueItems"
+// on gpt-6.2-astra when "strict" is omitted or true. All Codex HTTP and WebSocket
+// execution paths must strip uniqueItems while preserving strict semantics and literal
+// properties named "uniqueItems".
+func TestCodexExecutor_StripsUniqueItemsFromToolSchemas(t *testing.T) {
+	requestPayload := []byte(`{
+		"model": "gpt-6.2-astra",
+		"instructions": "Reply with ok",
+		"input": [{"role": "user", "content": [{"type": "input_text", "text": "Say ok"}]}],
+		"tools": [
+			{
+				"type": "function",
+				"name": "ask_user",
+				"description": "Ask the user a structured question.",
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"question": {"type": "string"},
+						"options": {
+							"type": "array",
+							"items": {"type": "string"},
+							"uniqueItems": true
+						}
+					},
+					"required": ["question"]
+				}
+			},
+			{
+				"type": "function",
+				"name": "strict_tags",
+				"strict": true,
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"tags": {
+							"type": "array",
+							"items": {"type": "string"},
+							"uniqueItems": false
+						},
+						"uniqueItems": {"type": "boolean"}
+					},
+					"required": ["tags", "uniqueItems"],
+					"additionalProperties": false
+				}
+			}
+		],
+		"stream": true,
+		"store": false
+	}`)
+
+	assertPayload := func(t *testing.T, mode string, body []byte) {
+		t.Helper()
+		askTool := ojson.GetBytes(body, `tools.#(name=="ask_user")`)
+		if !askTool.Exists() {
+			t.Fatalf("%s: ask_user tool missing in body: %s", mode, string(body))
+		}
+		if askTool.Get("strict").Exists() {
+			t.Fatalf("%s: expected omitted strict on ask_user to remain omitted, got %s", mode, askTool.Get("strict").Raw)
+		}
+		if askTool.Get("parameters.properties.options.uniqueItems").Exists() {
+			t.Fatalf("%s: expected ask_user options.uniqueItems to be stripped, got %s", mode, askTool.Get("parameters.properties.options").Raw)
+		}
+		strictTool := ojson.GetBytes(body, `tools.#(name=="strict_tags")`)
+		if !strictTool.Exists() {
+			t.Fatalf("%s: strict_tags tool missing in body: %s", mode, string(body))
+		}
+		if strictTool.Get("strict").Type != ojson.True {
+			t.Fatalf("%s: expected strict=true preserved on strict_tags, got %s", mode, strictTool.Get("strict").Raw)
+		}
+		if strictTool.Get("parameters.properties.tags.uniqueItems").Exists() {
+			t.Fatalf("%s: expected strict_tags tags.uniqueItems to be stripped, got %s", mode, strictTool.Get("parameters.properties.tags").Raw)
+		}
+		if gotType := strictTool.Get("parameters.properties.uniqueItems.type").String(); gotType != "boolean" {
+			t.Fatalf("%s: expected literal property uniqueItems preserved, got %q", mode, gotType)
+		}
+	}
+
+	t.Run("http", func(t *testing.T) {
+		var gotBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, errRead := io.ReadAll(r.Body)
+			if errRead != nil {
+				t.Errorf("read request body: %v", errRead)
+				http.Error(w, errRead.Error(), http.StatusInternalServerError)
+				return
+			}
+			gotBody = bytes.Clone(body)
+			if r.URL.Path == "/responses/compact" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":"resp_compact","object":"response.compaction","output":[]}`))
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0}}}\n\n"))
+		}))
+		defer server.Close()
+
+		executor := NewCodexExecutor(&config.Config{})
+		auth := &cliproxyauth.Auth{
+			Provider: "codex",
+			Attributes: map[string]string{
+				"api_key":   "test",
+				"base_url":  server.URL,
+				"plan_type": "pro",
+			},
+		}
+		req := cliproxyexecutor.Request{Model: "gpt-6.2-astra", Payload: requestPayload}
+		opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-response")}
+
+		gotBody = nil
+		if _, errExec := executor.Execute(context.Background(), auth, req, opts); errExec != nil {
+			t.Fatalf("Execute() error = %v", errExec)
+		}
+		assertPayload(t, "http execute", gotBody)
+
+		gotBody = nil
+		streamRes, errStream := executor.ExecuteStream(context.Background(), auth, req, opts)
+		if errStream != nil {
+			t.Fatalf("ExecuteStream() error = %v", errStream)
+		}
+		for range streamRes.Chunks {
+		}
+		assertPayload(t, "http stream", gotBody)
+
+		gotBody = nil
+		compactOpts := opts
+		compactOpts.Alt = "responses/compact"
+		if _, errCompact := executor.Execute(context.Background(), auth, req, compactOpts); errCompact != nil {
+			t.Fatalf("Execute(compact) error = %v", errCompact)
+		}
+		assertPayload(t, "http compact", gotBody)
+	})
+
+	t.Run("websocket", func(t *testing.T) {
+		upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+		capturedPayload := make(chan []byte, 2)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, errUpgrade := upgrader.Upgrade(w, r, nil)
+			if errUpgrade != nil {
+				t.Errorf("upgrade websocket: %v", errUpgrade)
+				return
+			}
+			defer func() { _ = conn.Close() }()
+
+			_, payload, errRead := conn.ReadMessage()
+			if errRead != nil {
+				t.Errorf("read upstream websocket message: %v", errRead)
+				return
+			}
+			capturedPayload <- bytes.Clone(payload)
+
+			completed := []byte(`{"type":"response.completed","response":{"id":"resp-1","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}`)
+			if errWrite := conn.WriteMessage(websocket.TextMessage, completed); errWrite != nil {
+				t.Errorf("write completed websocket message: %v", errWrite)
+			}
+		}))
+		defer server.Close()
+
+		exec := NewCodexWebsocketsExecutor(&config.Config{})
+		auth := &cliproxyauth.Auth{
+			Provider: "codex",
+			Attributes: map[string]string{
+				"api_key":   "sk-test",
+				"base_url":  server.URL,
+				"plan_type": "pro",
+			},
+		}
+		req := cliproxyexecutor.Request{Model: "gpt-6.2-astra", Payload: requestPayload}
+		opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-response")}
+
+		streamRes, errStream := exec.ExecuteStream(context.Background(), auth, req, opts)
+		if errStream != nil {
+			t.Fatalf("WS ExecuteStream() error = %v", errStream)
+		}
+		for chunk := range streamRes.Chunks {
+			if chunk.Err != nil {
+				t.Fatalf("WS stream chunk error = %v", chunk.Err)
+			}
+		}
+		select {
+		case payload := <-capturedPayload:
+			assertPayload(t, "ws stream", payload)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for ws stream payload")
+		}
+
+		if _, errExec := exec.Execute(context.Background(), auth, req, opts); errExec != nil {
+			t.Fatalf("WS Execute() error = %v", errExec)
+		}
+		select {
+		case payload := <-capturedPayload:
+			assertPayload(t, "ws execute", payload)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for ws execute payload")
+		}
+	})
 }

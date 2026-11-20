@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
@@ -279,7 +279,15 @@ func TestBindCodexSIWCRejectsNonFileSources(t *testing.T) {
 
 func TestBindCodexSIWCTildeAndAttributeOverride(t *testing.T) {
 	m, base, path, _ := setupSIWCBinding(t, "auth.json")
-	t.Setenv("HOME", filepath.Dir(path))
+	homeDir := filepath.Dir(path)
+	// os.UserHomeDir reads HOME on Unix but %USERPROFILE% on Windows, and
+	// the runtime resolves "~" through it; pin both so the injection below
+	// lands on the same directory on every platform.
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	if userHomeDir, errUserHomeDir := os.UserHomeDir(); errUserHomeDir != nil || filepath.Clean(userHomeDir) != filepath.Clean(homeDir) {
+		t.Fatalf("os.UserHomeDir() = %q, %v; want %q", userHomeDir, errUserHomeDir, homeDir)
+	}
 	m.runtimeConfig.Store(&config.Config{AuthDir: "~"})
 	m.mu.Lock()
 	m.auths[base.ID].Attributes["use_siwc"] = "false"

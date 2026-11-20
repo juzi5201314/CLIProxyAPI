@@ -3,9 +3,9 @@ package modelconfig
 import (
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	_ "github.com/router-for-me/CLIProxyAPI/v8/internal/thinking/provider/claude"
-	"github.com/tidwall/gjson"
 )
 
 func TestResolveModelInfoUsesSuffixFreeStaticCapabilities(t *testing.T) {
@@ -37,7 +37,7 @@ func TestResolveModelInfoKeepsCatalogDisableType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyThinkingWithModelInfo: %v", err)
 	}
-	if got := gjson.GetBytes(out, "thinking").Raw; got != `{"type":"between_tools"}` {
+	if got := ojson.GetBytesNoCopy(out, "thinking").Raw; got != `{"type":"between_tools"}` {
 		t.Fatalf("thinking = %s, want {\"type\":\"between_tools\"}; body=%s", got, out)
 	}
 	if variant := ResolveModelInfo("claude-sonnet-5-5[1m]", "claude"); variant.Thinking == nil || variant.Thinking.DisableType != "between_tools" {

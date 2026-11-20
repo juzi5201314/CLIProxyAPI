@@ -1,10 +1,11 @@
 package util
 
 import (
-	"encoding/json"
 	"math/rand"
 	"strings"
 	"testing"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // The legacy mapper is kept as a differential oracle for collision semantics.
@@ -16,11 +17,14 @@ func TestUnambiguousClaudeToolNames(t *testing.T) {
 		`{"tools":[{"name":"Read"},{"name":"Read"}]}`,
 		`{"tools":[{"name":" " ,"function":{"name":"Read"}},{"name":"___"},{"name":"读取"}]}`,
 		`{"tools":[{"name":" Read "},{"function":{"name":"Write"}}],"tools":[]}`,
+		`{"messages":[{"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_definition","definition":{"name":"SubagentHandback"}}}]}]}`,
+		`{"messages":[{"role":"system","content":[{"type":"tool\u005faddition","tool":{"type":"tool_definition","definition":{"name":"SubagentHandback"}}}]}]}`,
+		`{"tools":[{"name":"Read"}],"messages":[{"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_definition","definition":{"name":"read"}}}]}]}`,
 	}
 	for _, request := range requests {
 		legacy := ToolNameMapFromClaudeRequest([]byte(request))
 		cached := UnambiguousToolNameMapFromClaudeRequest([]byte(request))
-		for _, name := range []string{"", "Read", "read", "READ", "_Read", "__read", " Read ", "Write", "write", "读取", "missing", "___"} {
+		for _, name := range []string{"", "Read", "read", "READ", "_Read", "__read", " Read ", "Write", "write", "SubagentHandback", "subagenthandback", "读取", "missing", "___"} {
 			want := MapClaudeToolName(legacy, []byte(request), name)
 			if got := MapToolName(cached, name); got != want {
 				t.Errorf("request=%s name=%q got=%q want=%q", request, name, got, want)

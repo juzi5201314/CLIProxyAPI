@@ -9,12 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
 )
 
 type codexWebsocketSessionStore struct {
@@ -50,11 +51,16 @@ func (c *websocketConnectionCloser) Close() error {
 }
 
 type codexWebsocketSession struct {
-	sessionID string
+	sessionInstructions helps.CodexInstructionChain
+	sessionID           string
 
 	reqMu sync.Mutex
 
-	connMu                    sync.Mutex
+	connMu sync.Mutex
+	// recoverTransport (under connMu): the current turn belongs to a downstream websocket,
+	// so a transport loss ends the turn but not the downstream socket.
+	recoverTransport          bool
+	turnContext               context.Context // attempt context of the current downstream turn
 	conn                      *websocket.Conn
 	connCloser                *websocketConnectionCloser
 	wsURL                     string
@@ -80,6 +86,16 @@ type codexWebsocketSession struct {
 
 	responseStateConn   *websocket.Conn
 	terminalResponseIDs map[string]struct{}
+	// activeResponseID is the newest response known to run, or to have run,
+	// on responseStateConn. The read loop sets it on response.created and on
+	// the terminal event of that same response, before the payload is
+	// delivered downstream. activeResponseTerminal then tells an interrupt
+	// snapshot that the turn already ended even while its read channel is
+	// still awaiting teardown. A duplex socket may also reject a queued
+	// create while another response runs; only the matching id ends the
+	// active response. An empty id means no response.created was seen yet.
+	activeResponseID       string
+	activeResponseTerminal bool
 
 	readerConn *websocket.Conn
 
@@ -118,6 +134,8 @@ func (s *codexWebsocketSession) setActiveLocked(conn *websocket.Conn, ch chan co
 	}
 	s.activeConn = conn
 	s.activeCh = ch
+	s.activeResponseID = ""
+	s.activeResponseTerminal = false
 	if conn != nil && ch != nil {
 		activeCtx, activeCancel := context.WithCancel(context.Background())
 		s.activeDone = activeCtx.Done()
@@ -202,6 +220,8 @@ func (s *codexWebsocketSession) clearActive(conn *websocket.Conn, ch chan codexW
 	}
 	s.activeConn = nil
 	s.activeCh = nil
+	s.activeResponseID = ""
+	s.activeResponseTerminal = false
 	if s.activeCancel != nil {
 		s.activeCancel()
 	}
@@ -617,6 +637,10 @@ func (s *codexWebsocketSession) notifyUpstreamDisconnect(err error) {
 	if s == nil {
 		return
 	}
+	if cliproxyexecutor.IsUpstreamWebsocketTurnError(err) {
+		// The active turn reports it; an idle loss ends no turn and keeps the downstream socket.
+		return
+	}
 	s.upstreamDisconnectOnce.Do(func() {
 		if s.upstreamDisconnectCh == nil {
 			return
@@ -725,6 +749,9 @@ func (e *CodexWebsocketsExecutor) ensureUpstreamConnWithSIWC(ctx context.Context
 		logCodexWebsocketConnectedWithReused(sess, sess.sessionID, authID, wsURL, true)
 		return conn, closer, nil, nil
 	}
+	if errLoss := cliproxyexecutor.WebsocketInputLossError(ctx); errLoss != nil {
+		return nil, nil, nil, errLoss
+	}
 
 	dialProxyURL := executionProxyURL(ctx, e.cfg, auth)
 	conn, closer, resp, errDial := e.dialCodexWebsocket(ctx, auth, wsURL, headers)
@@ -773,11 +800,23 @@ func (e *CodexWebsocketsExecutor) readUpstreamLoop(sess *codexWebsocketSession, 
 		}
 		msgType, payload, errRead := conn.ReadMessage()
 		if errRead != nil {
+			sess.connMu.Lock()
+			recoverTransport := sess.recoverTransport
+			sess.connMu.Unlock()
+			if recoverTransport {
+				errRead = codexWebsocketTurnTransportError(errRead)
+			}
 			sess.markTerminalError(conn, errRead)
 			invalidate := func() {
 				e.invalidateUpstreamConn(sess, conn, "upstream_disconnected", errRead)
 			}
 			invalidated := false
+			if cliproxyexecutor.IsUpstreamWebsocketTurnError(errRead) {
+				// Drop the dead connection before the turn error is visible, so the next
+				// create reconnects instead of writing to it.
+				invalidate()
+				invalidated = true
+			}
 			ch, done := sess.activeForConn(conn)
 			if ch != nil {
 				invalidated = sendTerminalWebsocketRead(ch, done, codexWebsocketRead{conn: conn, err: errRead}, invalidate)
@@ -816,19 +855,57 @@ func (e *CodexWebsocketsExecutor) readUpstreamLoop(sess *codexWebsocketSession, 
 
 		payload = bytes.TrimSpace(payload)
 		if len(payload) > 0 {
-			eventType := gjson.GetBytes(payload, "type").String()
+			eventType := strings.Clone(ojson.GetBytesNoCopy(payload, "type").String())
 			if eventType != "" {
 				sess.setLastEventType(conn, eventType)
 			}
-			// Record terminal IDs before delivery: downstream may still be
-			// processing this turn after its active read channel is cleared.
-			responseID := gjson.GetBytes(payload, "response.id")
-			if !strings.HasPrefix(sess.sessionID, "codex-http-relay:") && isTerminalEvent(eventType) && eventType != "error" && responseID.Type == gjson.String && responseID.String() != "" {
-				sess.activeMu.Lock()
-				if sess.responseStateConn == conn {
-					sess.terminalResponseIDs[responseID.String()] = struct{}{}
+			// Track the running response before delivery: downstream may
+			// still be processing this turn after its active read channel is
+			// cleared, and interrupts arriving after the completion must not
+			// forward while teardown is still pending. Terminal events only
+			// end their own response; a duplex socket can reject a queued
+			// create while another response is still running.
+			//
+			// Failure events (error, response.failed) use the duplex
+			// attribution shapes: an explicit response id (response.id or
+			// top-level response_id) ends only that response, while an
+			// id-less failure ends the running one. Success terminals only
+			// carry response.id, and one without an id is left unattributed,
+			// as before.
+			responseID := strings.Clone(ojson.GetBytesNoCopy(payload, "response.id").String())
+			if eventType == "response.created" {
+				if responseID != "" {
+					sess.activeMu.Lock()
+					if sess.responseStateConn == conn && sess.activeConn == conn && sess.activeCh != nil {
+						sess.activeResponseID = responseID
+						sess.activeResponseTerminal = false
+					}
+					sess.activeMu.Unlock()
 				}
-				sess.activeMu.Unlock()
+			} else if isTerminalEvent(eventType) {
+				failure := eventType == "error" || eventType == "response.failed"
+				if failure && responseID == "" {
+					responseID = strings.Clone(ojson.GetBytesNoCopy(payload, "response_id").String())
+				}
+				if responseID != "" || failure {
+					sess.activeMu.Lock()
+					if sess.responseStateConn == conn {
+						terminalID := responseID
+						if terminalID == "" {
+							// Id-less failure: the running response ended.
+							terminalID = sess.activeResponseID
+						}
+						if terminalID != "" && eventType != "error" && !strings.HasPrefix(sess.sessionID, "codex-http-relay:") {
+							// Match the pre-existing terminal-ID recording,
+							// which never covered error events.
+							sess.terminalResponseIDs[terminalID] = struct{}{}
+						}
+						if terminalID != "" && sess.activeResponseID == terminalID {
+							sess.activeResponseTerminal = true
+						}
+					}
+					sess.activeMu.Unlock()
+				}
 			}
 		}
 
@@ -866,6 +943,8 @@ func (e *CodexWebsocketsExecutor) invalidateUpstreamConnWithNotify(sess *codexWe
 		return
 	}
 	lifecycle := sess.lifecycle
+	turnContext := sess.turnContext
+	sess.turnContext = nil
 	closer := sess.connCloser
 	sess.lifecycle = nil
 	sess.lifecycleModel = ""
@@ -876,6 +955,9 @@ func (e *CodexWebsocketsExecutor) invalidateUpstreamConnWithNotify(sess *codexWe
 	sess.multiAgentV2OptimizedConn = nil
 	if sess.readerConn == conn {
 		sess.readerConn = nil
+	}
+	if cliproxyexecutor.IsUpstreamWebsocketTurnError(err) {
+		cliproxyexecutor.NotifyWebsocketInputLoss(turnContext)
 	}
 	sess.connMu.Unlock()
 
@@ -890,7 +972,12 @@ func (e *CodexWebsocketsExecutor) invalidateUpstreamConnWithNotify(sess *codexWe
 		}
 	}
 	if lifecycle != nil {
-		lifecycle.End(reason)
+		if owner, ok := lifecycle.(interface{ EndWebsocketTurn(context.Context, string) }); ok && cliproxyexecutor.IsUpstreamWebsocketTurnError(err) {
+			// The lost turn's attempt must survive to deliver its error to the client.
+			owner.EndWebsocketTurn(turnContext, reason)
+		} else {
+			lifecycle.End(reason)
+		}
 	}
 }
 

@@ -6,11 +6,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
-	"github.com/tidwall/gjson"
 )
 
 type issue5190LifecycleHost struct {
@@ -81,7 +81,7 @@ func TestIssue5190ModelDetailUsesVisibleCatalog(t *testing.T) {
 		if rr.Code != tc.status {
 			t.Errorf("%s: status=%d want=%d body=%s", tc.id, rr.Code, tc.status, rr.Body.String())
 		}
-		if tc.status == 200 && gjson.Get(rr.Body.String(), "id").String() != tc.id {
+		if tc.status == 200 && ojson.GetBytesNoCopy(rr.Body.Bytes(), "id").String() != tc.id {
 			t.Errorf("wrong model: %s", rr.Body.String())
 		}
 	}
@@ -123,10 +123,40 @@ func TestIssue5190ModelDetailHomeVisibility(t *testing.T) {
 	previousHome := home.Current()
 	home.SetCurrent(newHomeCatalogClient(t, `{"openai":[{"id":"home/visible"}]}`))
 	t.Cleanup(func() { home.SetCurrent(previousHome) })
-	if rr := get("home/visible", true); rr.Code != 200 || gjson.Get(rr.Body.String(), "id").String() != "home/visible" {
+	if rr := get("home/visible", true); rr.Code != 200 || ojson.GetBytesNoCopy(rr.Body.Bytes(), "id").String() != "home/visible" {
 		t.Fatalf("Home detail: %d %s", rr.Code, rr.Body.String())
 	}
 	if rr := get("local/only", true); rr.Code != 404 {
 		t.Fatalf("local registry leaked into Home: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestModelDetailPropagatesModelListResponseInterceptKind(t *testing.T) {
+	server := newTestServer(t)
+	var capturedReq pluginapi.ResponseInterceptRequest
+	called := false
+	server.handlers.SetPluginHost(&mockModelListInterceptorHost{
+		interceptResponse: func(_ context.Context, req pluginapi.ResponseInterceptRequest) pluginapi.ResponseInterceptResponse {
+			called = true
+			capturedReq = req
+			return pluginapi.ResponseInterceptResponse{
+				Body: []byte(`{"object":"list","data":[{"id":"vendor/visible","object":"model","owned_by":"plugin"}]}`),
+			}
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models/vendor/visible", nil)
+	req.Header.Set("Authorization", "Bearer test-key")
+	rr := httptest.NewRecorder()
+	server.engine.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !called {
+		t.Fatal("InterceptResponse was not called for /v1/models/{id}")
+	}
+	if capturedReq.Kind != pluginapi.ResponseInterceptKindModelList {
+		t.Fatalf("ResponseInterceptRequest.Kind = %q, want %q", capturedReq.Kind, pluginapi.ResponseInterceptKindModelList)
 	}
 }
