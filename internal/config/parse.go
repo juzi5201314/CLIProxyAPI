@@ -19,6 +19,9 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 	if errValidate := validateCredentialWeightYAML(data); errValidate != nil {
 		return nil, errValidate
 	}
+	if errValidate := validateMaxConcurrencyYAML(data); errValidate != nil {
+		return nil, errValidate
+	}
 
 	var cfg Config
 	// Keep defaults aligned with LoadConfigOptional.
@@ -58,6 +61,9 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 		return nil, errValidate
 	}
 	if errValidate := cfg.ValidateCredentialWeights(); errValidate != nil {
+		return nil, errValidate
+	}
+	if errValidate := cfg.ValidateMaxConcurrencies(); errValidate != nil {
 		return nil, errValidate
 	}
 	if _, errValidate := cfg.Codex.WebsocketRelay.Policy(); errValidate != nil {

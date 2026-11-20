@@ -1,4 +1,5 @@
 import { client, v0 } from "./client";
+import { ApiError } from "./types";
 import type {
   AuthFileListResponse,
   BreakdownDimension,
@@ -422,6 +423,111 @@ export const providerLists = {
   /** Map-shaped endpoints (oauth-excluded-models, oauth-model-alias) take the bare object. */
   async putMap(path: string, map: unknown): Promise<void> {
     await client.put(`/${path}`, map, v0());
+  },
+};
+
+const V8_SHARED_KEY_FIELDS = new Set([
+  "base-url",
+  "priority",
+  "prefix",
+  "proxy-url",
+  "headers",
+  "models",
+  "excluded-models",
+  "disable-cooling",
+  "request-retry",
+  "max-concurrency",
+  "request-scoped-errors",
+]);
+
+function stripAuthIndex<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  const { "auth-index": _a1, auth_index: _a2, ...rest } = obj;
+  return rest;
+}
+
+/** V8 API-key provider list adapter over /v8/management/config/api-keys/:kind. */
+export const apiKeyProviders = {
+  async getList<T extends Record<string, unknown>>(kindId: string): Promise<T[]> {
+    let raw: unknown;
+    try {
+      const { data } = await client.get(`/config/api-keys/${encodeURIComponent(kindId)}`);
+      raw = data;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return [];
+      }
+      throw error;
+    }
+    if (!Array.isArray(raw)) return [];
+
+    if (kindId === "openai-compatibility") {
+      return raw.map((item) => {
+        const group = (item ?? {}) as Record<string, unknown>;
+        const { keys, ...rest } = group;
+        const entries = Array.isArray(keys) ? keys : (group["api-key-entries"] as unknown[] | undefined);
+        return {
+          ...rest,
+          ...(entries !== undefined ? { "api-key-entries": entries } : {}),
+        } as T;
+      });
+    }
+
+    const out: T[] = [];
+    for (const item of raw) {
+      const group = (item ?? {}) as Record<string, unknown>;
+      const { keys, name: _groupName, ...groupShared } = group;
+      const keyList = Array.isArray(keys) ? keys : [];
+      if (keyList.length === 0) continue;
+      for (const k of keyList) {
+        const keyObj = (k ?? {}) as Record<string, unknown>;
+        out.push({ ...groupShared, ...keyObj } as T);
+      }
+    }
+    return out;
+  },
+
+  async putList<T extends Record<string, unknown>>(kindId: string, items: T[]): Promise<void> {
+    const path = `/config/api-keys/${encodeURIComponent(kindId)}`;
+    if (items.length === 0) {
+      try {
+        await client.delete(path);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    if (kindId === "openai-compatibility") {
+      const payload = items.map((entry) => {
+        const { "api-key-entries": apiKeyEntries, ...rest } = stripAuthIndex(entry);
+        const cleanKeys = Array.isArray(apiKeyEntries)
+          ? apiKeyEntries.map((k) => stripAuthIndex((k ?? {}) as Record<string, unknown>))
+          : [];
+        return { ...rest, keys: cleanKeys };
+      });
+      await client.put(path, payload);
+      return;
+    }
+
+    const payload = items.map((entry, index) => {
+      const clean = stripAuthIndex(entry);
+      const group: Record<string, unknown> = { name: `${kindId}-${index + 1}` };
+      const keyEntry: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(clean)) {
+        if (v === undefined) continue;
+        if (V8_SHARED_KEY_FIELDS.has(k)) {
+          group[k] = v;
+        } else {
+          keyEntry[k] = v;
+        }
+      }
+      group.keys = [keyEntry];
+      return group;
+    });
+    await client.put(path, payload);
   },
 };
 

@@ -130,6 +130,9 @@ func (m *Manager) syncSchedulerFromSnapshot(auths []*Auth) {
 	if m == nil || m.scheduler == nil {
 		return
 	}
+	if m.scheduler.concurrency == nil {
+		m.scheduler.concurrency = m.concurrencyTracker()
+	}
 	m.scheduler.rebuild(auths)
 }
 
@@ -562,18 +565,28 @@ func (m *Manager) availableAuthsForRouteModelAcrossPriorities(auths []*Auth, pro
 }
 
 func (m *Manager) availableAuthsForRouteModelWithPriorityMode(auths []*Auth, provider, routeModel string, now time.Time, allPriorities bool) ([]*Auth, error) {
+	available, _, err := m.availableAuthsForRouteModelWithConcurrency(auths, provider, routeModel, now, allPriorities)
+	return available, err
+}
+
+func (m *Manager) availableAuthsForRouteModelWithConcurrency(auths []*Auth, provider, routeModel string, now time.Time, allPriorities bool) ([]*Auth, bool, error) {
 	if len(auths) == 0 {
-		return nil, &Error{Code: "auth_not_found", Message: "no auth candidates"}
+		return nil, false, &Error{Code: "auth_not_found", Message: "no auth candidates"}
 	}
 
 	availableByPriority := make(map[int][]*Auth)
 	cooldownCount := 0
 	unauthorizedCount := 0
+	concurrencyBlockedCount := 0
 	var earliest time.Time
 	for _, candidate := range auths {
 		checkModel := m.selectionModelForAuth(candidate, routeModel)
 		blocked, reason, next := isAuthBlockedForModel(candidate, checkModel, now)
 		if !blocked {
+			if !m.canAcquireConcurrency(candidate) {
+				concurrencyBlockedCount++
+				continue
+			}
 			priority := authPriority(candidate)
 			availableByPriority[priority] = append(availableByPriority[priority], candidate)
 			continue
@@ -589,7 +602,11 @@ func (m *Manager) availableAuthsForRouteModelWithPriorityMode(auths []*Auth, pro
 		}
 	}
 
+	concurrencyBlocked := concurrencyBlockedCount > 0
 	if len(availableByPriority) == 0 {
+		if concurrencyBlocked {
+			return nil, true, newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+		}
 		lastCandidateErr := latestCandidateErrorForModel(auths, func(candidate *Auth) string {
 			return m.selectionModelForAuth(candidate, routeModel)
 		})
@@ -603,24 +620,24 @@ func (m *Manager) availableAuthsForRouteModelWithPriorityMode(auths []*Auth, pro
 			if resetIn < 0 {
 				resetIn = 0
 			}
-			return nil, newModelCooldownErrorWithCause(routeModel, providerForError, resetIn, lastCandidateErr)
+			return nil, false, newModelCooldownErrorWithCause(routeModel, providerForError, resetIn, lastCandidateErr)
 		}
 		if unauthorizedCount == len(auths) && len(auths) > 0 {
 			terminalCause := latestUnauthorizedCandidateError(auths)
 			if terminalCause == nil {
 				terminalCause = lastCandidateErr
 			}
-			return nil, NewTerminalAuthError(&Error{
+			return nil, false, NewTerminalAuthError(&Error{
 				Code:       "auth_unavailable",
 				Message:    "no auth available",
 				Retryable:  false,
 				HTTPStatus: http.StatusServiceUnavailable,
 			}, terminalCause)
 		}
-		return nil, newAuthUnavailableErrorWithCause(earliest, now, lastCandidateErr)
+		return nil, false, newAuthUnavailableErrorWithCause(earliest, now, lastCandidateErr)
 	}
 
-	return availableAuthsFromPriorityBuckets(availableByPriority, allPriorities), nil
+	return availableAuthsFromPriorityBuckets(availableByPriority, allPriorities), concurrencyBlocked, nil
 }
 
 // availableAuthsForSelector reports the candidates handed to priority-scoped consumers such as
@@ -628,22 +645,27 @@ func (m *Manager) availableAuthsForRouteModelWithPriorityMode(auths []*Auth, pro
 // unless session affinity or an across-priorities scheduler is active, in which case the selector
 // or scheduler additionally receives lower priority tiers.
 func (m *Manager) availableAuthsForSelector(selector Selector, auths []*Auth, provider, routeModel string, now time.Time, schedulerAcross bool) (priorityAuths, selectorAuths []*Auth, err error) {
+	priorityAuths, selectorAuths, _, err = m.availableAuthsForSelectorWithConcurrency(selector, auths, provider, routeModel, now, schedulerAcross)
+	return priorityAuths, selectorAuths, err
+}
+
+func (m *Manager) availableAuthsForSelectorWithConcurrency(selector Selector, auths []*Auth, provider, routeModel string, now time.Time, schedulerAcross bool) (priorityAuths, selectorAuths []*Auth, concurrencyBlocked bool, err error) {
 	_, sessionAffinity := selector.(*SessionAffinitySelector)
 
 	if !sessionAffinity && !schedulerAcross {
-		priorityAuths, err = m.availableAuthsForRouteModel(auths, provider, routeModel, now)
+		priorityAuths, concurrencyBlocked, err = m.availableAuthsForRouteModelWithConcurrency(auths, provider, routeModel, now, false)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, concurrencyBlocked, err
 		}
 		priorityAuths = cloneAuthSlice(priorityAuths)
-		return priorityAuths, priorityAuths, nil
+		return priorityAuths, priorityAuths, concurrencyBlocked, nil
 	}
 
 	// One availability pass and one clone pass serve both lists: the highest priority tier is a
 	// subset of the across-priority candidates, so it is narrowed from the same cloned auths.
-	allAuths, errAcross := m.availableAuthsForRouteModelAcrossPriorities(auths, provider, routeModel, now)
+	allAuths, concurrencyBlocked, errAcross := m.availableAuthsForRouteModelWithConcurrency(auths, provider, routeModel, now, true)
 	if errAcross != nil {
-		return nil, nil, errAcross
+		return nil, nil, concurrencyBlocked, errAcross
 	}
 	allAuths = cloneAuthSlice(allAuths)
 
@@ -658,7 +680,7 @@ func (m *Manager) availableAuthsForSelector(selector Selector, auths []*Auth, pr
 	} else {
 		selectorAuths = highestPriorityAuths(allAuths)
 	}
-	return priorityAuths, selectorAuths, nil
+	return priorityAuths, selectorAuths, concurrencyBlocked, nil
 }
 
 func selectionArgForSelector(selector Selector, routeModel string) string {
@@ -1375,6 +1397,9 @@ func (m *Manager) shouldRetryAfterErrorWithAttempted(ctx context.Context, opts c
 	if errors.As(err, &homeBusy) && homeBusy != nil {
 		return 0, false
 	}
+	if isConcurrencyBusyError(err) {
+		return 0, false
+	}
 	status := statusCodeFromError(err)
 	if status == http.StatusOK {
 		return 0, false
@@ -1879,7 +1904,7 @@ func (m *Manager) pickNextLegacy(ctx context.Context, provider, model string, op
 		return nil, nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 	}
 	now := time.Now()
-	available, selectorAuths, errAvailable := m.availableAuthsForSelector(selector, candidates, provider, model, now, schedulerAcross)
+	available, selectorAuths, concurrencyBlocked, errAvailable := m.availableAuthsForSelectorWithConcurrency(selector, candidates, provider, model, now, schedulerAcross)
 	if errAvailable != nil {
 		m.mu.RUnlock()
 		m.warnLogAuthUnavailable(ctx, []string{provider}, model, opts, tried, errAvailable)
@@ -1890,6 +1915,9 @@ func (m *Manager) pickNextLegacy(ctx context.Context, provider, model string, op
 
 	selected, handled, errPick := m.pickViaPluginScheduler(ctx, pluginScheduler, provider, []string{provider}, model, opts, tried, available)
 	if errPick != nil {
+		if concurrencyBlocked && isNoAuthSelectionError(errPick) && (ctx == nil || ctx.Err() == nil) {
+			errPick = newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+		}
 		m.warnLogAuthUnavailable(ctx, []string{provider}, model, opts, tried, errPick)
 		return nil, nil, errPick
 	}
@@ -1900,6 +1928,9 @@ func (m *Manager) pickNextLegacy(ctx context.Context, provider, model string, op
 		if errPick != nil {
 			if isBuiltInSelector(selector) {
 				errPick = restoreModelCooldownErrorModel(errPick, model)
+			}
+			if concurrencyBlocked && isNoAuthSelectionError(errPick) && (ctx == nil || ctx.Err() == nil) {
+				errPick = newLocalConcurrencyBusyError("credential concurrency limit exceeded")
 			}
 			m.warnLogAuthUnavailable(ctx, []string{provider}, model, opts, tried, errPick)
 			return nil, nil, errPick
@@ -2225,7 +2256,7 @@ func (m *Manager) pickNextMixedLegacy(ctx context.Context, providers []string, m
 		return nil, nil, "", &Error{Code: "auth_not_found", Message: "no auth available"}
 	}
 	now := time.Now()
-	available, selectorAuths, errAvailable := m.availableAuthsForSelector(selector, candidates, "mixed", model, now, schedulerAcross)
+	available, selectorAuths, concurrencyBlocked, errAvailable := m.availableAuthsForSelectorWithConcurrency(selector, candidates, "mixed", model, now, schedulerAcross)
 	if errAvailable != nil {
 		m.mu.RUnlock()
 		m.warnLogAuthUnavailable(ctx, providers, model, opts, tried, errAvailable)
@@ -2236,6 +2267,9 @@ func (m *Manager) pickNextMixedLegacy(ctx context.Context, providers []string, m
 
 	selected, handled, errPick := m.pickViaPluginScheduler(ctx, pluginScheduler, "mixed", providers, model, opts, tried, available)
 	if errPick != nil {
+		if concurrencyBlocked && isNoAuthSelectionError(errPick) && (ctx == nil || ctx.Err() == nil) {
+			errPick = newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+		}
 		m.warnLogAuthUnavailable(ctx, providers, model, opts, tried, errPick)
 		return nil, nil, "", errPick
 	}
@@ -2246,6 +2280,9 @@ func (m *Manager) pickNextMixedLegacy(ctx context.Context, providers []string, m
 		if errPick != nil {
 			if isBuiltInSelector(selector) {
 				errPick = restoreModelCooldownErrorModel(errPick, model)
+			}
+			if concurrencyBlocked && isNoAuthSelectionError(errPick) && (ctx == nil || ctx.Err() == nil) {
+				errPick = newLocalConcurrencyBusyError("credential concurrency limit exceeded")
 			}
 			m.warnLogAuthUnavailable(ctx, providers, model, opts, tried, errPick)
 			return nil, nil, "", errPick
@@ -2356,6 +2393,58 @@ func (m *Manager) pickNextMixed(ctx context.Context, providers []string, model s
 		m.mu.Unlock()
 	}
 	return authCopy, executor, providerKey, nil
+}
+
+func isNoAuthSelectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr == nil {
+		return false
+	}
+	code := strings.TrimSpace(authErr.Code)
+	return code == "auth_not_found" || code == "auth_unavailable"
+}
+
+func (m *Manager) pickAndAcquireNextMixed(ctx context.Context, providers []string, model string, opts cliproxyexecutor.Options, tried map[string]struct{}) (*Auth, ProviderExecutor, string, *concurrencyLease, error) {
+	var busySkipped map[string]struct{}
+	for {
+		pickTried := tried
+		if len(busySkipped) > 0 {
+			pickTried = make(map[string]struct{}, len(tried)+len(busySkipped))
+			for id := range tried {
+				pickTried[id] = struct{}{}
+			}
+			for id := range busySkipped {
+				pickTried[id] = struct{}{}
+			}
+		}
+		auth, executor, provider, errPick := m.pickNextMixed(ctx, providers, model, opts, pickTried)
+		if errPick != nil {
+			if len(busySkipped) > 0 && isNoAuthSelectionError(errPick) && (ctx == nil || ctx.Err() == nil) {
+				return nil, nil, "", nil, newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+			}
+			return nil, nil, "", nil, errPick
+		}
+		if m != nil && m.HomeEnabled() {
+			return auth, executor, provider, nil, nil
+		}
+		lease, ok := m.tryAcquireConcurrency(auth)
+		if ok {
+			return auth, executor, provider, lease, nil
+		}
+		if auth == nil || auth.ID == "" {
+			return nil, nil, "", nil, newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+		}
+		if busySkipped == nil {
+			busySkipped = make(map[string]struct{})
+		}
+		if _, seen := busySkipped[auth.ID]; seen {
+			return nil, nil, "", nil, newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+		}
+		busySkipped[auth.ID] = struct{}{}
+	}
 }
 
 func isAuthUnavailableError(err error) bool {

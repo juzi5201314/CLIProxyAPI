@@ -89,6 +89,9 @@ func (m *Manager) Register(ctx context.Context, auth *Auth) (*Auth, error) {
 	if errWeight := ValidateAuthWeight(auth); errWeight != nil {
 		return nil, fmt.Errorf("register auth: %w", errWeight)
 	}
+	if errLimit := ValidateAuthMaxConcurrency(auth); errLimit != nil {
+		return nil, fmt.Errorf("register auth: %w", errLimit)
+	}
 	if auth.ID == "" {
 		auth.ID = uuid.NewString()
 	}
@@ -288,6 +291,9 @@ func (m *Manager) updateInternalLocked(ctx context.Context, base, auth *Auth, mo
 	NormalizeCredentialMetadata(auth.Metadata)
 	if errWeight := ValidateAuthWeight(auth); errWeight != nil {
 		return nil, false, false, fmt.Errorf("update auth: %w", errWeight)
+	}
+	if errLimit := ValidateAuthMaxConcurrency(auth); errLimit != nil {
+		return nil, false, false, fmt.Errorf("update auth: %w", errLimit)
 	}
 	isFileSnapshot := mode == updateModeReplace && auth.HasFileSnapshot()
 	if isFileSnapshot {
@@ -619,6 +625,9 @@ func (m *Manager) Load(ctx context.Context) error {
 		if errWeight := ValidateAuthWeight(auth); errWeight != nil {
 			continue
 		}
+		if errLimit := ValidateAuthMaxConcurrency(auth); errLimit != nil {
+			continue
+		}
 		auth.EnsureIndex()
 		m.authEpochs[auth.ID] = max(m.authEpochs[auth.ID], auth.RegistrationEpoch) + 1
 		auth.RegistrationEpoch = m.authEpochs[auth.ID]
@@ -685,6 +694,9 @@ func (m *Manager) persist(ctx context.Context, auth *Auth) error {
 	}
 	if errWeight := ValidateAuthWeight(auth); errWeight != nil {
 		return fmt.Errorf("persist auth: %w", errWeight)
+	}
+	if errLimit := ValidateAuthMaxConcurrency(auth); errLimit != nil {
+		return fmt.Errorf("persist auth: %w", errLimit)
 	}
 	if IsConfigAPIKeyAuth(auth) {
 		return nil

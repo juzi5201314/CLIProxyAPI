@@ -1401,54 +1401,70 @@ func (m *Manager) tryAntigravityCreditsExecute(ctx context.Context, req cliproxy
 	if errCandidates != nil {
 		return cliproxyexecutor.Response{}, false, errCandidates
 	}
+	var busyBlocked bool
 	for _, c := range candidates {
 		if ctx.Err() != nil {
 			return cliproxyexecutor.Response{}, false, nil
 		}
-		creditsCtx := WithAntigravityCredits(ctx)
-		if rt := m.roundTripperFor(c.auth); rt != nil {
-			creditsCtx = context.WithValue(creditsCtx, roundTripperContextKey{}, rt)
-			creditsCtx = context.WithValue(creditsCtx, "cliproxy.roundtripper", rt)
-		}
-		creditsOpts := ensureRequestedModelMetadata(opts, routeModel)
-		creditsCtx = contextWithRequestedModelAlias(creditsCtx, creditsOpts, routeModel)
-		preparedAuth, errPrepare := m.prepareRequestAuth(creditsCtx, c.executor, c.auth)
-		if errPrepare != nil {
+		lease, ok := m.tryAcquireConcurrency(c.auth)
+		if !ok {
+			busyBlocked = true
 			continue
 		}
-		c.auth = preparedAuth
-		publishSelectedAuthMetadata(creditsOpts.Metadata, c.auth)
-		models, pooled, aliasResult, routing := m.executionModelCandidatesWithAlias(c.auth, routeModel)
-		if len(models) == 0 {
-			continue
-		}
-		for _, upstreamModel := range models {
-			resultModel := m.stateModelForExecution(c.auth, routeModel, upstreamModel, pooled)
-			execReq := req
-			execReq.Model = upstreamModel
-			creditsCtx = syncMetadataSessionToContext(creditsCtx, creditsOpts.Metadata)
-			executionSeq := m.nextExecutionSeq()
-			resp, errExec := c.executor.Execute(creditsCtx, c.auth, execReq, creditsOpts)
-			result := Result{AuthID: c.auth.ID, Provider: c.provider, Model: resultModel, RouteModel: routeModel, Success: errExec == nil, Options: creditsOpts, CredentialVersion: c.auth.CredentialVersion, RegistrationEpoch: c.auth.RegistrationEpoch, ExecutionSeq: executionSeq}
-			if errExec != nil {
-				result.Error = resultErrorFromError(errExec)
-				if ra := retryAfterFromError(errExec); ra != nil {
-					result.RetryAfter = ra
-				}
-				if isCredentialScopedError(errExec) {
-					result.CredentialScope = true
+		resp, handled, errAttempt := func() (cliproxyexecutor.Response, bool, error) {
+			defer lease.Release()
+			creditsCtx := WithAntigravityCredits(ctx)
+			if rt := m.roundTripperFor(c.auth); rt != nil {
+				creditsCtx = context.WithValue(creditsCtx, roundTripperContextKey{}, rt)
+				creditsCtx = context.WithValue(creditsCtx, "cliproxy.roundtripper", rt)
+			}
+			creditsOpts := ensureRequestedModelMetadata(opts, routeModel)
+			creditsCtx = contextWithRequestedModelAlias(creditsCtx, creditsOpts, routeModel)
+			preparedAuth, errPrepare := m.prepareRequestAuth(creditsCtx, c.executor, c.auth)
+			if errPrepare != nil {
+				return cliproxyexecutor.Response{}, false, nil
+			}
+			c.auth = preparedAuth
+			publishSelectedAuthMetadata(creditsOpts.Metadata, c.auth)
+			models, pooled, aliasResult, routing := m.executionModelCandidatesWithAlias(c.auth, routeModel)
+			if len(models) == 0 {
+				return cliproxyexecutor.Response{}, false, nil
+			}
+			for _, upstreamModel := range models {
+				resultModel := m.stateModelForExecution(c.auth, routeModel, upstreamModel, pooled)
+				execReq := req
+				execReq.Model = upstreamModel
+				creditsCtx = syncMetadataSessionToContext(creditsCtx, creditsOpts.Metadata)
+				executionSeq := m.nextExecutionSeq()
+				resp, errExec := c.executor.Execute(creditsCtx, c.auth, execReq, creditsOpts)
+				result := Result{AuthID: c.auth.ID, Provider: c.provider, Model: resultModel, RouteModel: routeModel, Success: errExec == nil, Options: creditsOpts, CredentialVersion: c.auth.CredentialVersion, RegistrationEpoch: c.auth.RegistrationEpoch, ExecutionSeq: executionSeq}
+				if errExec != nil {
+					result.Error = resultErrorFromError(errExec)
+					if ra := retryAfterFromError(errExec); ra != nil {
+						result.RetryAfter = ra
+					}
+					if isCredentialScopedError(errExec) {
+						result.CredentialScope = true
+					}
+					m.MarkResult(creditsCtx, result)
+					if result.CredentialScope {
+						break
+					}
+					continue
 				}
 				m.MarkResult(creditsCtx, result)
-				if result.CredentialScope {
-					break
-				}
-				continue
+				attemptAliasResult := resolveAttemptAliasResult(routing, c.auth, routeModel, upstreamModel, aliasResult)
+				rewriteForceMappedResponse(&resp, attemptAliasResult)
+				return resp, true, nil
 			}
-			m.MarkResult(creditsCtx, result)
-			attemptAliasResult := resolveAttemptAliasResult(routing, c.auth, routeModel, upstreamModel, aliasResult)
-			rewriteForceMappedResponse(&resp, attemptAliasResult)
-			return resp, true, nil
+			return cliproxyexecutor.Response{}, false, nil
+		}()
+		if handled || errAttempt != nil {
+			return resp, handled, errAttempt
 		}
+	}
+	if busyBlocked {
+		return cliproxyexecutor.Response{}, false, newLocalConcurrencyBusyError("credential concurrency limit exceeded")
 	}
 	return cliproxyexecutor.Response{}, false, nil
 }
@@ -1465,10 +1481,17 @@ func (m *Manager) tryAntigravityCreditsExecuteStream(ctx context.Context, req cl
 	if errCandidates != nil {
 		return nil, false, errCandidates
 	}
+	var busyBlocked bool
 	for _, c := range candidates {
 		if ctx.Err() != nil {
 			return nil, false, nil
 		}
+		lease, ok := m.tryAcquireConcurrency(c.auth)
+		if !ok {
+			busyBlocked = true
+			continue
+		}
+		transferred := false
 		creditsCtx := WithAntigravityCredits(ctx)
 		if rt := m.roundTripperFor(c.auth); rt != nil {
 			creditsCtx = context.WithValue(creditsCtx, roundTripperContextKey{}, rt)
@@ -1477,20 +1500,29 @@ func (m *Manager) tryAntigravityCreditsExecuteStream(ctx context.Context, req cl
 		creditsOpts := ensureRequestedModelMetadata(opts, routeModel)
 		preparedAuth, errPrepare := m.prepareRequestAuth(creditsCtx, c.executor, c.auth)
 		if errPrepare != nil {
+			lease.Release()
 			continue
 		}
 		c.auth = preparedAuth
 		publishSelectedAuthMetadata(creditsOpts.Metadata, c.auth)
 		models, pooled, aliasResult, routing := m.executionModelCandidatesWithAlias(c.auth, routeModel)
 		if len(models) == 0 {
+			lease.Release()
 			continue
 		}
 		creditsCtx = syncMetadataSessionToContext(creditsCtx, creditsOpts.Metadata)
-		result, errStream := m.executeStreamWithModelPool(creditsCtx, c.executor, c.auth, c.provider, req, creditsOpts, routeModel, "", models, pooled, aliasResult, routing, true, false)
+		result, errStream := m.executeStreamWithModelPool(creditsCtx, c.executor, c.auth, c.provider, req, creditsOpts, routeModel, "", models, pooled, aliasResult, routing, true, false, lease.Release)
 		if errStream != nil {
+			if !transferred {
+				lease.Release()
+			}
 			continue
 		}
+		transferred = true
 		return result, true, nil
+	}
+	if busyBlocked {
+		return nil, false, newLocalConcurrencyBusyError("credential concurrency limit exceeded")
 	}
 	return nil, false, nil
 }

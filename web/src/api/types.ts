@@ -239,6 +239,7 @@ export interface AuthFileEntry {
   weight?: number;
   websockets?: boolean;
   request_retry?: number;
+  max_concurrency?: number;
   cooldowns?: Record<string, unknown>;
   [key: string]: unknown;
 }

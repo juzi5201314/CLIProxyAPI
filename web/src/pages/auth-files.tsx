@@ -1318,6 +1318,7 @@ function DetailSheet({
   const [syncingModels, setSyncingModels] = useState(false);
   const [priority, setPriority] = useState("");
   const [weight, setWeight] = useState("");
+  const [maxConcurrency, setMaxConcurrency] = useState("");
   const [note, setNote] = useState("");
 
   const open = Boolean(entry);
@@ -1325,6 +1326,7 @@ function DetailSheet({
   useEffect(() => {
     setPriority(entry?.priority !== undefined ? String(entry.priority) : "");
     setWeight(entry?.weight !== undefined ? String(entry.weight) : "");
+    setMaxConcurrency(entry?.max_concurrency !== undefined ? String(entry.max_concurrency) : "");
     setNote(entry?.note ?? "");
     const cached = entry ? getCachedModels(entry.auth_index || entry.id || entry.name) : null;
     setModels(cached);
@@ -1355,6 +1357,11 @@ function DetailSheet({
     const fields: Record<string, unknown> = {};
     if (priority !== "") fields.priority = Number(priority);
     if (weight !== "") fields.weight = Number(weight);
+    const trimmedConcurrency = maxConcurrency.trim();
+    const prevConcurrency = entry.max_concurrency !== undefined ? String(entry.max_concurrency) : "";
+    if (trimmedConcurrency !== prevConcurrency) {
+      fields.max_concurrency = trimmedConcurrency === "" ? null : Number(trimmedConcurrency);
+    }
     if (note !== (entry.note ?? "")) fields.note = note;
     if (Object.keys(fields).length === 0) {
       onClose();
@@ -1386,7 +1393,7 @@ function DetailSheet({
 
               <div className="space-y-2">
                 <Label className="text-xs">{t("authFiles.fields")}</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">
                     <Label className="text-muted-foreground text-[10px]">priority</Label>
                     <Input value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 text-xs" inputMode="numeric" />
@@ -1394,6 +1401,10 @@ function DetailSheet({
                   <div className="space-y-1">
                     <Label className="text-muted-foreground text-[10px]">weight</Label>
                     <Input value={weight} onChange={(event) => setWeight(event.target.value)} className="h-8 text-xs" inputMode="numeric" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-muted-foreground text-[10px]">max_concurrency</Label>
+                    <Input value={maxConcurrency} onChange={(event) => setMaxConcurrency(event.target.value)} placeholder="∞" className="h-8 text-xs" inputMode="numeric" />
                   </div>
                 </div>
                 <div className="space-y-1">

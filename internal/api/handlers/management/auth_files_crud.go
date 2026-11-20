@@ -534,6 +534,9 @@ func (h *Handler) buildAuthFromFileData(path string, data []byte) (*coreauth.Aut
 	if _, errExcluded := synthesizer.ExtractExcludedModelsFromMetadata(metadata); errExcluded != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidAuthFile, errExcluded)
 	}
+	if errLimit := coreauth.ValidateAuthMaxConcurrency(&coreauth.Auth{Metadata: metadata}); errLimit != nil {
+		return nil, fmt.Errorf("%w: %w", errInvalidAuthFile, errLimit)
+	}
 	provider, _ := metadata["type"].(string)
 	if provider == "" {
 		provider = "unknown"
@@ -593,6 +596,9 @@ func (h *Handler) buildAuthFromFileData(path string, data []byte) (*coreauth.Aut
 			auth.NextRefreshAfter = existing.NextRefreshAfter
 			auth.Runtime = existing.Runtime
 		}
+	}
+	if errLimit := coreauth.ApplyAuthMaxConcurrencyMetadata(auth, metadata); errLimit != nil {
+		return nil, fmt.Errorf("%w: %w", errInvalidAuthFile, errLimit)
 	}
 	coreauth.ApplyCustomHeadersFromMetadata(auth)
 	return auth, nil

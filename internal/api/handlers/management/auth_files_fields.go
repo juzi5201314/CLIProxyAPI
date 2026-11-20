@@ -18,6 +18,7 @@ import (
 	claudeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/claude"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialconcurrency"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialweight"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
@@ -417,6 +418,21 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 			}
 		} else if rootAuthFileField(fieldPath) == coreauth.AttributeWeight {
 			return &authFileFieldPatchError{message: "weight does not support nested fields"}
+		} else if fieldPath == coreauth.AttributeMaxConcurrency {
+			if value == nil {
+				delete(targetAuth.Metadata, coreauth.AttributeMaxConcurrency)
+			} else {
+				if _, okNumber := value.(json.Number); !okNumber {
+					return &authFileFieldPatchError{message: "max_concurrency must be an integer"}
+				}
+				limit, errLimit := credentialconcurrency.ParseValue(value)
+				if errLimit != nil {
+					return &authFileFieldPatchError{message: errLimit.Error()}
+				}
+				targetAuth.Metadata[coreauth.AttributeMaxConcurrency] = limit
+			}
+		} else if rootAuthFileField(fieldPath) == coreauth.AttributeMaxConcurrency {
+			return &authFileFieldPatchError{message: "max_concurrency does not support nested fields"}
 		} else if fieldPath == "headers" {
 			applyAuthFileHeadersPatch(targetAuth, value)
 		} else if errSet := setAuthFileMetadataValue(targetAuth.Metadata, fieldPath, value); errSet != nil {
@@ -670,6 +686,9 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 	if _, ok := touchedRoots[coreauth.AttributeWeight]; ok {
 		syncAuthFileWeightAttribute(auth)
 	}
+	if _, ok := touchedRoots[coreauth.AttributeMaxConcurrency]; ok {
+		syncAuthFileMaxConcurrencyAttribute(auth)
+	}
 	if _, ok := touchedRoots["note"]; ok {
 		syncAuthFileNoteAttribute(auth)
 	}
@@ -768,6 +787,26 @@ func syncAuthFileWeightAttribute(auth *coreauth.Auth) {
 		return
 	}
 	auth.Attributes[coreauth.AttributeWeight] = strconv.FormatInt(weight, 10)
+}
+
+func syncAuthFileMaxConcurrencyAttribute(auth *coreauth.Auth) {
+	if auth == nil {
+		return
+	}
+	if auth.Attributes == nil {
+		auth.Attributes = make(map[string]string)
+	}
+	raw, exists := auth.Metadata[coreauth.AttributeMaxConcurrency]
+	if !exists || raw == nil {
+		delete(auth.Attributes, coreauth.AttributeMaxConcurrency)
+		return
+	}
+	limit, errLimit := credentialconcurrency.ParseValue(raw)
+	if errLimit != nil || limit <= 0 {
+		delete(auth.Attributes, coreauth.AttributeMaxConcurrency)
+		return
+	}
+	auth.Attributes[coreauth.AttributeMaxConcurrency] = strconv.FormatInt(limit, 10)
 }
 
 func authFileIntValue(value any) (int, bool) {

@@ -14,6 +14,8 @@ func CanonicalCredentialMetadataKey(key string) string {
 		return "excluded_models"
 	case "fingerprint-profile":
 		return "fingerprint_profile"
+	case "max-concurrency":
+		return "max_concurrency"
 	case "model-aliases":
 		return "model_aliases"
 	case "openapi-location":

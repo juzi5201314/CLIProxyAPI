@@ -564,6 +564,7 @@ upstream:
 #       keys:
 #         - api-key: "AIzaSy...01"
 #           weight: 5 # optional: weighted-round-robin share; omitted defaults to 1; maximum 1,000,000
+#           max-concurrency: 2 # optional: max simultaneous active requests on this key (0 or omit = unlimited, skips when full; 429 when all busy)
 #         # A second key shares this group's endpoint, headers, and models.
 #         - api-key: "replace-with-second-gemini-key"
 #           weight: 2
@@ -874,6 +875,7 @@ upstream:
 #       support-prompt-cache-key: false # optional: derive prompt_cache_key for requests from all input protocols
 #       disable-cooling: false # optional provider override: true disables cooling, false enables it; omit to inherit global
 #       request-retry: 3 # optional per-provider override; 0 disables additional rounds; omit or set < 0 to inherit global
+#       max-concurrency: 10 # optional provider-level limit shared across all keys of this entry (0 or omit = unlimited)
 #       request-scoped-errors: # optional: custom rules to classify upstream errors by status and body patterns
 #         - status: 400
 #           match:
@@ -891,6 +893,7 @@ upstream:
 #       keys:
 #         - api-key: "sk-or-v1-...b780"
 #           weight: 5 # optional: weighted-round-robin share; omitted defaults to 1; maximum 1,000,000
+#           max-concurrency: 3 # optional per-key concurrency limit enforced together with the provider limit (0 or omit = unlimited)
 #           proxy-url: "socks5://proxy.example.com:1080" # optional: per-key proxy override
 #           # proxy-url: "direct" # optional: explicit direct connect for this credential
 #         - api-key: "sk-or-v1-...b781" # without proxy-url

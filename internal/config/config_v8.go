@@ -357,7 +357,7 @@ func flattenV8(node *yaml.Node) (*yaml.Node, error) {
 var sharedKeyFields = map[string]bool{
 	"priority": true, "prefix": true, "proxy-url": true, "headers": true,
 	"models": true, "excluded-models": true, "disable-cooling": true,
-	"request-retry": true, "request-scoped-errors": true,
+	"request-retry": true, "max-concurrency": true, "request-scoped-errors": true,
 }
 
 func expandV8Groups(groups *yaml.Node, provider string) (*yaml.Node, error) {
@@ -374,6 +374,12 @@ func expandV8Groups(groups *yaml.Node, provider string) (*yaml.Node, error) {
 			return nil, fmt.Errorf("api-keys.%s[%d].keys must be a list", provider, index)
 		}
 		if err := validateWeightSequenceNode(keys, "api-keys."+provider+".keys"); err != nil {
+			return nil, err
+		}
+		if err := validateMaxConcurrencyMappingNode(group, fmt.Sprintf("api-keys.%s[%d]", provider, index)); err != nil {
+			return nil, err
+		}
+		if err := validateMaxConcurrencySequenceNode(keys, "api-keys."+provider+".keys"); err != nil {
 			return nil, err
 		}
 		if provider == "openai-compatibility" {

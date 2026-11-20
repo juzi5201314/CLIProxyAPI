@@ -187,6 +187,15 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		}
 		return nil, errValidate
 	}
+	if errValidate := validateMaxConcurrencyYAML(data); errValidate != nil {
+		if optional {
+			cfgOptional := &Config{CredentialInFlight: DefaultCredentialInFlightConfig()}
+			cfgOptional.NormalizePluginsConfig()
+			cfgOptional.NormalizeClaudeConfig()
+			return cfgOptional, nil
+		}
+		return nil, errValidate
+	}
 
 	// Unmarshal the YAML data into the Config struct.
 	var cfg Config
@@ -245,6 +254,9 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		return nil, errValidate
 	}
 	if errValidate := cfg.ValidateCredentialWeights(); errValidate != nil {
+		return nil, errValidate
+	}
+	if errValidate := cfg.ValidateMaxConcurrencies(); errValidate != nil {
 		return nil, errValidate
 	}
 

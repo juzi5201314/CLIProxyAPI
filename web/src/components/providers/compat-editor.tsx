@@ -44,6 +44,7 @@ import { maskKey } from "@/lib/format";
 export interface CompatKeyEntry {
   "api-key"?: string;
   weight?: number;
+  "max-concurrency"?: number;
   "proxy-url"?: string;
 }
 
@@ -57,6 +58,7 @@ export interface CompatProvider {
   "support-prompt-cache-key"?: boolean;
   "disable-cooling"?: boolean;
   "request-retry"?: number;
+  "max-concurrency"?: number;
   "request-scoped-errors"?: unknown[];
   "api-key-entries"?: CompatKeyEntry[];
   models?: ModelEntry[];
@@ -302,6 +304,18 @@ export function CompatEditorSheet({
                   />
                 }
               />
+              <SwitchRow
+                label={t("providers.compatMaxConcurrency")}
+                hint={t("providers.compatMaxConcurrencyHint")}
+                control={
+                  <NumberValue
+                    className="w-40"
+                    value={draft["max-concurrency"]}
+                    onChange={(value) => patch({ "max-concurrency": value })}
+                    placeholder="∞"
+                  />
+                }
+              />
             </div>
           </EditorSection>
 
@@ -334,6 +348,7 @@ export function CompatEditorSheet({
                       <TableHead className="w-16 text-center text-[10px] uppercase font-semibold">{t("providers.statusColumn")}</TableHead>
                       <TableHead className="min-w-44 text-[10px] uppercase font-semibold">{t("providers.keyColumn")}</TableHead>
                       <TableHead className="w-20 text-center text-[10px] uppercase font-semibold">{t("providers.weight")}</TableHead>
+                      <TableHead className="w-24 text-center text-[10px] uppercase font-semibold">{t("providers.maxConcurrencyColumn")}</TableHead>
                       <TableHead className="w-44 text-[10px] uppercase font-semibold">{t("providers.proxy")}</TableHead>
                       <TableHead className="w-20 text-right text-[10px] uppercase font-semibold">{t("providers.actionsColumn")}</TableHead>
                     </TableRow>
@@ -357,6 +372,9 @@ export function CompatEditorSheet({
                           </TableCell>
                           <TableCell className="text-center py-2 px-1">
                             <NumberValue className="h-8 text-center" value={entry.weight} onChange={(value) => setKey(index, { weight: value })} placeholder="1" />
+                          </TableCell>
+                          <TableCell className="text-center py-2 px-1">
+                            <NumberValue className="h-8 text-center" value={entry["max-concurrency"]} onChange={(value) => setKey(index, { "max-concurrency": value })} placeholder="∞" />
                           </TableCell>
                           <TableCell className="py-2 px-2">
                             <Input

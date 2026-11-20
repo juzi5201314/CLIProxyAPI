@@ -71,7 +71,8 @@ const KEY_EDITOR_FIELDS: Record<string, ScalarField[]> = {
 
 const COOLING_ROW: BehaviorRow = { key: "disable-cooling", labelKey: "cooling", hintKey: "coolingHint", type: "tri", optionKeys: ["coolingFollow", "coolingDisable", "coolingEnable"] };
 const RETRY_ROW: BehaviorRow = { key: "request-retry", labelKey: "requestRetry", hintKey: "requestRetryHint", type: "number", placeholder: "∞" };
-const COOLING_RETRY: BehaviorRow[] = [COOLING_ROW, RETRY_ROW];
+const MAX_CONCURRENCY_ROW: BehaviorRow = { key: "max-concurrency", labelKey: "maxConcurrency", hintKey: "maxConcurrencyHint", type: "number", placeholder: "∞" };
+const COOLING_RETRY: BehaviorRow[] = [COOLING_ROW, RETRY_ROW, MAX_CONCURRENCY_ROW];
 /** Field-availability follows the Go structs: alpha-search is codex-only
  *  (sanitize force-clears it on xai/meta), websockets has no meta executor,
  *  and codex cloaking is consumed by the codex/xai request paths. */

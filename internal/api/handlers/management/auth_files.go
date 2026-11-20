@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialconcurrency"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialweight"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -482,6 +483,20 @@ func (h *Handler) listAuthFilesFromDisk(c *gin.Context, pagination authFilesPagi
 					}
 				}
 			}
+			if mv := gjson.GetBytes(data, coreauth.AttributeMaxConcurrency); mv.Exists() {
+				var rawLimit string
+				switch mv.Type {
+				case gjson.Number:
+					rawLimit = mv.Raw
+				case gjson.String:
+					rawLimit = mv.String()
+				}
+				if rawLimit != "" {
+					if limit, errLimit := credentialconcurrency.ParseString(rawLimit); errLimit == nil && limit > 0 {
+						fileData[coreauth.AttributeMaxConcurrency] = limit
+					}
+				}
+			}
 			if nv := gjson.GetBytes(data, "note"); nv.Exists() && nv.Type == gjson.String {
 				if trimmed := strings.TrimSpace(nv.String()); trimmed != "" {
 					fileData["note"] = trimmed
@@ -828,6 +843,9 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 	if weight, ok := authWeightValue(auth); ok {
 		entry[coreauth.AttributeWeight] = weight
 	}
+	if maxConcurrency, ok := authMaxConcurrencyValue(auth); ok && maxConcurrency > 0 {
+		entry[coreauth.AttributeMaxConcurrency] = maxConcurrency
+	}
 	if websockets, ok := authWebsocketsValue(auth); ok {
 		entry["websockets"] = websockets
 	}
@@ -938,6 +956,25 @@ func authWeightValue(auth *coreauth.Auth) (int64, bool) {
 	}
 	weight, errWeight := credentialweight.ParseValue(rawWeight)
 	return weight, errWeight == nil
+}
+
+func authMaxConcurrencyValue(auth *coreauth.Auth) (int64, bool) {
+	if auth == nil {
+		return 0, false
+	}
+	if rawLimit := strings.TrimSpace(authAttribute(auth, coreauth.AttributeMaxConcurrency)); rawLimit != "" {
+		limit, errLimit := credentialconcurrency.ParseString(rawLimit)
+		return limit, errLimit == nil && limit > 0
+	}
+	if auth.Metadata == nil {
+		return 0, false
+	}
+	rawLimit, ok := auth.Metadata[coreauth.AttributeMaxConcurrency]
+	if !ok || rawLimit == nil {
+		return 0, false
+	}
+	limit, errLimit := credentialconcurrency.ParseValue(rawLimit)
+	return limit, errLimit == nil && limit > 0
 }
 
 func authWebsocketsValue(auth *coreauth.Auth) (bool, bool) {

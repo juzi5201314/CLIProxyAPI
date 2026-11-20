@@ -608,6 +608,10 @@ type ClaudeKey struct {
 	// An omitted value defaults to 1; non-positive values exclude this credential; maximum 1,000,000.
 	Weight *int `yaml:"weight,omitempty" json:"weight,omitempty"`
 
+	// MaxConcurrency caps concurrent active requests using this credential.
+	// Nil or 0 disables the concurrency limit; maximum 1,000,000.
+	MaxConcurrency *int `yaml:"max-concurrency,omitempty" json:"max-concurrency,omitempty"`
+
 	// Prefix optionally namespaces models for this credential (e.g., "teamA/claude-sonnet-4").
 	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 
@@ -739,6 +743,10 @@ type CodexKey struct {
 	// An omitted value defaults to 1; non-positive values exclude this credential; maximum 1,000,000.
 	Weight *int `yaml:"weight,omitempty" json:"weight,omitempty"`
 
+	// MaxConcurrency caps concurrent active requests using this credential.
+	// Nil or 0 disables the concurrency limit; maximum 1,000,000.
+	MaxConcurrency *int `yaml:"max-concurrency,omitempty" json:"max-concurrency,omitempty"`
+
 	// Prefix optionally namespaces models for this credential (e.g., "teamA/gpt-5-codex").
 	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 
@@ -859,6 +867,10 @@ type GeminiKey struct {
 	// An omitted value defaults to 1; non-positive values exclude this credential; maximum 1,000,000.
 	Weight *int `yaml:"weight,omitempty" json:"weight,omitempty"`
 
+	// MaxConcurrency caps concurrent active requests using this credential.
+	// Nil or 0 disables the concurrency limit; maximum 1,000,000.
+	MaxConcurrency *int `yaml:"max-concurrency,omitempty" json:"max-concurrency,omitempty"`
+
 	// Prefix optionally namespaces models for this credential (e.g., "teamA/gemini-3-pro-preview").
 	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 
@@ -971,6 +983,10 @@ type OpenAICompatibility struct {
 	// Nil or a negative value means "use the global request-retry". 0 disables additional retry rounds.
 	RequestRetry *int `yaml:"request-retry,omitempty" json:"request-retry,omitempty"`
 
+	// MaxConcurrency caps total concurrent active requests shared across all keys of this provider entry.
+	// Nil or 0 disables the provider-level concurrency limit; maximum 1,000,000.
+	MaxConcurrency *int `yaml:"max-concurrency,omitempty" json:"max-concurrency,omitempty"`
+
 	// RequestScopedErrors configures custom classification rules for upstream errors.
 	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
 }
@@ -983,6 +999,10 @@ type OpenAICompatibilityAPIKey struct {
 	// Weight controls proportional selection under weighted-round-robin.
 	// An omitted value defaults to 1; non-positive values exclude this credential; maximum 1,000,000.
 	Weight *int `yaml:"weight,omitempty" json:"weight,omitempty"`
+
+	// MaxConcurrency caps concurrent active requests using this API key entry.
+	// Nil or 0 disables the per-key concurrency limit; maximum 1,000,000.
+	MaxConcurrency *int `yaml:"max-concurrency,omitempty" json:"max-concurrency,omitempty"`
 
 	// ProxyURL overrides the global proxy setting for this API key if provided.
 	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`

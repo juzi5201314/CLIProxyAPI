@@ -71,7 +71,7 @@ import {
   type Entry,
   type KindMeta,
 } from "@/components/providers/provider-tools";
-import { providerLists } from "@/api/management";
+import { apiKeyProviders } from "@/api/management";
 import { errMessage } from "@/api/types";
 
 const KIND_ICONS: Record<string, LucideIcon> = {
@@ -124,7 +124,7 @@ export function ProvidersPage() {
   const overview = useQuery({
     queryKey: ["providers-overview"],
     queryFn: async (): Promise<Record<string, Entry[]>> => {
-      const lists = await Promise.all(ALL_KINDS.map((kind) => providerLists.getList<Entry>(kind.path, kind.responseKey)));
+      const lists = await Promise.all(ALL_KINDS.map((kind) => apiKeyProviders.getList<Entry>(kind.id)));
       return Object.fromEntries(ALL_KINDS.map((kind, i) => [kind.id, lists[i]])) as Record<string, Entry[]>;
     },
   });
@@ -165,7 +165,7 @@ export function ProvidersPage() {
   /** Write one entry back to its list (index -1 appends; null deletes). */
   const persist = useMutation({
     mutationFn: async ({ kind, index, entry }: { kind: KindMeta; index: number; entry: Entry | null }) => {
-      const fresh = await providerLists.getList<Entry>(kind.path, kind.responseKey);
+      const fresh = await apiKeyProviders.getList<Entry>(kind.id);
       let next: Entry[];
       if (entry === null) {
         next = fresh.filter((_, i) => i !== index);
@@ -174,7 +174,7 @@ export function ProvidersPage() {
       } else {
         next = fresh.map((item, i) => (i === index ? entry : item));
       }
-      await providerLists.putList(kind.path, next);
+      await apiKeyProviders.putList(kind.id, next);
     },
     onSuccess: () => {
       toast.success(t("common.saved"));

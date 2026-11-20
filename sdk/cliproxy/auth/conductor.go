@@ -189,6 +189,7 @@ type Manager struct {
 	authEpochs         map[string]uint64
 	authChangeWatchers map[string]map[chan struct{}]struct{}
 	scheduler          *authScheduler
+	concurrency        atomic.Pointer[authConcurrencyTracker]
 	// pluginScheduler runs outside m.mu before falling back to native selection.
 	pluginScheduler PluginScheduler
 	// homeRuntimeAuths retains legacy session auth lookups for non-execution callers.
@@ -276,6 +277,7 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		manager.ApplyHomeInFlightPublisherConfig(defaultInFlightConfig)
 	}
 	manager.scheduler = newAuthScheduler(selector)
+	manager.scheduler.concurrency = manager.concurrencyTracker()
 	return manager
 }
 

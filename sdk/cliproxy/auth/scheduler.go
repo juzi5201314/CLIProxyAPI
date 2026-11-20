@@ -45,6 +45,7 @@ type scheduledGenerationMeta struct {
 type authScheduler struct {
 	mu                  sync.Mutex
 	strategy            schedulerStrategy
+	concurrency         *authConcurrencyTracker
 	providers           map[string]*providerScheduler
 	authProviders       map[string]string
 	authGenerations     map[string]scheduledGenerationMeta
@@ -421,11 +422,17 @@ func (s *authScheduler) pickSingleWithStrategy(ctx context.Context, provider, mo
 	if shard == nil {
 		return nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 	}
-	predicate := scheduledAuthPredicate(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin)
+	basePredicate := scheduledAuthPredicate(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin)
+	predicate := s.concurrency.AllowPredicate(basePredicate)
 	if picked := shard.pickReadyLocked(preferWebsocket, strategy, predicate); picked != nil {
 		return picked, nil
 	}
-	return nil, shard.unavailableErrorLocked(provider, model, predicate)
+	if s.concurrency != nil {
+		if _, ok := shard.highestReadyPriorityLocked(false, basePredicate); ok {
+			return nil, newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+		}
+	}
+	return nil, shard.unavailableErrorLocked(provider, model, basePredicate)
 }
 
 func providerPrefersWebsocketTransport(providerKey string) bool {
@@ -482,14 +489,21 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 			return nil, "", &Error{Code: "auth_not_found", Message: "no auth available"}
 		}
 		shard := providerState.ensureModelLocked(modelKey, time.Now())
-		predicate := scheduledAuthPredicate(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin)
+		basePredicate := scheduledAuthPredicate(eligibility, tried, pinnedAuthID, strategy == schedulerStrategyWeightedRoundRobin)
+		predicate := s.concurrency.AllowPredicate(basePredicate)
 		if picked := shard.pickReadyLocked(false, strategy, predicate); picked != nil {
 			return picked, providerKey, nil
 		}
-		return nil, "", shard.unavailableErrorLocked("mixed", model, predicate)
+		if s.concurrency != nil {
+			if _, ok := shard.highestReadyPriorityLocked(false, basePredicate); ok {
+				return nil, "", newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+			}
+		}
+		return nil, "", shard.unavailableErrorLocked("mixed", model, basePredicate)
 	}
 
-	predicate := scheduledAuthPredicate(eligibility, tried, "", strategy == schedulerStrategyWeightedRoundRobin)
+	basePredicate := scheduledAuthPredicate(eligibility, tried, "", strategy == schedulerStrategyWeightedRoundRobin)
+	predicate := s.concurrency.AllowPredicate(basePredicate)
 	candidateShards := make([]*modelScheduler, len(normalized))
 	bestPriority := 0
 	hasCandidate := false
@@ -514,7 +528,7 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 		}
 	}
 	if !hasCandidate {
-		return nil, "", s.mixedUnavailableErrorLocked(normalized, model, predicate)
+		return nil, "", s.mixedUnavailableOrConcurrencyLocked(normalized, model, candidateShards, basePredicate)
 	}
 
 	if strategy == schedulerStrategyFillFirst {
@@ -528,7 +542,7 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 				return picked, providerKey, nil
 			}
 		}
-		return nil, "", s.mixedUnavailableErrorLocked(normalized, model, predicate)
+		return nil, "", s.mixedUnavailableOrConcurrencyLocked(normalized, model, candidateShards, basePredicate)
 	}
 
 	cursorKey := strings.Join(normalized, ",") + ":" + modelKey
@@ -565,7 +579,7 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 		if picked != nil && picked.meta != nil {
 			return picked.auth, picked.meta.providerKey, nil
 		}
-		return nil, "", s.mixedUnavailableErrorLocked(normalized, model, predicate)
+		return nil, "", s.mixedUnavailableOrConcurrencyLocked(normalized, model, candidateShards, basePredicate)
 	}
 
 	weights := make([]int, len(normalized))
@@ -581,7 +595,7 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 		segmentEnds[providerIndex] = totalWeight
 	}
 	if totalWeight == 0 {
-		return nil, "", s.mixedUnavailableErrorLocked(normalized, model, predicate)
+		return nil, "", s.mixedUnavailableOrConcurrencyLocked(normalized, model, candidateShards, basePredicate)
 	}
 
 	startSlot := s.mixedCursors[cursorKey] % totalWeight
@@ -596,7 +610,7 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 		}
 	}
 	if startProviderIndex < 0 {
-		return nil, "", s.mixedUnavailableErrorLocked(normalized, model, predicate)
+		return nil, "", s.mixedUnavailableOrConcurrencyLocked(normalized, model, candidateShards, basePredicate)
 	}
 
 	slot := startSlot
@@ -620,7 +634,26 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 		s.mixedCursors[cursorKey] = slot + 1
 		return picked, providerKey, nil
 	}
-	return nil, "", s.mixedUnavailableErrorLocked(normalized, model, predicate)
+	return nil, "", s.mixedUnavailableOrConcurrencyLocked(normalized, model, candidateShards, basePredicate)
+}
+
+func shardsHaveReadyLocked(shards []*modelScheduler, predicate func(*scheduledAuth) bool) bool {
+	for _, shard := range shards {
+		if shard == nil {
+			continue
+		}
+		if _, ok := shard.highestReadyPriorityLocked(false, predicate); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *authScheduler) mixedUnavailableOrConcurrencyLocked(providers []string, model string, shards []*modelScheduler, predicate func(*scheduledAuth) bool) error {
+	if s != nil && s.concurrency != nil && shardsHaveReadyLocked(shards, predicate) {
+		return newLocalConcurrencyBusyError("credential concurrency limit exceeded")
+	}
+	return s.mixedUnavailableErrorLocked(providers, model, predicate)
 }
 
 // mixedUnavailableErrorLocked synthesizes the mixed-provider cooldown or unavailable error.

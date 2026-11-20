@@ -80,6 +80,9 @@ func (s *FileTokenStore) Save(ctx context.Context, auth *cliproxyauth.Auth) (str
 	if errWeight := cliproxyauth.ValidateAuthWeight(auth); errWeight != nil {
 		return "", fmt.Errorf("auth filestore: %w", errWeight)
 	}
+	if errLimit := cliproxyauth.ValidateAuthMaxConcurrency(auth); errLimit != nil {
+		return "", fmt.Errorf("auth filestore: %w", errLimit)
+	}
 
 	path, err := s.resolveAuthPath(auth)
 	if err != nil {
@@ -249,6 +252,9 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 	if errWeight := cliproxyauth.ValidateAuthWeight(&cliproxyauth.Auth{Metadata: metadata}); errWeight != nil {
 		return nil, errWeight
 	}
+	if errLimit := cliproxyauth.ValidateAuthMaxConcurrency(&cliproxyauth.Auth{Metadata: metadata}); errLimit != nil {
+		return nil, errLimit
+	}
 	provider, _ := metadata["type"].(string)
 	provider = strings.TrimSpace(provider)
 	if strings.EqualFold(provider, "gemini") {
@@ -303,6 +309,9 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 				}
 				if errWeight := cliproxyauth.ApplyAuthWeightMetadata(auth, metadata); errWeight != nil {
 					return nil, errWeight
+				}
+				if errLimit := cliproxyauth.ApplyAuthMaxConcurrencyMetadata(auth, metadata); errLimit != nil {
+					return nil, errLimit
 				}
 				cliproxyauth.ApplyAuthPriorityMetadata(auth, metadata)
 				if _, inherited := auth.Attributes[cliproxyauth.AttributeFilePriority]; inherited {
@@ -363,6 +372,9 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 	if email, ok := metadata["email"].(string); ok && email != "" {
 		auth.Attributes["email"] = email
 	}
+	if errLimit := cliproxyauth.ApplyAuthMaxConcurrencyMetadata(auth, metadata); errLimit != nil {
+		return nil, errLimit
+	}
 	cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
 	return []*cliproxyauth.Auth{auth}, nil
 }
@@ -399,6 +411,9 @@ func compactPluginAuths(auths []*cliproxyauth.Auth) []*cliproxyauth.Auth {
 			continue
 		}
 		if errWeight := cliproxyauth.ValidateAuthWeight(auth); errWeight != nil {
+			continue
+		}
+		if errLimit := cliproxyauth.ValidateAuthMaxConcurrency(auth); errLimit != nil {
 			continue
 		}
 		out = append(out, auth)

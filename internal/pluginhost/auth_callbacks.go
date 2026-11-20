@@ -404,6 +404,9 @@ func (h *Host) buildAuthsFromFileData(ctx context.Context, path string, data []b
 	if errWeight := coreauth.ValidateAuthWeight(&coreauth.Auth{Metadata: metadata}); errWeight != nil {
 		return nil, fmt.Errorf("invalid auth weight: %w", errWeight)
 	}
+	if errLimit := coreauth.ValidateAuthMaxConcurrency(&coreauth.Auth{Metadata: metadata}); errLimit != nil {
+		return nil, fmt.Errorf("invalid auth max-concurrency: %w", errLimit)
+	}
 	provider, _ := metadata["type"].(string)
 	provider = strings.TrimSpace(provider)
 
@@ -432,6 +435,9 @@ func (h *Host) buildAuthsFromFileData(ctx context.Context, path string, data []b
 			}
 			if errWeight := coreauth.ValidateAuthWeight(auth); errWeight != nil {
 				return nil, fmt.Errorf("invalid auth weight: %w", errWeight)
+			}
+			if errLimit := coreauth.ValidateAuthMaxConcurrency(auth); errLimit != nil {
+				return nil, fmt.Errorf("invalid auth max-concurrency: %w", errLimit)
 			}
 			out = append(out, auth)
 		}
@@ -489,6 +495,9 @@ func (h *Host) buildAuthsFromFileData(ctx context.Context, path string, data []b
 			if errWeight := coreauth.ApplyAuthWeightMetadata(auth, metadata); errWeight != nil {
 				return nil, fmt.Errorf("invalid auth weight: %w", errWeight)
 			}
+			if errLimit := coreauth.ApplyAuthMaxConcurrencyMetadata(auth, metadata); errLimit != nil {
+				return nil, fmt.Errorf("invalid auth max-concurrency: %w", errLimit)
+			}
 			coreauth.ApplyAuthPriorityMetadata(auth, metadata)
 			if _, inherited := auth.Attributes[coreauth.AttributeFilePriority]; inherited {
 				if setter, ok := auth.Storage.(interface{ SetMetadata(map[string]any) }); ok {
@@ -542,6 +551,9 @@ func (h *Host) buildAuthsFromFileData(ctx context.Context, path string, data []b
 	}
 	if errWeight := coreauth.ApplyAuthWeightMetadata(auth, metadata); errWeight != nil {
 		return nil, fmt.Errorf("invalid auth weight: %w", errWeight)
+	}
+	if errLimit := coreauth.ApplyAuthMaxConcurrencyMetadata(auth, metadata); errLimit != nil {
+		return nil, fmt.Errorf("invalid auth max-concurrency: %w", errLimit)
 	}
 	coreauth.ApplyAuthPriorityMetadata(auth, metadata)
 	coreauth.ApplyCustomHeadersFromMetadata(auth)

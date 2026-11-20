@@ -1,6 +1,8 @@
 package synthesizer
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -32,6 +34,26 @@ func addWeightToAttrs(weight *int, attrs map[string]string) {
 	attrs[coreauth.AttributeWeight] = strconv.Itoa(normalized)
 }
 
+func addMaxConcurrencyToAttrs(limit *int, attrs map[string]string) {
+	if limit == nil || *limit <= 0 {
+		return
+	}
+	attrs[coreauth.AttributeMaxConcurrency] = strconv.Itoa(*limit)
+}
+
+func addProviderMaxConcurrencyToAttrs(limit *int, groupKey string, attrs map[string]string) {
+	if limit == nil || *limit <= 0 || strings.TrimSpace(groupKey) == "" {
+		return
+	}
+	attrs[coreauth.AttributeProviderConcurrencyKey] = groupKey
+	attrs[coreauth.AttributeProviderMaxConcurrency] = strconv.Itoa(*limit)
+}
+
+func openAICompatConcurrencyKey(providerName, base, prefix string, occurrence int) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d", providerName, base, prefix, occurrence)))
+	return "openai-compat:" + hex.EncodeToString(sum[:12])
+}
+
 // Synthesize generates Auth entries from config API keys.
 func (s *ConfigSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, error) {
 	out := make([]*coreauth.Auth, 0, 32)
@@ -39,6 +61,9 @@ func (s *ConfigSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth,
 		return out, nil
 	}
 	if errValidate := ctx.Config.ValidateCredentialWeights(); errValidate != nil {
+		return nil, fmt.Errorf("synthesize config API key auths: %w", errValidate)
+	}
+	if errValidate := ctx.Config.ValidateMaxConcurrencies(); errValidate != nil {
 		return nil, fmt.Errorf("synthesize config API key auths: %w", errValidate)
 	}
 
@@ -104,6 +129,7 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 			attrs["priority"] = strconv.Itoa(entry.Priority)
 		}
 		addWeightToAttrs(entry.Weight, attrs)
+		addMaxConcurrencyToAttrs(entry.MaxConcurrency, attrs)
 		if base != "" {
 			attrs["base_url"] = base
 		}
@@ -166,6 +192,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 			attrs["priority"] = strconv.Itoa(ck.Priority)
 		}
 		addWeightToAttrs(ck.Weight, attrs)
+		addMaxConcurrencyToAttrs(ck.MaxConcurrency, attrs)
 		if base != "" {
 			attrs["base_url"] = base
 		}
@@ -250,6 +277,7 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 			attrs["priority"] = strconv.Itoa(entry.Priority)
 		}
 		addWeightToAttrs(entry.Weight, attrs)
+		addMaxConcurrencyToAttrs(entry.MaxConcurrency, attrs)
 		if baseURL != "" {
 			attrs["base_url"] = baseURL
 		}
@@ -297,11 +325,9 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 	idGen := ctx.IDGenerator
 
 	out := make([]*coreauth.Auth, 0)
+	compatOccurrences := make(map[string]int, len(cfg.OpenAICompatibility))
 	for i := range cfg.OpenAICompatibility {
 		compat := &cfg.OpenAICompatibility[i]
-		if compat.Disabled {
-			continue
-		}
 		prefix := strings.TrimSpace(compat.Prefix)
 		providerName := strings.ToLower(strings.TrimSpace(compat.Name))
 		if providerName == "" {
@@ -309,6 +335,13 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 		}
 		internalProviderKey := util.OpenAICompatibleProviderKey(providerName)
 		base := strings.TrimSpace(compat.BaseURL)
+		identitySig := providerName + "\x00" + base + "\x00" + prefix
+		occurrence := compatOccurrences[identitySig]
+		compatOccurrences[identitySig] = occurrence + 1
+		if compat.Disabled {
+			continue
+		}
+		providerConcurrencyKey := openAICompatConcurrencyKey(providerName, base, prefix, occurrence)
 		disableCooling := compat.DisableCooling
 
 		// Handle new APIKeyEntries format (preferred)
@@ -336,6 +369,8 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 				attrs["priority"] = strconv.Itoa(compat.Priority)
 			}
 			addWeightToAttrs(entry.Weight, attrs)
+			addMaxConcurrencyToAttrs(entry.MaxConcurrency, attrs)
+			addProviderMaxConcurrencyToAttrs(compat.MaxConcurrency, providerConcurrencyKey, attrs)
 			if key != "" {
 				attrs["api_key"] = key
 			}
@@ -381,6 +416,7 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 			if compat.Priority != 0 {
 				attrs["priority"] = strconv.Itoa(compat.Priority)
 			}
+			addProviderMaxConcurrencyToAttrs(compat.MaxConcurrency, providerConcurrencyKey, attrs)
 			if hash := diff.ComputeOpenAICompatModelsHash(compat.Models); hash != "" {
 				attrs["models_hash"] = hash
 			}
@@ -432,6 +468,7 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 			attrs["priority"] = strconv.Itoa(compat.Priority)
 		}
 		addWeightToAttrs(compat.Weight, attrs)
+		addMaxConcurrencyToAttrs(compat.MaxConcurrency, attrs)
 		if key != "" {
 			attrs["api_key"] = key
 		}
