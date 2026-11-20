@@ -136,11 +136,6 @@ func convertGeminiRequestToClaude(modelName string, inputRawJSON []byte, stream 
 						_ = outDoc.Delete("thinking.budget_tokens")
 						_ = outDoc.Delete("output_config.effort")
 					default:
-						if !thinking.HasLevel(mi.Thinking.Levels, level) {
-							if mapped, ok := thinking.MapToClaudeEffort(level, supportsMax); ok {
-								level = mapped
-							}
-						}
 						_ = outDoc.Set("thinking.type", "adaptive")
 						_ = outDoc.Delete("thinking.budget_tokens")
 						_ = outDoc.Set("output_config.effort", level)

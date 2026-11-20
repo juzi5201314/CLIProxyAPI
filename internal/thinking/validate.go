@@ -53,17 +53,8 @@ func ValidateConfig(config ThinkingConfig, modelInfo *registry.ModelInfo, fromFo
 		return &config, nil
 	}
 
-	// allowClampUnsupported determines whether to clamp unsupported levels instead of returning an error.
-	// This applies when crossing provider families (e.g., openai→gemini, claude→gemini) and the target
-	// model supports discrete levels. Same-family conversions require strict validation.
-	//
 	// modelFamilyMismatch covers providers that reuse another protocol on the wire
-	// (e.g. Kimi serving Claude-compatible /v1/messages). In that path fromFormat and
-	// toFormat both look like "claude", but the model itself is not Claude-family, so
-	// unsupported levels such as "max" should clamp to the nearest supported level
-	// (typically "high") instead of failing validation.
-	toCapability := detectModelCapability(modelInfo)
-	toHasLevelSupport := toCapability == CapabilityLevelOnly || toCapability == CapabilityHybrid
+	// (e.g. Kimi serving Claude-compatible /v1/messages).
 	modelFamilyMismatch := false
 	if modelInfo != nil {
 		modelType := strings.ToLower(strings.TrimSpace(modelInfo.Type))
@@ -74,7 +65,6 @@ func ValidateConfig(config ThinkingConfig, modelInfo *registry.ModelInfo, fromFo
 			}
 		}
 	}
-	allowClampUnsupported := toHasLevelSupport && (!isSameProviderFamily(fromFormat, toFormat) || modelFamilyMismatch)
 
 	// strictBudget determines whether to enforce strict budget range validation.
 	// This applies when: (1) config comes from request body (not suffix), (2) source format is known,
@@ -129,18 +119,14 @@ func ValidateConfig(config ThinkingConfig, modelInfo *registry.ModelInfo, fromFo
 		config.Level = ""
 	}
 
+	// Unknown/bogus level strings (neither in support.Levels nor a canonical level)
+	// still fail validation; canonical levels pass through verbatim without clamping
+	// or rejection against support.Levels.
 	if len(support.Levels) > 0 && config.Mode == ModeLevel {
-		if !isLevelSupported(string(config.Level), support.Levels) {
-			if allowClampUnsupported {
-				config.Level = clampLevel(config.Level, modelInfo, toFormat)
-			}
-			if !isLevelSupported(string(config.Level), support.Levels) {
-				// User explicitly specified an unsupported level - return error
-				// (budget-derived levels may be clamped based on source format)
-				validLevels := normalizeLevels(support.Levels)
-				message := fmt.Sprintf("level %q not supported, valid levels: %s", strings.ToLower(string(config.Level)), strings.Join(validLevels, ", "))
-				return nil, NewThinkingError(ErrLevelNotSupported, message)
-			}
+		if !isLevelSupported(string(config.Level), support.Levels) && levelIndex(string(config.Level)) == -1 {
+			validLevels := normalizeLevels(support.Levels)
+			message := fmt.Sprintf("level %q not supported, valid levels: %s", strings.ToLower(string(config.Level)), strings.Join(validLevels, ", "))
+			return nil, NewThinkingError(ErrLevelNotSupported, message)
 		}
 	}
 

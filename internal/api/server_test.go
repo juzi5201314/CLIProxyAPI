@@ -2145,6 +2145,18 @@ func TestModelsWithClientVersionReturnsCodexCatalog(t *testing.T) {
 			Thinking:            &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}},
 		},
 		{
+			ID:                  "gpt-6.1-sol",
+			Object:              "model",
+			Created:             1776902400,
+			OwnedBy:             "openai",
+			Type:                "openai",
+			DisplayName:         "GPT 6.1 Sol",
+			Description:         "Balanced coding and reasoning model.",
+			ContextLength:       272000,
+			MaxCompletionTokens: 64000,
+			Thinking:            &registry.ThinkingSupport{Levels: []string{"low", "medium", "high", "xhigh"}},
+		},
+		{
 			ID:            "custom-codex-model-test",
 			Object:        "model",
 			OwnedBy:       "test",
@@ -2204,17 +2216,23 @@ func TestModelsWithClientVersionReturnsCodexCatalog(t *testing.T) {
 	}
 
 	var gpt55 map[string]any
+	var gpt61Sol map[string]any
 	var custom map[string]any
 	for _, model := range resp.Models {
 		switch slug, _ := model["slug"].(string); slug {
 		case "gpt-5.5":
 			gpt55 = model
+		case "gpt-6.1-sol":
+			gpt61Sol = model
 		case "custom-codex-model-test":
 			custom = model
 		}
 	}
 	if gpt55 == nil {
 		t.Fatal("expected gpt-5.5 codex catalog entry")
+	}
+	if gpt61Sol == nil {
+		t.Fatal("expected gpt-6.1-sol codex catalog entry")
 	}
 	if got := gpt55["apply_patch_tool_type"]; got != "freeform" {
 		t.Fatalf("gpt-5.5 apply_patch_tool_type = %#v, want freeform", got)
@@ -2225,9 +2243,12 @@ func TestModelsWithClientVersionReturnsCodexCatalog(t *testing.T) {
 	if got, _ := gpt55["max_tokens"].(float64); got != 64000 {
 		t.Fatalf("gpt-5.5 max_tokens = %v, want 64000", gpt55["max_tokens"])
 	}
-	serviceTiers, ok := gpt55["service_tiers"].([]any)
+	if _, ok := gpt55["service_tiers"].([]any); !ok {
+		t.Fatalf("expected gpt-5.5 service_tiers slice, got %#v", gpt55["service_tiers"])
+	}
+	serviceTiers, ok := gpt61Sol["service_tiers"].([]any)
 	if !ok || len(serviceTiers) != 1 {
-		t.Fatalf("expected gpt-5.5 priority service tier, got %#v", gpt55["service_tiers"])
+		t.Fatalf("expected gpt-6.1-sol priority service tier, got %#v", gpt61Sol["service_tiers"])
 	}
 	if custom == nil {
 		t.Fatal("expected custom model codex catalog entry")

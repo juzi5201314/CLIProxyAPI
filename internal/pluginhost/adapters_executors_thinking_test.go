@@ -341,7 +341,7 @@ func TestExecutorAdapterValidatesThinkingAndClampsOrRejectsOutOfRange(t *testing
 		t.Fatalf("plugin Execute was called %d times on bogus suffix", executeCalls)
 	}
 
-	// Unsupported level suffix -> rejected with ThinkingError (ErrLevelNotSupported).
+	// Valid canonical level suffix beyond declared Thinking.Levels -> passed through verbatim.
 	_, errLevel := adapter.Execute(context.Background(), nil, coreexecutor.Request{
 		Model:   "my-model(xhigh)",
 		Format:  sdktranslator.FormatClaude,
@@ -350,13 +350,16 @@ func TestExecutorAdapterValidatesThinkingAndClampsOrRejectsOutOfRange(t *testing
 		SourceFormat:   sdktranslator.FormatClaude,
 		ResponseFormat: sdktranslator.FormatClaude,
 	})
-	thinkingErr = nil
-	if !errors.As(errLevel, &thinkingErr) || thinkingErr.Code != thinking.ErrLevelNotSupported {
-		t.Fatalf("Execute(xhigh) error = %v, want ThinkingError(%s)", errLevel, thinking.ErrLevelNotSupported)
+	if errLevel != nil {
+		t.Fatalf("Execute(xhigh) error = %v", errLevel)
 	}
-	if executeCalls != 0 {
-		t.Fatalf("plugin Execute was called %d times on invalid level", executeCalls)
+	if executeCalls != 1 {
+		t.Fatalf("plugin Execute was called %d times on canonical level xhigh, want 1", executeCalls)
 	}
+	if got := ojson.GetBytesNoCopy(gotReq.Payload, "output_config.effort").String(); got != "xhigh" {
+		t.Fatalf("passthrough output_config.effort = %q, want xhigh; payload=%s", got, gotReq.Payload)
+	}
+	executeCalls = 0
 
 	// Out-of-range budget in request body -> rejected with ThinkingError (ErrBudgetOutOfRange).
 	_, errBudget := adapter.Execute(context.Background(), nil, coreexecutor.Request{

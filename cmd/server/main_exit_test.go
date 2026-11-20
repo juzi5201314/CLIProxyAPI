@@ -55,6 +55,7 @@ func newServerExitCommand(t *testing.T, dir string, args ...string) (*exec.Cmd, 
 	stderr := &bytes.Buffer{}
 	command.Stdout = stdout
 	command.Stderr = stderr
+	detachControllingTTY(command)
 	return command, stdout, stderr
 }
 

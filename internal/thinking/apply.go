@@ -438,13 +438,6 @@ func applyThinkingDocCore(doc *ojson.Doc, docValid bool, sourceBody []byte, mode
 		}
 		return modified, nil
 	}
-	// High-intent levels (xhigh/max) resolve to the strongest effort the model
-	// actually declares, on every path that knows the exact model definition —
-	// not just executor-resolved API-key attempts.
-	if config.Mode == ModeLevel && modelInfo != nil && modelInfo.Thinking != nil && shouldMapConfiguredHighIntent(fromFormat, providerFormat, modelInfo) {
-		config.Level = mapConfiguredHighIntent(config.Level, modelInfo)
-	}
-
 	// 5. Validate and normalize configuration
 	validated, err := ValidateConfig(config, modelInfo, fromFormat, providerFormat, suffixResult.HasSuffix)
 	if err != nil {
@@ -523,41 +516,6 @@ func thinkingIsFullyDisabled(config ThinkingConfig) bool {
 
 func thinkingRequestedOff(config ThinkingConfig) bool {
 	return config.Mode == ModeNone || (config.Mode == ModeBudget && config.Budget == 0)
-}
-
-func shouldMapConfiguredHighIntent(fromFormat, toFormat string, modelInfo *registry.ModelInfo) bool {
-	fromFormat = strings.ToLower(strings.TrimSpace(fromFormat))
-	toFormat = strings.ToLower(strings.TrimSpace(toFormat))
-	if fromFormat != toFormat {
-		return true
-	}
-	if modelInfo == nil {
-		return false
-	}
-	modelType := strings.ToLower(strings.TrimSpace(modelInfo.Type))
-	return modelType != "" && !isSameProviderFamily(toFormat, modelType)
-}
-
-func mapConfiguredHighIntent(level ThinkingLevel, modelInfo *registry.ModelInfo) ThinkingLevel {
-	if modelInfo == nil || modelInfo.Thinking == nil || len(modelInfo.Thinking.Levels) == 0 {
-		return level
-	}
-	level = ThinkingLevel(strings.ToLower(strings.TrimSpace(string(level))))
-	var candidates []ThinkingLevel
-	switch level {
-	case LevelXHigh:
-		candidates = []ThinkingLevel{LevelXHigh, LevelMax, LevelHigh}
-	case LevelMax:
-		candidates = []ThinkingLevel{LevelMax, LevelXHigh, LevelHigh}
-	default:
-		return level
-	}
-	for _, candidate := range candidates {
-		if isLevelSupported(string(candidate), modelInfo.Thinking.Levels) {
-			return candidate
-		}
-	}
-	return level
 }
 
 func extractSourceThinkingConfig(body []byte, provider string) ThinkingConfig {

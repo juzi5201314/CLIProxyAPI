@@ -3129,8 +3129,8 @@ func TestXAIExecutorThinkingPayloadOverride(t *testing.T) {
 			metadataKey: "cliproxy.resolved_home_model_info", thinking: &registry.ThinkingSupport{}, wantEffort: "high",
 		},
 		{
-			name: "home restricts thinking levels", model: "grok-4.5",
-			metadataKey: "cliproxy.resolved_home_model_info", thinking: &registry.ThinkingSupport{Levels: []string{"low"}}, wantEffort: "low",
+			name: "home preserves effort with restricted levels", model: "grok-4.5",
+			metadataKey: "cliproxy.resolved_home_model_info", thinking: &registry.ThinkingSupport{Levels: []string{"low"}}, wantEffort: "high",
 		},
 		{name: "local supported fallback", model: "grok-4.5", wantEffort: "high"},
 		{name: "local unsupported fallback", model: "grok-build-0.1"},

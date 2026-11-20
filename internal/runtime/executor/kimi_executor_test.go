@@ -403,8 +403,8 @@ func TestKimiExecutorClaudeRequestPreservesInternalModelSemantics(t *testing.T) 
 	if got := ojson.GetBytes(upstreamBody, "model").String(); got != "k2.5" {
 		t.Fatalf("upstream model = %q, want k2.5", got)
 	}
-	if got := ojson.GetBytes(upstreamBody, "output_config.effort").String(); got != "high" {
-		t.Fatalf("upstream output_config.effort = %q, want high", got)
+	if got := ojson.GetBytes(upstreamBody, "output_config.effort").String(); got != "max" {
+		t.Fatalf("upstream output_config.effort = %q, want max", got)
 	}
 	if got := ojson.GetBytes(response.Payload, "model").String(); got != model {
 		t.Fatalf("response model = %q, want %q", got, model)

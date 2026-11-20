@@ -120,8 +120,8 @@ func TestKimiHomeModelThinkingCapabilitiesOverrideLocalRegistry(t *testing.T) {
 			if got := ojson.GetBytes(upstreamBody, "thinking.type").String(); got != "enabled" {
 				t.Fatalf("thinking.type = %q, want enabled; body=%s", got, upstreamBody)
 			}
-			if got := ojson.GetBytes(upstreamBody, "thinking.effort").String(); got != "high" {
-				t.Fatalf("thinking.effort = %q, want high from Home model capabilities; body=%s", got, upstreamBody)
+			if got := ojson.GetBytes(upstreamBody, "thinking.effort").String(); got != "max" {
+				t.Fatalf("thinking.effort = %q, want max; body=%s", got, upstreamBody)
 			}
 			if effort := ojson.GetBytes(upstreamBody, "reasoning_effort"); effort.Exists() {
 				t.Fatalf("reasoning_effort should be absent, got %s; body=%s", effort.Raw, upstreamBody)
