@@ -177,10 +177,11 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
 
   return (
     <aside
+      onTransitionEnd={updateIndicator}
       className={cn(
         mobile
-          ? "flex flex-col justify-between h-full w-full bg-white dark:bg-slate-900 z-40 select-none"
-          : "hidden md:flex flex-col justify-between shrink-0 border-r border-slate-200/80 bg-white/95 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/95 z-40 select-none transition-all duration-300 ease-in-out",
+          ? "flex flex-col justify-between h-full w-full bg-sidebar z-40 select-none"
+          : "hidden md:flex flex-col justify-between shrink-0 border-r border-sidebar-border bg-sidebar/95 backdrop-blur-xl z-40 select-none transition-all duration-300 ease-in-out",
         !mobile && (isCollapsed ? "w-[68px]" : "w-60 lg:w-64"),
       )}
     >
@@ -245,22 +246,24 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
       {/* Main Nav Scroll Area */}
       <nav
         ref={navRef}
-        className="relative flex flex-1 flex-col gap-4 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+        className="relative flex flex-1 flex-col gap-3.5 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
       >
         {indicator ? (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute z-0 rounded-xl bg-blue-600 shadow-md shadow-blue-500/25 transition-[top,left,width,height] duration-300 ease-in-out"
+            className="pointer-events-none absolute z-0 rounded-xl bg-primary shadow-md shadow-primary/25 transition-[top,left,width,height] duration-300 ease-in-out"
             style={{ top: indicator.top, left: indicator.left, width: indicator.width, height: indicator.height }}
           />
         ) : null}
-        {NAV_GROUPS.map((group) => (
+        {NAV_GROUPS.map((group, groupIdx) => (
           <div key={group.groupKey} className="space-y-1">
-            {!collapsed && (
-              <p className="px-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            {!isCollapsed ? (
+              <p className="px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                 {t(group.groupKey) || group.defaultTitle}
               </p>
-            )}
+            ) : groupIdx > 0 ? (
+              <div className="mx-auto my-1 h-px w-6 bg-border/70" />
+            ) : null}
 
             <div className="space-y-0.5">
               {group.items.map((item, itemIdx) => {
@@ -287,8 +290,8 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
                         sizeClass,
                         "shrink-0 transition-transform duration-150",
                         active
-                          ? "text-white"
-                          : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300",
+                          ? "text-primary-foreground"
+                          : "text-muted-foreground group-hover:text-foreground",
                       )}
                     />
                   );
@@ -305,8 +308,8 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
                           className={cn(
                             "group relative z-10 flex items-center justify-center size-10 mx-auto rounded-xl transition-all duration-200",
                             active
-                              ? "text-white font-semibold"
-                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
+                              ? cn("text-primary-foreground font-semibold", !indicator && "bg-primary shadow-md shadow-primary/25")
+                              : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                           )}
                         >
                           {renderItemIcon("size-4.5")}
@@ -328,8 +331,8 @@ export function AppSidebar({ onOpenSearch, mobile, onNavigate }: AppSidebarProps
                     className={cn(
                       "group relative z-10 flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150",
                       active
-                        ? "text-white font-semibold"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-100",
+                        ? cn("text-primary-foreground font-semibold", !indicator && "bg-primary shadow-md shadow-primary/25")
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                     )}
                   >
                     {renderItemIcon("size-4")}

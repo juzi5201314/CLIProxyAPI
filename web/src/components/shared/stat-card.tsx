@@ -15,19 +15,19 @@ type StatCardProps = {
 
 export function StatCard({ label, value, sub, icon: Icon, loading, className, valueClassName }: StatCardProps) {
   return (
-    <Card className={cn("gap-0 py-5 rounded-2xl border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/90 shadow-2xs hover:shadow-xs transition", className)}>
-      <CardContent className="flex items-start justify-between gap-4 px-5">
-        <div className="min-w-0">
+    <Card className={cn("card-surface gap-0 py-4 sm:py-5 transition-all duration-200 hover:border-primary/30 hover:shadow-md", className)}>
+      <CardContent className="flex items-start justify-between gap-3 px-4 sm:px-5">
+        <div className="min-w-0 flex-1">
           <p className="text-muted-foreground text-xs font-medium">{label}</p>
           {loading ? (
             <Skeleton className="mt-2 h-8 w-24 rounded-lg" />
           ) : (
-            <p className={cn("mt-1 truncate text-2xl sm:text-3xl font-bold tracking-tight tabular-nums font-mono text-slate-900 dark:text-slate-100", valueClassName)}>{value}</p>
+            <p className={cn("mt-1 truncate text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight tabular-nums font-mono text-foreground", valueClassName)}>{value}</p>
           )}
           {sub && !loading ? <div className="text-muted-foreground mt-1.5 text-xs">{sub}</div> : null}
         </div>
         {Icon ? (
-          <div className="bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 flex size-11 shrink-0 items-center justify-center rounded-2xl">
+          <div className="bg-primary/10 text-primary flex size-10 sm:size-11 shrink-0 items-center justify-center rounded-2xl ring-1 ring-primary/15">
             <Icon className="size-5" />
           </div>
         ) : null}

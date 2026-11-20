@@ -566,42 +566,65 @@ function KeyInput({ value, onChange }: { value: string; onChange: (value: string
 
 export function HeadersEditor({ headers, onChange }: { headers?: Record<string, string>; onChange: (headers: Record<string, string>) => void }) {
   const { t } = useTranslation();
-  const pairs = Object.entries(headers ?? {});
-  const setPair = (index: number, nextKey: string, nextValue: string) => {
-    const next: Record<string, string> = {};
-    pairs.forEach(([key, value], i) => {
-      next[i === index ? nextKey : key] = i === index ? nextValue : value;
-    });
-    onChange(next);
+  const nextIdRef = useRef(1);
+  const [rows, setRows] = useState<{ id: number; key: string; value: string }[]>(() =>
+    Object.entries(headers ?? {}).map(([key, value]) => ({
+      id: nextIdRef.current++,
+      key,
+      value,
+    })),
+  );
+
+  const emitChange = (nextRows: { id: number; key: string; value: string }[]) => {
+    setRows(nextRows);
+    const record: Record<string, string> = {};
+    for (const row of nextRows) {
+      const k = row.key.trim();
+      if (k) record[k] = row.value;
+    }
+    onChange(record);
   };
+
+  const addRow = () => {
+    setRows((current) => [...current, { id: nextIdRef.current++, key: "", value: "" }]);
+  };
+
+  const updateRow = (id: number, key: string, value: string) => {
+    emitChange(rows.map((row) => (row.id === id ? { ...row, key, value } : row)));
+  };
+
+  const removeRow = (id: number) => {
+    emitChange(rows.filter((row) => row.id !== id));
+  };
+
   return (
     <EditorSection
       title={t("providers.headers")}
       hint={t("providers.headersHint")}
       actions={
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onChange({ ...headers, "": "" })}>
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addRow}>
           <Plus className="size-3.5" />
           {t("providers.addHeader")}
         </Button>
       }
     >
-      {pairs.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-muted-foreground rounded-xl border border-dashed border-border/60 px-4 py-5 text-center text-xs">{t("providers.emptyHeaders")}</p>
       ) : (
         <div className="space-y-1.5">
-          {pairs.map(([key, value], index) => (
-            <div key={index} className="flex items-center gap-2 rounded-xl border border-border/50 bg-secondary/30 px-2 py-2">
+          {rows.map((row) => (
+            <div key={row.id} className="flex items-center gap-2 rounded-xl border border-border/50 bg-secondary/30 px-2 py-2">
               <Input
                 className="h-8 w-56 font-mono text-xs"
-                value={key}
-                onChange={(event) => setPair(index, event.target.value, value)}
+                value={row.key}
+                onChange={(event) => updateRow(row.id, event.target.value, row.value)}
                 placeholder={t("providers.headerName")}
               />
               <span className="text-muted-foreground font-mono text-xs">:</span>
               <Input
                 className="h-8 flex-1 font-mono text-xs"
-                value={value}
-                onChange={(event) => setPair(index, key, event.target.value)}
+                value={row.value}
+                onChange={(event) => updateRow(row.id, row.key, event.target.value)}
                 placeholder={t("providers.headerValue")}
               />
               <Button
@@ -609,11 +632,7 @@ export function HeadersEditor({ headers, onChange }: { headers?: Record<string, 
                 size="icon"
                 className="text-destructive size-7"
                 title={t("common.delete")}
-                onClick={() => {
-                  const next = { ...headers };
-                  delete next[key];
-                  onChange(next);
-                }}
+                onClick={() => removeRow(row.id)}
               >
                 <Trash2 className="size-3.5" />
               </Button>

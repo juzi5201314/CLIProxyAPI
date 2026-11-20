@@ -177,7 +177,7 @@ export function StatusPill({
   if (!isError) {
     return (
       <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">
-        200
+        {statusCode || 200}
       </Badge>
     );
   }
@@ -242,9 +242,16 @@ export function RequestDBDisabled({ onOpenConfig }: { onOpenConfig?: () => void 
 export function JsonView({ value, className }: { value: unknown; className?: string }) {
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
   return (
-    <pre className={cn("bg-secondary/60 max-h-[420px] overflow-auto rounded-xl p-3 font-mono text-xs leading-relaxed", className)}>
-      {text}
-    </pre>
+    <div className="group/json relative">
+      {text ? (
+        <div className="absolute top-2 right-2 z-10 opacity-70 transition-opacity group-hover/json:opacity-100">
+          <CopyButton text={text} className="size-6 rounded-md bg-background/80 backdrop-blur-xs border border-border/60 shadow-2xs" />
+        </div>
+      ) : null}
+      <pre className={cn("bg-secondary/60 max-h-[420px] overflow-auto rounded-xl border border-border/50 p-3 pr-9 font-mono text-xs leading-relaxed select-text", className)}>
+        {text}
+      </pre>
+    </div>
   );
 }
 

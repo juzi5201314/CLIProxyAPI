@@ -24,6 +24,7 @@ import {
   Terminal,
   Trash2,
   Triangle,
+  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -315,37 +316,37 @@ export function ProvidersPage() {
     <>
       <PageHeader title={t("nav.providersItem")} subtitle={t("providers.subtitle")} />
 
-      {/* Top Overview Metrics Banner (宏观大盘看板) */}
+      {/* Top Overview Metrics Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-6">
-        <div className="card-surface p-4.5 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs flex items-center justify-between">
+        <div className="card-surface p-4.5 flex items-center justify-between transition-all duration-200 hover:border-primary/30 hover:shadow-md">
           <div>
-            <p className="text-xs text-slate-400 font-medium">{t("providers.stats.totalProviders")}</p>
-            <p className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">{totalCount}</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{t("providers.stats.enabledBreakdown", { enabled: enabledCount, disabled: disabledCount })}</p>
+            <p className="text-xs text-muted-foreground font-medium">{t("providers.stats.totalProviders")}</p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalCount}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.stats.enabledBreakdown", { enabled: enabledCount, disabled: disabledCount })}</p>
           </div>
-          <div className="size-11 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <div className="size-11 rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15 flex items-center justify-center">
             <Boxes className="size-5" />
           </div>
         </div>
 
-        <div className="card-surface p-4.5 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs flex items-center justify-between">
+        <div className="card-surface p-4.5 flex items-center justify-between transition-all duration-200 hover:border-emerald-500/30 hover:shadow-md">
           <div>
-            <p className="text-xs text-slate-400 font-medium">{t("providers.stats.activeKeys")}</p>
-            <p className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">{totalKeysCount}</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{t("providers.stats.loadBalancing")}</p>
+            <p className="text-xs text-muted-foreground font-medium">{t("providers.stats.activeKeys")}</p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalKeysCount}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.stats.loadBalancing")}</p>
           </div>
-          <div className="size-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+          <div className="size-11 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/15 flex items-center justify-center">
             <KeyRound className="size-5" />
           </div>
         </div>
 
-        <div className="card-surface p-4.5 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs flex items-center justify-between">
+        <div className="card-surface p-4.5 flex items-center justify-between transition-all duration-200 hover:border-purple-500/30 hover:shadow-md">
           <div>
-            <p className="text-xs text-slate-400 font-medium">{t("providers.stats.modelsCount")}</p>
-            <p className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">{totalModelsCount}</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{t("providers.stats.modelsSubtitle")}</p>
+            <p className="text-xs text-muted-foreground font-medium">{t("providers.stats.modelsCount")}</p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalModelsCount}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.stats.modelsSubtitle")}</p>
           </div>
-          <div className="size-11 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+          <div className="size-11 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-1 ring-purple-500/15 flex items-center justify-center">
             <Cpu className="size-5" />
           </div>
         </div>
@@ -376,13 +377,22 @@ export function ProvidersPage() {
       <div className="mt-4 flex flex-wrap items-center gap-2.5">
         {/* Search Input */}
         <div className="relative">
-          <Search className="text-slate-400 pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
           <Input
-            className="h-8.5 w-60 sm:w-72 rounded-xl pl-8.5 text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xs"
+            className="h-8.5 w-60 sm:w-72 rounded-xl pl-8.5 pr-7 text-xs bg-card border-border shadow-2xs"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t("providers.searchPlaceholder")}
           />
+          {search ? (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="text-muted-foreground hover:text-foreground absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
         </div>
 
         {/* Status Filter Segmented Buttons */}
@@ -738,8 +748,8 @@ function ProviderCardElement({
 
   return (
     <div
-      className={`card-surface flex flex-col justify-between p-5 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/95 transition-all duration-200 hover:shadow-md ${
-        row.disabled ? "opacity-60 bg-slate-50/50 dark:bg-slate-900/50" : ""
+      className={`card-surface flex flex-col justify-between p-5 transition-all duration-200 hover:border-primary/30 hover:shadow-md ${
+        row.disabled ? "opacity-60 bg-muted/30" : ""
       }`}
     >
       <div className="space-y-4">
@@ -781,7 +791,11 @@ function ProviderCardElement({
         {/* Identity & Status */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <h4 className="truncate font-bold text-sm text-slate-900 dark:text-slate-100" title={row.name}>
+            <h4
+              onClick={handleEdit}
+              className="truncate font-bold text-sm text-foreground cursor-pointer hover:text-primary transition-colors"
+              title={row.name}
+            >
               {row.name || t("common.unknown")}
             </h4>
 
@@ -955,7 +969,12 @@ function ProviderTableRowElement({
       <TableCell>
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-1.5">
-            <span className="truncate font-bold text-slate-800 dark:text-slate-200">{row.name || t("common.unknown")}</span>
+            <span
+              onClick={handleEdit}
+              className="truncate font-bold text-foreground cursor-pointer hover:text-primary transition-colors"
+            >
+              {row.name || t("common.unknown")}
+            </span>
             {row.priority !== undefined ? <Badge variant="outline" className="text-[10px] font-mono">P{row.priority}</Badge> : null}
             {row.prefix && row.name !== row.prefix ? <Badge variant="outline" className="font-mono text-[10px] text-blue-600 bg-blue-50">{row.prefix}</Badge> : null}
           </div>

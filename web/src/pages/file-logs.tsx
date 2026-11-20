@@ -4,11 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowDownCircle,
+  Check,
+  Copy,
   Download,
   Eraser,
   PauseCircle,
   PlayCircle,
   Search,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -39,6 +42,7 @@ export function FileLogsPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [copiedLogs, setCopiedLogs] = useState(false);
 
   const tail = useQuery({
     queryKey: ["file-logs"],
@@ -132,13 +136,49 @@ export function FileLogsPage() {
     }
   };
 
+  const handleCopyVisible = async () => {
+    if (renderedLines.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(renderedLines.map((l) => l.text).join("\n"));
+      setCopiedLogs(true);
+      toast.success(t("common.copied"));
+      setTimeout(() => setCopiedLogs(false), 1500);
+    } catch {
+      toast.error(t("common.copyFailed", "复制失败"));
+    }
+  };
+
   return (
     <>
       <PageHeader title={t("nav.logs")} subtitle={t("logs.subtitle")}>
         <div className="relative">
-          <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("logs.search")} className="h-8 w-44 sm:w-52 pl-8 text-xs" />
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("logs.search")}
+            className={cn("h-8 w-44 sm:w-56 pl-8 text-xs", search && "pr-7")}
+          />
+          {search ? (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 text-xs"
+          onClick={handleCopyVisible}
+          disabled={renderedLines.length === 0}
+        >
+          {copiedLogs ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+          {t("logs.copyVisible", "复制日志")}
+        </Button>
         <Button
           variant={follow ? "default" : "outline"}
           size="sm"
@@ -168,7 +208,7 @@ export function FileLogsPage() {
                 : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
-            {level === "all" ? "全部 (All)" : level.toUpperCase()}
+            {level === "all" ? t("logs.levelAll", "全部 (All)") : level.toUpperCase()}
           </button>
         ))}
       </div>
@@ -181,7 +221,11 @@ export function FileLogsPage() {
         <div className="card-surface overflow-hidden relative">
           {filtered.length > RENDER_LIMIT ? (
             <div className="border-b border-border/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-600 dark:text-amber-400">
-              为保证流畅度，已截取展示最新的 {RENDER_LIMIT} 条日志（当前筛选共 {formatIntShort(filtered.length)} 条）
+              {t("logs.truncatedNotice", {
+                limit: RENDER_LIMIT,
+                total: formatIntShort(filtered.length),
+                defaultValue: `为保证流畅度，已截取展示最新的 ${RENDER_LIMIT} 条日志（当前筛选共 ${formatIntShort(filtered.length)} 条）`,
+              })}
             </div>
           ) : null}
 
@@ -192,7 +236,7 @@ export function FileLogsPage() {
           >
             <pre className="font-mono text-xs leading-relaxed">
               {renderedLines.map((line, index) => (
-                <div key={index} className={lineClass(line.text)}>
+                <div key={index} className={cn("rounded px-1.5 py-0.5 hover:bg-muted/40 transition-colors", lineClass(line.text))}>
                   {line.text}
                 </div>
               ))}
@@ -204,10 +248,10 @@ export function FileLogsPage() {
               <button
                 type="button"
                 onClick={scrollToBottom}
-                className="sticky bottom-2 float-right mr-2 flex items-center gap-1.5 rounded-full border border-border bg-background/90 px-2.5 py-1 text-xs text-foreground shadow-md backdrop-blur-sm hover:bg-muted transition"
+                className="sticky bottom-2 float-right mr-2 flex items-center gap-1.5 rounded-full border border-border bg-background/90 px-2.5 py-1 text-xs text-foreground shadow-md backdrop-blur-sm hover:bg-muted transition cursor-pointer"
               >
-                <ArrowDownCircle className="size-3.5 text-blue-500" />
-                <span>回到底部</span>
+                <ArrowDownCircle className="size-3.5 text-primary" />
+                <span>{t("logs.scrollToBottom", "回到底部")}</span>
               </button>
             ) : null}
           </div>
@@ -218,7 +262,7 @@ export function FileLogsPage() {
               {follow ? <Badge variant="outline" className="ml-2 border-emerald-500/40 text-emerald-600 dark:text-emerald-400">{t("common.live")}</Badge> : null}
             </div>
             {!isAtBottom && follow ? (
-              <span className="text-[11px] text-amber-500">已暂停自动滚屏</span>
+              <span className="text-[11px] text-amber-500">{t("logs.autoScrollPaused", "已暂停自动滚屏")}</span>
             ) : null}
           </div>
         </div>

@@ -341,7 +341,13 @@ export function RequestDBPage() {
 
         <StatCard
           label={t("requestDb.metrics.timeSpan")}
-          value={timespanDays > 0 ? `${timespanDays} 天` : totalRecords > 0 ? "< 1 天" : "—"}
+          value={
+            timespanDays > 0
+              ? t("common.daysUnit", { count: timespanDays, defaultValue: `${timespanDays} 天` })
+              : totalRecords > 0
+                ? t("common.lessThanOneDay", "< 1 天")
+                : "—"
+          }
           sub={
             earliestMS && latestMS ? (
               <span title={`${formatFullTime(earliestMS)} ~ ${formatFullTime(latestMS)}`}>
@@ -473,7 +479,7 @@ export function RequestDBPage() {
                 </CardTitle>
               </div>
               <Badge className="bg-blue-600 text-white dark:bg-blue-500 text-[10px]">
-                {t("common.sampled") ? "推荐" : "推荐"}
+                {t("common.recommended", "推荐")}
               </Badge>
             </div>
             <CardDescription className="text-xs leading-relaxed mt-2 text-muted-foreground">
@@ -688,7 +694,10 @@ export function RequestDBPage() {
 
           <CardContent className="pt-0">
             <div className="rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 p-3 mb-4 text-xs text-amber-800 dark:text-amber-300">
-              当前共有 <strong>{formatInt(failedRecords)}</strong> 条调用异常或失败的错误记录。
+              {t("requestDb.cleanup.failed.banner", {
+                count: formatInt(failedRecords),
+                defaultValue: `当前共有 ${formatInt(failedRecords)} 条调用异常或失败的错误记录。`,
+              })}
             </div>
 
             <Button
@@ -729,7 +738,7 @@ export function RequestDBPage() {
 
           <CardContent className="pt-0">
             <div className="rounded-lg bg-slate-100/70 dark:bg-slate-800/60 p-3 mb-4 text-xs text-muted-foreground flex items-center justify-between">
-              <span>WAL 缓冲区占用</span>
+              <span>{t("requestDb.cleanup.vacuum.walUsage", "WAL 缓冲区占用")}</span>
               <span className="font-mono font-medium text-foreground">
                 {formatBytes(walBytes)}
               </span>
@@ -769,7 +778,10 @@ export function RequestDBPage() {
 
           <CardContent className="pt-0">
             <div className="rounded-lg bg-red-50/60 dark:bg-red-950/40 border border-red-200/60 dark:border-red-900/60 p-3 mb-4 text-xs text-red-800 dark:text-red-300">
-              警告：将彻底删除所有 {formatInt(totalRecords)} 条请求记录，统计数据将被重置！
+              {t("requestDb.cleanup.clearAll.warning", {
+                count: formatInt(totalRecords),
+                defaultValue: `警告：将彻底删除所有 ${formatInt(totalRecords)} 条请求记录，统计数据将被重置！`,
+              })}
             </div>
 
             <Button
@@ -820,7 +832,7 @@ export function RequestDBPage() {
           {confirmState.requiresClearInput && (
             <div className="space-y-2 py-2">
               <Label htmlFor="clear-verify" className="text-xs text-muted-foreground">
-                请输入 <code className="font-mono font-bold text-red-600 dark:text-red-400">CLEAR</code> 以确认执行清空：
+                {t("requestDb.cleanup.clearAll.typeClearPrompt", "请输入 CLEAR 以确认执行清空：")}
               </Label>
               <Input
                 id="clear-verify"

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, ChevronsUpDown, X, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,8 +31,9 @@ export function MultiSelectCombobox({
   options,
   className,
   icon: Icon,
-  searchPlaceholder = "搜索...",
+  searchPlaceholder,
 }: MultiSelectComboboxProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -90,10 +92,10 @@ export function MultiSelectCombobox({
           <ChevronsUpDown className="ml-1.5 size-3 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2 shadow-lg" align="start">
+      <PopoverContent className="w-64 p-2 shadow-lg rounded-2xl" align="start">
         <div className="mb-2 flex items-center gap-1.5">
           <Input
-            placeholder={searchPlaceholder}
+            placeholder={searchPlaceholder ?? `${t("common.search")}...`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-7 text-xs"
@@ -117,7 +119,7 @@ export function MultiSelectCombobox({
             className="hover:text-primary transition-colors cursor-pointer"
             onClick={handleSelectAll}
           >
-            全选当前
+            {t("common.selectAll", "全选当前")}
           </button>
           {selected.length > 0 ? (
             <button
@@ -125,14 +127,14 @@ export function MultiSelectCombobox({
               className="hover:text-rose-500 transition-colors cursor-pointer"
               onClick={handleClear}
             >
-              清空 ({selected.length})
+              {t("common.clearSelection", { count: selected.length, defaultValue: `清空 (${selected.length})` })}
             </button>
           ) : null}
         </div>
 
         <ScrollArea className="max-h-56">
           {filteredOptions.length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">未找到匹配项</p>
+            <p className="py-4 text-center text-xs text-muted-foreground">{t("common.noMatches", "未找到匹配项")}</p>
           ) : (
             <div className="space-y-0.5">
               {filteredOptions.map((opt) => {

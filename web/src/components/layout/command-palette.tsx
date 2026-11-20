@@ -9,6 +9,8 @@ import {
   Database,
   FileCode2,
   KeyRound,
+  Languages,
+  Layers,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -30,6 +32,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useAuthStore } from "@/stores/auth";
+import { usePrefsStore } from "@/stores/prefs";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -39,8 +42,10 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const clearAuth = useAuthStore((state) => state.clear);
+  const locale = usePrefsStore((state) => state.locale);
+  const setLocale = usePrefsStore((state) => state.setLocale);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -150,7 +155,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             onSelect={() => runCommand(() => navigate("/config?tab=yaml"))}
           >
             <FileCode2 className="mr-2 size-4" />
-            <span>YAML 配置编辑</span>
+            <span>{t("nav.yamlConfig", "YAML 配置编辑")}</span>
           </CommandItem>
           <CommandItem
             keywords={["plugins", "extensions", "store", "插件扩展", "插件", "/plugins"]}
@@ -158,6 +163,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           >
             <Blocks className="mr-2 size-4" />
             <span>{t("nav.plugins")}</span>
+          </CommandItem>
+          <CommandItem
+            keywords={["plugin-pages", "plugin-config", "插件配置", "插件页面", "/plugin-pages"]}
+            onSelect={() => runCommand(() => navigate("/plugin-pages"))}
+          >
+            <Layers className="mr-2 size-4" />
+            <span>{t("nav.pluginPages")}</span>
           </CommandItem>
           <CommandItem
             keywords={["system", "health", "status", "info", "系统信息", "系统", "/system"]}
@@ -173,10 +185,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <CommandGroup heading={t("common.actions")}>
           <CommandItem
             keywords={["theme", "dark", "light", "mode", "主题", "暗色", "浅色", "夜间模式"]}
-            onSelect={() => runCommand(() => setTheme(theme === "dark" ? "light" : "dark"))}
+            onSelect={() => runCommand(() => setTheme(resolvedTheme === "dark" ? "light" : "dark"))}
           >
-            {theme === "dark" ? <Sun className="mr-2 size-4" /> : <Moon className="mr-2 size-4" />}
-            <span>切换暗色 / 浅色模式</span>
+            {resolvedTheme === "dark" ? <Sun className="mr-2 size-4 text-amber-500" /> : <Moon className="mr-2 size-4 text-blue-500" />}
+            <span>{t("nav.toggleTheme", "切换暗色 / 浅色模式")}</span>
+          </CommandItem>
+          <CommandItem
+            keywords={["language", "locale", "english", "chinese", "语言", "中文", "英文"]}
+            onSelect={() => runCommand(() => setLocale(locale === "zh-CN" ? "en" : "zh-CN"))}
+          >
+            <Languages className="mr-2 size-4" />
+            <span>{t("nav.switchLanguage", "切换语言 (中文 / EN)")}</span>
           </CommandItem>
           <CommandItem
             keywords={["logout", "exit", "sign out", "退出登录", "退出"]}

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -81,16 +82,17 @@ function CodeBlock({
   code: string;
   isStreaming?: boolean;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      toast.success("代码已复制到剪贴板");
+      toast.success(t("common.codeCopied", "代码已复制到剪贴板"));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("复制失败");
+      toast.error(t("common.copyFailed", "复制失败"));
     }
   };
 
@@ -102,7 +104,7 @@ function CodeBlock({
           {isStreaming ? (
             <span className="flex items-center gap-1 text-[10px] text-amber-400">
               <span className="inline-block size-1.5 rounded-full bg-amber-400 animate-pulse" />
-              输出中
+              {t("common.streamingOutput", "输出中")}
             </span>
           ) : null}
           <button
@@ -111,7 +113,7 @@ function CodeBlock({
             className="flex items-center gap-1 hover:text-white transition cursor-pointer"
           >
             {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
-            <span>{copied ? "已复制" : "复制"}</span>
+            <span>{copied ? t("common.copied", "已复制") : t("common.copy", "复制")}</span>
           </button>
         </div>
       </div>

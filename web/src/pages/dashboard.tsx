@@ -12,6 +12,8 @@ import {
 } from "recharts";
 import {
   Activity,
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
   Building2,
   Coins,
@@ -65,7 +67,7 @@ import { usePrefsStore, type TimeRange } from "@/stores/prefs";
 import type { RecordFilter } from "@/api/management";
 import { ModelPricingDialog } from "@/components/model-pricing-dialog";
 
-const DASHBOARD_CARD_SURFACE = "rounded-2xl border border-slate-200/80 bg-white/95 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/90";
+const DASHBOARD_CARD_SURFACE = "card-surface";
 
 const chartConfig = {
   requests: { label: "Requests", color: "var(--chart-1)" },
@@ -215,10 +217,10 @@ export function DashboardPage() {
       </PageHeader>
 
       {/* Interactive Multi-Select Filter Toolbar */}
-      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-card/60 p-2.5 backdrop-blur-sm shadow-xs">
+      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-border/80 bg-card/80 p-2.5 backdrop-blur-sm shadow-2xs">
         <div className="flex items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground">
           <Filter className="size-3.5 text-primary" />
-          <span>自由筛选</span>
+          <span>{t("dashboard.filters.label", "自由筛选")}</span>
         </div>
 
         {/* Model Multi-Select */}
@@ -228,7 +230,7 @@ export function DashboardPage() {
           onChange={setSelectedModels}
           options={modelOptions}
           icon={Cpu}
-          searchPlaceholder="搜索模型..."
+          searchPlaceholder={t("dashboard.filters.searchModels", "搜索模型...")}
         />
 
         {/* Provider Multi-Select */}
@@ -238,7 +240,7 @@ export function DashboardPage() {
           onChange={setSelectedProviders}
           options={providerOptions}
           icon={Building2}
-          searchPlaceholder="搜索供应商..."
+          searchPlaceholder={t("dashboard.filters.searchProviders", "搜索供应商...")}
         />
 
         {hasActiveFilters ? (
@@ -289,21 +291,22 @@ export function DashboardPage() {
       </div>
 
       {/* Hero Welcome Banner */}
-      <div className="mb-6 relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 p-6 text-slate-900 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/90 dark:text-slate-100">
+      <div className="card-surface mb-6 relative overflow-hidden bg-linear-to-r from-primary/[0.06] via-card to-card p-5 sm:p-6">
+        <div className="pointer-events-none absolute -top-24 -left-24 size-64 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute right-8 -bottom-4 hidden sm:block">
           <img
             src={bannerImage}
             alt=""
             width={115}
             height={115}
-            className="size-[115px] object-contain"
+            className="size-[115px] object-contain drop-shadow-sm"
           />
         </div>
         <div className="relative z-10 max-w-xl pr-0 sm:pr-36">
-          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
             {t("dashboard.heroTitle")}
           </h2>
-          <p className="mt-1 text-xs text-slate-500 leading-relaxed dark:text-slate-400">
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
             {t("dashboard.heroDesc")}
           </p>
         </div>
@@ -316,15 +319,19 @@ export function DashboardPage() {
           label={t("dashboard.kpi.cost", "预估总花费")}
           value={formatUSD(stats.data?.estimated_cost_usd)}
           sub={
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs">
-                日均 ~{formatUSD(dailyCost)} · {formatInt(stats.data?.total_requests)} 次调用
+            <div className="flex items-center justify-between gap-1">
+              <span className="font-mono text-xs truncate">
+                {t("dashboard.kpi.dailyAvgCalls", {
+                  daily: formatUSD(dailyCost),
+                  calls: formatInt(stats.data?.total_requests),
+                  defaultValue: `日均 ~${formatUSD(dailyCost)} · ${formatInt(stats.data?.total_requests)} 次调用`,
+                })}
               </span>
               <button
                 type="button"
                 onClick={() => handleOpenPricing()}
-                className="cursor-pointer text-[10px] text-primary hover:underline ml-1"
-                title="管理模型价格"
+                className="cursor-pointer shrink-0 text-[10px] text-primary hover:underline ml-1"
+                title={t("dashboard.pricing.title", "管理模型价格")}
               >
                 {t("dashboard.pricing.configurePrice", "设置价格")}
               </button>
@@ -339,14 +346,21 @@ export function DashboardPage() {
           label={t("dashboard.kpi.requests")}
           value={formatInt(stats.data?.total_requests)}
           sub={
-            <>
+            <div className="truncate">
               <span className={failedReqs > 0 ? "text-amber-500 font-medium" : "text-emerald-500 font-medium"}>
-                成功率 {formatPercent(successRate)}
+                {t("dashboard.kpi.successRateVal", {
+                  rate: formatPercent(successRate),
+                  defaultValue: `成功率 ${formatPercent(successRate)}`,
+                })}
               </span>
               <span className="text-muted-foreground ml-1.5">
-                ({failedReqs} 失败 · {formatInt(stats.data?.stream_requests)} 流式)
+                {t("dashboard.kpi.failedStreamSummary", {
+                  failed: failedReqs,
+                  stream: formatInt(stats.data?.stream_requests),
+                  defaultValue: `(${failedReqs} 失败 · ${formatInt(stats.data?.stream_requests)} 流式)`,
+                })}
               </span>
-            </>
+            </div>
           }
           icon={Activity}
           loading={stats.isLoading}
@@ -357,12 +371,12 @@ export function DashboardPage() {
           label={t("dashboard.kpi.tokens")}
           value={formatNumber(stats.data?.total_tokens)}
           sub={
-            <div className="font-mono text-[11px] truncate" title={`输入: ${formatInt(stats.data?.input_tokens)} | 输出: ${formatInt(stats.data?.output_tokens)} | 命中率: ${formatPercent(cacheHitRate)}`}>
-              <span className="text-sky-500">入 {formatNumber(stats.data?.input_tokens)}</span>
+            <div className="font-mono text-[11px] truncate" title={`Input: ${formatInt(stats.data?.input_tokens)} | Output: ${formatInt(stats.data?.output_tokens)} | Cache Hit: ${formatPercent(cacheHitRate)}`}>
+              <span className="text-sky-500">{t("dashboard.kpi.inPrefix", "入")} {formatNumber(stats.data?.input_tokens)}</span>
               <span className="mx-1 text-muted-foreground/50">/</span>
-              <span className="text-emerald-500">出 {formatNumber(stats.data?.output_tokens)}</span>
+              <span className="text-emerald-500">{t("dashboard.kpi.outPrefix", "出")} {formatNumber(stats.data?.output_tokens)}</span>
               <span className="mx-1 text-muted-foreground/50">·</span>
-              <span className="text-foreground">命中 {formatPercent(cacheHitRate)}</span>
+              <span className="text-foreground">{t("dashboard.kpi.hitPrefix", "命中")} {formatPercent(cacheHitRate)}</span>
             </div>
           }
           icon={Layers}
@@ -374,10 +388,10 @@ export function DashboardPage() {
           label={t("dashboard.kpi.tps")}
           value={formatTPS(stats.data?.tps_avg)}
           sub={
-            <div className="font-mono text-[11px] truncate">
+            <div className="font-mono text-[11px] truncate flex items-center gap-1">
               <span>p50 {formatDuration(stats.data?.ttft_p50_ms)}</span>
-              <span className="mx-1 text-muted-foreground/50">·</span>
-              <span>均值 {formatDuration(stats.data?.latency_avg_ms)}</span>
+              <span className="text-muted-foreground/50">·</span>
+              <span>{t("dashboard.kpi.avgPrefix", "均值")} {formatDuration(stats.data?.latency_avg_ms)}</span>
               <SampledBadge sampled={Boolean(stats.data?.tps_sampled)} />
             </div>
           }
@@ -670,11 +684,14 @@ function ComprehensiveBreakdownTable({
           </Tabs>
 
           <span className="text-muted-foreground text-xs font-mono">
-            {filteredAndSortedRows.length} 项
+            {t("dashboard.breakdown.itemsCount", {
+              count: filteredAndSortedRows.length,
+              defaultValue: `${filteredAndSortedRows.length} 项`,
+            })}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Table Search */}
           <div className="relative">
             <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-2.5 size-3.5" />
@@ -682,7 +699,7 @@ function ComprehensiveBreakdownTable({
               placeholder={t("dashboard.breakdown.search", "搜索...")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-8 w-44 pl-8 text-xs sm:w-56"
+              className="h-8 w-44 pl-8 pr-7 text-xs sm:w-56"
             />
             {searchTerm ? (
               <X
@@ -730,8 +747,12 @@ function ComprehensiveBreakdownTable({
                 className="py-2.5 text-right font-medium w-28 cursor-pointer hover:text-primary transition-colors select-none"
               >
                 <div className="inline-flex items-center gap-1 justify-end">
-                  <span>{t("dashboard.breakdown.cost", "预估费用")}</span>
-                  <ArrowUpDown className={`size-3 ${sortKey === "cost" ? "text-primary" : "opacity-40"}`} />
+                  <span className={sortKey === "cost" ? "text-primary font-semibold" : ""}>{t("dashboard.breakdown.cost", "预估费用")}</span>
+                  {sortKey === "cost" ? (
+                    sortAsc ? <ArrowUp className="size-3 text-primary" /> : <ArrowDown className="size-3 text-primary" />
+                  ) : (
+                    <ArrowUpDown className="size-3 opacity-40" />
+                  )}
                 </div>
               </th>
               <th
@@ -739,12 +760,28 @@ function ComprehensiveBreakdownTable({
                 className="py-2.5 text-right font-medium w-28 cursor-pointer hover:text-primary transition-colors select-none"
               >
                 <div className="inline-flex items-center gap-1 justify-end">
-                  <span>{t("dashboard.table.requests", "请求次数")}</span>
-                  <ArrowUpDown className={`size-3 ${sortKey === "requests" ? "text-primary" : "opacity-40"}`} />
+                  <span className={sortKey === "requests" ? "text-primary font-semibold" : ""}>{t("dashboard.table.requests", "请求次数")}</span>
+                  {sortKey === "requests" ? (
+                    sortAsc ? <ArrowUp className="size-3 text-primary" /> : <ArrowDown className="size-3 text-primary" />
+                  ) : (
+                    <ArrowUpDown className="size-3 opacity-40" />
+                  )}
                 </div>
               </th>
               <th className="py-2.5 text-right font-medium w-20">{t("dashboard.kpi.successRate", "成功率")}</th>
-              <th className="py-2.5 text-right font-medium w-24">{t("dashboard.breakdown.inputTokens", "输入 Tokens")}</th>
+              <th
+                onClick={() => toggleSort("tokens")}
+                className="py-2.5 text-right font-medium w-24 cursor-pointer hover:text-primary transition-colors select-none"
+              >
+                <div className="inline-flex items-center gap-1 justify-end">
+                  <span className={sortKey === "tokens" ? "text-primary font-semibold" : ""}>{t("dashboard.breakdown.inputTokens", "输入 Tokens")}</span>
+                  {sortKey === "tokens" ? (
+                    sortAsc ? <ArrowUp className="size-3 text-primary" /> : <ArrowDown className="size-3 text-primary" />
+                  ) : (
+                    <ArrowUpDown className="size-3 opacity-40" />
+                  )}
+                </div>
+              </th>
               <th className="py-2.5 text-right font-medium w-24">{t("dashboard.breakdown.outputTokens", "输出 Tokens")}</th>
               <th className="py-2.5 text-right font-medium w-24">{t("dashboard.breakdown.reasoningTokens", "思考 Tokens")}</th>
               <th className="py-2.5 text-right font-medium w-24">{t("dashboard.breakdown.cacheRead", "缓存读取")}</th>
@@ -755,8 +792,12 @@ function ComprehensiveBreakdownTable({
                 className="py-2.5 pr-4 text-right font-medium w-20 cursor-pointer hover:text-primary transition-colors select-none"
               >
                 <div className="inline-flex items-center gap-1 justify-end">
-                  <span>{t("dashboard.table.tps", "平均 TPS")}</span>
-                  <ArrowUpDown className={`size-3 ${sortKey === "tps" ? "text-primary" : "opacity-40"}`} />
+                  <span className={sortKey === "tps" ? "text-primary font-semibold" : ""}>{t("dashboard.table.tps", "平均 TPS")}</span>
+                  {sortKey === "tps" ? (
+                    sortAsc ? <ArrowUp className="size-3 text-primary" /> : <ArrowDown className="size-3 text-primary" />
+                  ) : (
+                    <ArrowUpDown className="size-3 opacity-40" />
+                  )}
                 </div>
               </th>
             </tr>

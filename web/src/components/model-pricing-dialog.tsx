@@ -90,10 +90,24 @@ export function ModelPricingDialog({
 
   // Sync initialModel when dialog opens or initialModel changes
   useEffect(() => {
-    if (initialModel) {
-      setModelName(initialModel);
+    if (!open) return;
+    const target = (initialModel ?? "").trim();
+    setModelName(target);
+    if (target) {
+      setActiveTab("configure");
+      const lower = target.toLowerCase();
+      const existing = customOverrides[lower] ?? catalog[lower];
+      if (existing) {
+        setInputPrice(formatValueInUnit(existing.input_cost_per_token, unit));
+        setOutputPrice(formatValueInUnit(existing.output_cost_per_token, unit));
+        setCacheReadPrice(formatValueInUnit(existing.cache_read_cost_per_token ?? 0, unit));
+      } else {
+        setInputPrice("");
+        setOutputPrice("");
+        setCacheReadPrice("");
+      }
     }
-  }, [initialModel]);
+  }, [open, initialModel, customOverrides, catalog]);
 
   // Convert raw per-token price to display string in active unit
   const formatValueInUnit = (perToken: number | undefined, targetUnit: PriceUnit): string => {

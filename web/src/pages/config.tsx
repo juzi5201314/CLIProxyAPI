@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { yaml as yamlLanguage } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { githubLight } from "@uiw/codemirror-theme-github";
 import CodeMirror from "@uiw/react-codemirror";
+import { useTheme } from "next-themes";
 import {
   Activity,
   AlertTriangle,
@@ -377,13 +380,31 @@ const FIELD_META: Record<string, FieldMeta> = {
 
 export function ConfigPage() {
   const { t } = useTranslation();
+  const { resolvedTheme } = useTheme();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const doc = useQuery({ queryKey: ["config-doc"], queryFn: () => config.get<Doc>() });
 
-  const [tab, setTab] = useState("visual");
+  const [tab, setTab] = useState(() => (searchParams.get("tab") === "yaml" ? "yaml" : "visual"));
   const [activeSection, setActiveSection] = useState("routing");
   const [drafts, setDrafts] = useState<Record<string, Doc>>({});
   const [yamlDraft, setYamlDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    const paramTab = searchParams.get("tab");
+    if (paramTab === "yaml" || paramTab === "visual") {
+      setTab(paramTab);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (nextTab: string) => {
+    setTab(nextTab);
+    if (nextTab === "yaml") {
+      setSearchParams({ tab: "yaml" }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
 
   const sections = useMemo(() => {
     const rawKeys = Object.keys(doc.data?.config ?? {});
@@ -523,37 +544,37 @@ export function ConfigPage() {
       ) : doc.error ? (
         <p className="text-destructive py-12 text-center text-sm">{errMessage(doc.error)}</p>
       ) : (
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={handleTabChange}>
           <div className="flex items-center justify-between mb-3">
-            <TabsList className="rounded-xl p-1 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-              <TabsTrigger value="visual" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <TabsList className="rounded-xl p-1 bg-card border border-border/80 shadow-2xs">
+              <TabsTrigger value="visual" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <PanelsTopLeft className="size-3.5" />
-                <span>可视化配置</span>
+                <span>{t("config.visual", "可视化配置")}</span>
               </TabsTrigger>
-              <TabsTrigger value="yaml" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+              <TabsTrigger value="yaml" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <FileCode2 className="size-3.5" />
-                <span>YAML 源码</span>
+                <span>YAML</span>
               </TabsTrigger>
             </TabsList>
 
             {tab === "visual" && dirtySections.includes(activeSection) && (
               <Button
                 size="sm"
-                className="h-8 gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                className="h-8 gap-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs"
                 onClick={() => saveSection.mutate(activeSection)}
                 disabled={saveSection.isPending}
               >
                 {saveSection.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                <span>保存此分区修改</span>
+                <span>{t("common.save")}</span>
               </Button>
             )}
           </div>
 
           {/* Visual Mode */}
           <TabsContent value="visual" className="mt-0">
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[17rem_1fr]">
-              {/* Left Navigation Pills */}
-              <div className="space-y-1">
+            <div className="grid grid-cols-1 gap-4 lg:gap-5 lg:grid-cols-[17rem_1fr]">
+              {/* Left Navigation Pills (Horizontal scroll on < lg, vertical list on lg+) */}
+              <div className="flex lg:flex-col gap-1.5 overflow-x-auto pb-1 lg:pb-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {sections.map((name) => {
                   const Icon = SECTION_ICONS[name] ?? Settings2;
                   const label = SECTION_LABELS[name] ?? name;
@@ -565,18 +586,18 @@ export function ConfigPage() {
                       type="button"
                       onClick={() => setActiveSection(name)}
                       className={cn(
-                        "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-all duration-150 shadow-2xs",
+                        "flex shrink-0 lg:w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-all duration-150 shadow-2xs cursor-pointer",
                         isSelected
-                          ? "bg-blue-600 text-white shadow-xs font-semibold"
-                          : "bg-white/80 text-slate-700 hover:bg-white hover:text-slate-900 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800",
+                          ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                          : "bg-card/85 text-foreground/80 hover:bg-card hover:text-foreground border border-border/60",
                       )}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <Icon className={cn("size-4 shrink-0", isSelected ? "text-white" : "text-blue-500")} />
+                        <Icon className={cn("size-4 shrink-0", isSelected ? "text-primary-foreground" : "text-primary")} />
                         <span className="truncate">{label}</span>
                       </div>
                       {isDirty && (
-                        <span className="size-2 rounded-full bg-amber-400 shrink-0" title="有未保存修改" />
+                        <span className="size-2 rounded-full bg-amber-400 shrink-0" title={t("config.dirty")} />
                       )}
                     </button>
                   );
@@ -606,11 +627,11 @@ export function ConfigPage() {
                 <CodeMirror
                   value={yamlDraft ?? yaml.data.yaml}
                   height="75vh"
-                  theme={oneDark}
+                  theme={resolvedTheme === "dark" ? oneDark : githubLight}
                   extensions={[yamlLanguage()]}
                   basicSetup={{ foldGutter: true, highlightActiveLine: true, lineNumbers: true }}
                   onChange={(value) => setYamlDraft(value)}
-                  className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-mono"
+                  className="overflow-hidden rounded-xl border border-border text-xs font-mono"
                 />
                 <p className="text-muted-foreground mt-2 px-1 text-xs">{t("config.yamlHint")}</p>
               </div>

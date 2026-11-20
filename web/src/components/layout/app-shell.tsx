@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Menu,
   Moon,
+  Search,
   Settings2,
   Sun,
   Terminal,
@@ -32,6 +33,7 @@ const TITLES: Record<string, string> = {
   "/": "nav.dashboard",
   "/playground": "playground.title",
   "/request-logs": "nav.requestLogs",
+  "/request-db": "nav.requestDb",
   "/logs": "nav.logs",
   "/providers": "nav.providersItem",
   "/auth-files": "nav.authFiles",
@@ -88,37 +90,65 @@ export function AppShell() {
   const titleKey = isPluginPage ? "pluginPages.title" : (TITLES[location.pathname] ?? "app.subtitle");
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#EFF4FB] dark:bg-[#0B1120] text-slate-800 dark:text-slate-200 transition-colors duration-300 ease-in-out">
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground transition-colors duration-300 ease-in-out">
       {/* Sleek Left Vertical Icon Dock */}
       <AppSidebar onOpenSearch={() => setCommandPaletteOpen(true)} />
 
       {/* Main App Frame */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Modern Top Header */}
-        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/80 px-4 md:px-6 backdrop-blur-md transition-colors duration-300 ease-in-out dark:border-slate-800/70 dark:bg-slate-900/80 select-none">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border/80 bg-card/85 px-4 md:px-6 backdrop-blur-md transition-colors duration-300 ease-in-out select-none">
           {/* Page Title */}
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 rounded-xl md:hidden text-slate-600 dark:text-slate-300"
+              className="size-8 rounded-xl md:hidden text-muted-foreground hover:text-foreground"
               onClick={() => setMobileNavOpen(true)}
               aria-label="Toggle navigation menu"
             >
               <Menu className="size-4.5" />
             </Button>
-            <h2 className="text-sm md:text-base font-bold text-slate-900 dark:text-slate-100 truncate tracking-tight">
-              {t(titleKey) || "控制台"}
+            <h2 className="text-sm md:text-base font-bold text-foreground truncate tracking-tight">
+              {t(titleKey) || "CLIProxyAPI"}
             </h2>
           </div>
 
           {/* Right Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Quick Command Palette Trigger Pill */}
+            <button
+              type="button"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="hidden sm:inline-flex h-8 items-center gap-2.5 rounded-xl border border-border/80 bg-muted/40 px-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/80 hover:text-foreground cursor-pointer"
+              aria-label={t("nav.quickSearch", "Quick search (⌘K)")}
+            >
+              <Search className="size-3.5 text-muted-foreground" />
+              <span className="text-[11px]">{t("common.search")}…</span>
+              <kbd className="pointer-events-none inline-flex h-4.5 select-none items-center rounded border border-border bg-card px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                ⌘K
+              </kbd>
+            </button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-xl sm:hidden text-muted-foreground hover:text-foreground"
+              onClick={() => setCommandPaletteOpen(true)}
+              aria-label={t("nav.quickSearch", "Quick search (⌘K)")}
+            >
+              <Search className="size-4" />
+            </Button>
+
             {/* Server Version Badge */}
             {info.data ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Badge variant="outline" className="font-mono text-[11px] text-slate-500 border-slate-200 dark:border-slate-800 hidden md:inline-flex">
+                  <Badge
+                    variant="outline"
+                    onClick={() => navigate("/system")}
+                    className="cursor-pointer gap-1.5 font-mono text-[11px] text-muted-foreground border-border/80 bg-muted/30 hover:bg-muted/70 hover:text-foreground transition-colors hidden md:inline-flex h-7 px-2.5 rounded-lg"
+                  >
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
                     v{info.data.version}
                   </Badge>
                 </TooltipTrigger>
@@ -138,7 +168,10 @@ export function AppShell() {
                 <Button
                   variant={inspectorOpen ? "secondary" : "ghost"}
                   size="icon"
-                  className="size-8 rounded-xl"
+                  className={cn(
+                    "size-8 rounded-xl",
+                    inspectorOpen && "bg-primary/10 text-primary hover:bg-primary/15",
+                  )}
                   aria-label={t("nav.realtimeInspector", "实时测控面板")}
                   onClick={() => setInspectorOpen(!inspectorOpen)}
                 >
@@ -167,7 +200,7 @@ export function AppShell() {
         </main>
 
         {/* Mobile Bottom Navigation Bar */}
-        <nav className="fixed bottom-0 inset-x-0 z-30 flex md:hidden items-center justify-around border-t border-slate-200/80 bg-white/95 px-2 py-1.5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/95">
+        <nav className="fixed bottom-0 inset-x-0 z-30 flex md:hidden items-center justify-around border-t border-border/80 bg-card/95 px-2 py-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur-md">
           <MobileNavButton
             icon={LayoutDashboard}
             label={t("nav.short.dashboard") || "监控"}
@@ -244,11 +277,14 @@ function MobileNavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-center gap-0.5 rounded-xl px-3 py-1 text-[11px] font-medium transition ${
-        active ? "text-blue-600 dark:text-blue-400" : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-      }`}
+      className={cn(
+        "flex flex-col items-center gap-0.5 rounded-xl px-3.5 py-1 text-[11px] font-medium transition-all",
+        active
+          ? "bg-primary/10 text-primary font-semibold"
+          : "text-muted-foreground hover:text-foreground",
+      )}
     >
-      <Icon className={`size-4.5 ${active ? "scale-110" : ""}`} />
+      <Icon className={cn("size-4.5 transition-transform", active && "scale-105")} />
       <span>{label}</span>
     </button>
   );

@@ -1202,7 +1202,15 @@ export function PlaygroundPage() {
   const [editingContent, setEditingContent] = useState("");
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const el = inputTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+  }, [input]);
 
   const [searchParams] = useSearchParams();
 
@@ -2559,16 +2567,7 @@ export function PlaygroundPage() {
 
                     {/* Reasoning Block if present (DeepSeek-R1 / o1 thinking) */}
                     {msg.reasoningContent && (
-                      <div className="mb-2 w-full rounded-2xl border border-purple-200/80 bg-purple-50/60 p-3 text-xs text-purple-900 dark:border-purple-900/50 dark:bg-purple-950/30 dark:text-purple-200">
-                        <div className="flex items-center gap-1.5 font-semibold text-[11px] text-purple-700 dark:text-purple-300 mb-1">
-                          <Brain className="size-3.5" />
-                          <span>思考链过程 (Reasoning Process)</span>
-                        </div>
-                        <MarkdownViewer
-                          content={msg.reasoningContent}
-                          className="opacity-90 text-[11px]"
-                        />
-                      </div>
+                      <ReasoningBlock content={msg.reasoningContent} />
                     )}
 
                     {/* Content Bubble or Inline Editor */}
@@ -2866,6 +2865,7 @@ export function PlaygroundPage() {
             </Button>
 
             <textarea
+              ref={inputTextareaRef}
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -2877,7 +2877,7 @@ export function PlaygroundPage() {
                 }
               }}
               placeholder={t("playground.inputPlaceholder")}
-              className="max-h-32 min-h-[38px] flex-1 resize-none bg-transparent px-2 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-200 leading-relaxed font-sans"
+              className="max-h-36 min-h-[38px] flex-1 resize-none bg-transparent px-2 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none leading-relaxed font-sans"
             />
 
             {/* Stop or Send Button */}
@@ -3587,6 +3587,33 @@ export function PlaygroundPage() {
         managementKey={currentKey() || undefined}
         onSaveToSession={handleSaveProbeToSession}
       />
+    </div>
+  );
+}
+
+function ReasoningBlock({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <div className="mb-2 w-full rounded-2xl border border-purple-200/80 bg-purple-50/60 text-xs text-purple-900 dark:border-purple-900/50 dark:bg-purple-950/30 dark:text-purple-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left font-semibold text-[11px] text-purple-700 dark:text-purple-300 hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors cursor-pointer select-none"
+      >
+        <div className="flex items-center gap-1.5">
+          <Brain className="size-3.5 shrink-0" />
+          <span>思考链过程 (Reasoning Process)</span>
+          <span className="rounded bg-purple-200/60 dark:bg-purple-900/60 px-1.5 py-0.2 font-mono text-[10px] font-normal text-purple-700 dark:text-purple-300">
+            {content.length} chars
+          </span>
+        </div>
+        <ChevronDown className={cn("size-3.5 transition-transform duration-200", !expanded && "-rotate-90")} />
+      </button>
+      {expanded && (
+        <div className="border-t border-purple-200/50 dark:border-purple-900/40 px-3 py-2.5 max-h-80 overflow-y-auto">
+          <MarkdownViewer content={content} className="opacity-90 text-[11px]" />
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   Activity,
   Check,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Copy,
   Download,
@@ -18,6 +19,7 @@ import {
   SlidersHorizontal,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -126,6 +128,7 @@ export function AuthFilesPage() {
   const [planFilter, setPlanFilter] = useState<string>("all");
   const [sortOption, setSortOption] = useState<string>("default");
   const [pageSizeOption, setPageSizeOption] = useState<string>("30");
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [search, setSearch] = useState("");
 
   // Display option switches
@@ -423,8 +426,18 @@ export function AuthFilesPage() {
   ]);
 
   // Pagination slice
-  const pageSize = pageSizeOption === "all" ? filteredAndSorted.length : parseInt(pageSizeOption, 10) || 30;
-  const visible = useMemo(() => filteredAndSorted.slice(0, pageSize), [filteredAndSorted, pageSize]);
+  const pageSize = pageSizeOption === "all" ? Math.max(1, filteredAndSorted.length) : parseInt(pageSizeOption, 10) || 30;
+  const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const visible = useMemo(
+    () => (pageSizeOption === "all" ? filteredAndSorted : filteredAndSorted.slice(startIndex, startIndex + pageSize)),
+    [filteredAndSorted, pageSizeOption, startIndex, pageSize],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [providerFilter, statusFilter, planFilter, onlyProblems, onlyDisabled, onlyNormal, search, pageSizeOption]);
 
   const allVisibleSelected = visible.length > 0 && visible.every((e) => selectedIds.has(e.id || e.name));
 
@@ -466,69 +479,78 @@ export function AuthFilesPage() {
 
       {/* Top Overview KPI Banner */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-5">
-        <div className="card-surface p-4 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs flex items-center justify-between">
+        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-primary/30 hover:shadow-md">
           <div>
-            <p className="text-xs text-slate-400 font-medium">{t("authFiles.stats.totalFiles")}</p>
-            <p className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">{totalFiles}</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{t("authFiles.stats.activeBreakdown", { active: activeFiles, disabled: disabledFiles })}</p>
+            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.totalFiles")}</p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalFiles}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.activeBreakdown", { active: activeFiles, disabled: disabledFiles })}</p>
           </div>
-          <div className="size-11 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <div className="size-11 rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15 flex items-center justify-center">
             <KeyRound className="size-5" />
           </div>
         </div>
 
-        <div className="card-surface p-4 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs flex items-center justify-between">
+        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-purple-500/30 hover:shadow-md">
           <div>
-            <p className="text-xs text-slate-400 font-medium">{t("authFiles.stats.quotaSupport")}</p>
-            <p className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-1">
+            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.quotaSupport")}</p>
+            <p className="text-2xl font-bold font-mono text-foreground mt-1">
               {entries.filter((e) => e.supports_quota).length}
             </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{t("authFiles.stats.quotaSubtitle")}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.quotaSubtitle")}</p>
           </div>
-          <div className="size-11 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+          <div className="size-11 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-1 ring-purple-500/15 flex items-center justify-center">
             <ShieldCheck className="size-5" />
           </div>
         </div>
 
-        <div className="card-surface p-4 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs flex items-center justify-between">
+        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-emerald-500/30 hover:shadow-md">
           <div>
-            <p className="text-xs text-slate-400 font-medium">{t("authFiles.stats.totalSuccess")}</p>
+            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.totalSuccess")}</p>
             <p className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
               {formatInt(totalSuccess)}
             </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{t("authFiles.stats.successSubtitle")}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.successSubtitle")}</p>
           </div>
-          <div className="size-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+          <div className="size-11 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/15 flex items-center justify-center">
             <CheckCircle2 className="size-5" />
           </div>
         </div>
 
-        <div className="card-surface p-4 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs flex items-center justify-between">
+        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-rose-500/30 hover:shadow-md">
           <div>
-            <p className="text-xs text-slate-400 font-medium">{t("authFiles.stats.totalFailed")}</p>
+            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.totalFailed")}</p>
             <p className="text-2xl font-bold font-mono text-rose-500 mt-1">
               {formatInt(totalFailed)}
             </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{t("authFiles.stats.failedSubtitle")}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.failedSubtitle")}</p>
           </div>
-          <div className="size-11 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+          <div className="size-11 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-1 ring-rose-500/15 flex items-center justify-center">
             <Activity className="size-5" />
           </div>
         </div>
       </div>
 
       {/* CPAMP Filter & Control Bar */}
-      <div className="card-surface p-4 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-slate-800/80 dark:bg-slate-900/90 shadow-2xs mb-5 space-y-3">
+      <div className="card-surface p-4 mb-5 space-y-3">
         {/* Row 1: Search + Selects */}
         <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-3">
           <div className="relative flex-1">
-            <Search className="text-slate-400 pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
             <Input
-              className="h-9.5 w-full rounded-xl pl-9.5 text-xs bg-slate-50/60 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800/80 shadow-2xs focus-visible:ring-1"
+              className="h-9.5 w-full rounded-xl pl-9.5 pr-8 text-xs bg-muted/40 border-border/80 shadow-2xs focus-visible:ring-1"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("authFiles.searchAdvanced")}
             />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="text-muted-foreground hover:text-foreground absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -629,21 +651,47 @@ export function AuthFilesPage() {
           </div>
 
           {/* Toggle Switches (Figure 1 style) */}
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 dark:text-slate-300">
-            <span className="text-[11px] text-slate-400 font-medium">显示选项:</span>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+            {visible.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 rounded-lg px-2 text-xs"
+                onClick={toggleSelectAll}
+              >
+                {allVisibleSelected
+                  ? t("authFiles.clearSelected", "取消选择")
+                  : t("authFiles.selectAllVisible", "全选本页")}
+              </Button>
+            ) : null}
+            <span className="text-[11px] text-muted-foreground font-medium">
+              {t("authFiles.displayOptions", "显示选项:")}
+            </span>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-foreground/80">
               <Switch checked={onlyProblems} onCheckedChange={setOnlyProblems} />
               <span>{t("authFiles.filterProblem")}</span>
             </label>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <Switch checked={onlyDisabled} onCheckedChange={setOnlyDisabled} />
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-foreground/80">
+              <Switch
+                checked={onlyDisabled}
+                onCheckedChange={(checked) => {
+                  setOnlyDisabled(checked);
+                  if (checked) setOnlyNormal(false);
+                }}
+              />
               <span>{t("authFiles.filterDisabled")}</span>
             </label>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <Switch checked={onlyNormal} onCheckedChange={setOnlyNormal} />
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-foreground/80">
+              <Switch
+                checked={onlyNormal}
+                onCheckedChange={(checked) => {
+                  setOnlyNormal(checked);
+                  if (checked) setOnlyDisabled(false);
+                }}
+              />
               <span>{t("authFiles.filterNormal")}</span>
             </label>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-foreground/80">
               <Switch checked={compactMode} onCheckedChange={setCompactMode} />
               <span>{t("authFiles.compactMode")}</span>
             </label>
@@ -653,11 +701,11 @@ export function AuthFilesPage() {
 
       {/* Batch Action Toolbar when cards selected */}
       {selectedIds.size > 0 && (
-        <div className="card-surface p-3 rounded-2xl border border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/40 shadow-xs mb-4 flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+        <div className="card-surface p-3 border-primary/30 bg-primary/5 mb-4 flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
           <div className="flex items-center gap-2">
             <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} />
-            <span className="text-xs font-semibold text-blue-900 dark:text-blue-200">
-              已选中 {selectedIds.size} 项凭据
+            <span className="text-xs font-semibold text-primary">
+              {t("authFiles.selectedCount", { count: selectedIds.size, defaultValue: `已选中 ${selectedIds.size} 项凭据` })}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -754,6 +802,47 @@ export function AuthFilesPage() {
         </div>
       )}
 
+      {/* Pagination Bar */}
+      {!files.isLoading && filteredAndSorted.length > 0 && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-card/80 px-4 py-2.5 text-xs text-muted-foreground shadow-2xs">
+          <span>
+            {t("common.pageInfo", {
+              from: startIndex + 1,
+              to: Math.min(startIndex + visible.length, filteredAndSorted.length),
+              total: filteredAndSorted.length,
+              defaultValue: `${startIndex + 1}–${Math.min(startIndex + visible.length, filteredAndSorted.length)} / ${filteredAndSorted.length}`,
+            })}
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs gap-1"
+                disabled={safePage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="size-3.5" />
+                {t("common.prevPage", "上一页")}
+              </Button>
+              <span className="px-2 font-mono text-xs text-foreground">
+                {safePage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs gap-1"
+                disabled={safePage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              >
+                {t("common.nextPage", "下一页")}
+                <ChevronRight className="size-3.5" />
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Upload Dialog */}
       <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} onPick={() => fileInput.current?.click()} />
       <input
@@ -790,7 +879,12 @@ export function AuthFilesPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("common.confirmDeleteTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>确认删除选中的 {selectedIds.size} 个凭据文件吗？该操作不可撤销。</AlertDialogDescription>
+            <AlertDialogDescription>
+              {t("authFiles.batchDeleteConfirm", {
+                count: selectedIds.size,
+                defaultValue: `确认删除选中的 ${selectedIds.size} 个凭据文件吗？该操作不可撤销。`,
+              })}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
@@ -865,9 +959,9 @@ function CredentialCard({
 
   const copyFilename = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(entry.name);
+    void navigator.clipboard.writeText(entry.name);
     setCopied(true);
-    toast.success("已复制文件名");
+    toast.success(t("authFiles.copiedFilename", "已复制文件名"));
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -1180,7 +1274,7 @@ function QuotaBar({ quota }: { quota: ResolvedQuota }) {
 
           <div className="flex items-center gap-2 font-mono text-xs">
             <span className="font-medium text-slate-400 dark:text-slate-500">
-              未知
+              {t("common.unknown", "未知")}
             </span>
           </div>
         </div>

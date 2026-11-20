@@ -31,13 +31,13 @@ export function TimeRangeSelect({ value, onChange }: TimeRangeSelectProps) {
   };
 
   return (
-    <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card p-1 shadow-sm">
+    <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border/70 bg-card p-1 shadow-2xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {PRESETS.map((preset) => (
         <Button
           key={preset}
           variant={value.preset === preset ? "secondary" : "ghost"}
           size="sm"
-          className={`h-7 rounded-full px-2.5 text-xs ${value.preset === preset ? "bg-primary/10 text-primary hover:bg-primary/15" : ""}`}
+          className={`h-7 shrink-0 rounded-full px-2.5 text-xs ${value.preset === preset ? "bg-primary/10 text-primary font-semibold hover:bg-primary/15" : ""}`}
           onClick={() => onChange({ preset })}
         >
           {t(`common.range.${preset}`)}
@@ -48,13 +48,13 @@ export function TimeRangeSelect({ value, onChange }: TimeRangeSelectProps) {
           <Button
             variant={value.preset === "custom" ? "secondary" : "ghost"}
             size="sm"
-            className={`h-7 gap-1.5 rounded-full px-2.5 text-xs ${value.preset === "custom" ? "bg-primary/10 text-primary hover:bg-primary/15" : ""}`}
+            className={`h-7 shrink-0 gap-1.5 rounded-full px-2.5 text-xs ${value.preset === "custom" ? "bg-primary/10 text-primary font-semibold hover:bg-primary/15" : ""}`}
           >
             <CalendarClock className="size-3.5" />
             {value.preset === "custom" ? customLabel(resolved.from, resolved.to) : label}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-auto p-3">
+        <PopoverContent align="end" className="w-auto p-3 rounded-2xl">
           <CustomRangeBody
             from={resolved.from}
             to={resolved.to}
@@ -80,6 +80,7 @@ function CustomRangeBody({
   to: number;
   onApply: (from: Date, to: Date) => void;
 }) {
+  const { t } = useTranslation();
   const [fromDate, setFromDate] = useState<Date | undefined>(new Date(from));
   const [toDate, setToDate] = useState<Date | undefined>(new Date(to));
   const disabled = !fromDate || !toDate;
@@ -87,7 +88,7 @@ function CustomRangeBody({
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs">Start</Label>
+          <Label className="text-xs">{t("common.range.from", "Start")}</Label>
           <Input
             type="date"
             className="h-8 text-xs"
@@ -96,7 +97,7 @@ function CustomRangeBody({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">End</Label>
+          <Label className="text-xs">{t("common.range.to", "End")}</Label>
           <Input
             type="date"
             className="h-8 text-xs"
@@ -125,7 +126,7 @@ function CustomRangeBody({
         ))}
       </div>
       <Button size="sm" className="h-8 w-full text-xs" disabled={disabled} onClick={() => fromDate && toDate && onApply(fromDate, toDate)}>
-        Apply
+        {t("common.apply", "Apply")}
       </Button>
     </div>
   );

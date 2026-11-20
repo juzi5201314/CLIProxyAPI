@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronUp, Database, Download, EyeOff, Eye, Loader2, PauseCircle, PlayCircle, RadioTower, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { ChevronUp, Database, Download, EyeOff, Eye, Loader2, PauseCircle, PlayCircle, RadioTower, RefreshCw, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Command, CommandItem, CommandList } from "@/components/ui/command";
@@ -205,6 +205,23 @@ export function RequestLogsPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const oldestID = liveState.records.length > 0 ? (liveState.records[liveState.records.length - 1]?.id ?? 0) : 0;
 
+  const advancedActiveCount = useMemo(() => {
+    let count = 0;
+    if (filters.sessionId) count++;
+    if (filters.requestId) count++;
+    if (filters.traceId) count++;
+    if (filters.statusCode) count++;
+    if (filters.onlyFailed) count++;
+    return count;
+  }, [filters]);
+
+  const hasAnyFilter = Boolean(
+    filters.model ||
+    filters.provider ||
+    filters.apiKey ||
+    advancedActiveCount > 0,
+  );
+
   const loadOlder = async () => {
     if (!oldestID) return;
     setLoadingOlder(true);
@@ -290,9 +307,30 @@ export function RequestLogsPage() {
           />
           <FilterInput placeholder={t("requestLogs.filters.provider")} value={filters.provider} onChange={(value) => setFilters((f) => ({ ...f, provider: value }))} className="w-40 font-mono" />
           <FilterInput placeholder={t("requestLogs.filters.apiKey")} value={filters.apiKey} onChange={(value) => setFilters((f) => ({ ...f, apiKey: value }))} className="w-44 font-mono" />
-          <Button variant={advancedOpen ? "secondary" : "outline"} size="sm" className="h-8 text-xs" onClick={() => setAdvancedOpen((open) => !open)}>
+          <Button
+            variant={advancedOpen || advancedActiveCount > 0 ? "secondary" : "outline"}
+            size="sm"
+            className={cn("h-8 text-xs gap-1.5", advancedActiveCount > 0 && "border-primary/40 bg-primary/10 text-primary")}
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
             <SlidersHorizontal className="size-3.5" />
+            {advancedActiveCount > 0 ? (
+              <Badge variant="secondary" className="h-4 px-1 text-[10px] font-mono bg-primary text-primary-foreground">
+                {advancedActiveCount}
+              </Badge>
+            ) : null}
           </Button>
+          {hasAnyFilter ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-rose-500"
+              onClick={() => setFilters(EMPTY_FILTERS)}
+            >
+              <RotateCcw className="size-3" />
+              <span>{t("requestLogs.resetFilters", "重置筛选")}</span>
+            </Button>
+          ) : null}
           <div className="flex-1" />
           <div className="flex items-center gap-2">
             {liveState.status === "live" && !liveState.live && liveState.pending > 0 ? (
@@ -431,17 +469,25 @@ export function RequestLogsPage() {
           <div className="text-muted-foreground flex items-center justify-between border-t px-3 py-2 text-xs">
             <span className="flex items-center gap-2">
               {statusBadge}
-              {formatInt(liveState.records.length)} records
+              {t("requestLogs.recordsCount", { count: liveState.records.length, defaultValue: `${formatInt(liveState.records.length)} records` })}
             </span>
             <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={loadOlder} disabled={loadingOlder || !oldestID}>
               {loadingOlder ? <Loader2 className="size-3 animate-spin" /> : <ChevronUp className="size-3.5" />}
-              Load older
+              {t("requestLogs.loadOlder", "Load older")}
             </Button>
           </div>
         </div>
       </RequestDBGate>
 
-      <RecordDetailSheet record={selected} onClose={() => setSelected(null)} onTrace={(traceId) => { setFilters((f) => ({ ...f, traceId })); setSelected(null); }} />
+      <RecordDetailSheet
+        record={selected}
+        onClose={() => setSelected(null)}
+        onTrace={(traceId) => {
+          setFilters((f) => ({ ...f, traceId }));
+          setAdvancedOpen(true);
+          setSelected(null);
+        }}
+      />
     </>
   );
 }
@@ -482,12 +528,27 @@ function FilterInput({ placeholder, value, onChange, className }: { placeholder:
     return () => clearTimeout(timer);
   }, [text]);
   return (
-    <Input
-      placeholder={placeholder}
-      value={text}
-      onChange={(event) => setText(event.target.value)}
-      className={`h-8 text-xs ${className ?? ""}`}
-    />
+    <div className={cn("relative", className)}>
+      <Input
+        placeholder={placeholder}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        className={cn("h-8 w-full text-xs", text && "pr-6")}
+      />
+      {text ? (
+        <button
+          type="button"
+          onClick={() => {
+            setText("");
+            settled.current = "";
+            onChange("");
+          }}
+          className="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+        >
+          <X className="size-3" />
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -528,14 +589,30 @@ function ModelFilterCombobox({ placeholder, value, range, onChange }: { placehol
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverAnchor asChild>
-        <Input
-          placeholder={placeholder}
-          className="h-8 w-44 font-mono text-xs"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onFocus={() => setOpen(true)}
-          onClick={() => setOpen(true)}
-        />
+        <div className="relative w-44">
+          <Input
+            placeholder={placeholder}
+            className={cn("h-8 w-full font-mono text-xs", text && "pr-6")}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onFocus={() => setOpen(true)}
+            onClick={() => setOpen(true)}
+          />
+          {text ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setText("");
+                settled.current = "";
+                onChange("");
+              }}
+              className="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+            >
+              <X className="size-3" />
+            </button>
+          ) : null}
+        </div>
       </PopoverAnchor>
       <PopoverContent className="w-64 p-0" align="start" onOpenAutoFocus={(event) => event.preventDefault()}>
         <Command shouldFilter={false}>
