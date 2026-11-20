@@ -716,6 +716,11 @@ const zhCN = {
     searchPlaceholder: "搜索名称 / 地址 / 密钥",
     more: "更多配置",
     addProvider: "添加供应商",
+    addKind: "添加 {{kind}}",
+    selectKind: "选择其他供应商类型",
+    switchKindTitle: "供应商类型",
+    switchKindHint: "点击卡片可直接切换供应商类型，系统会自动记住你上次的选择。",
+    defaultKindBadge: "当前默认",
     sort: {
       enabledFirst: "启用优先",
       priority: "按优先级",

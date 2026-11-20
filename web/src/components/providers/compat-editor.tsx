@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Eye, EyeOff, FlaskConical, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Boxes, Check, Eye, EyeOff, FlaskConical, Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,9 +34,14 @@ import {
   type ModelEntry,
 } from "./model-editor";
 import {
+  ALL_KINDS,
+  COMPAT_KIND,
+  KIND_COLORS,
+  KIND_ICONS,
   probeChatCompletion,
   probeUpstream,
   targetFor,
+  type KindMeta,
   type ProbeResult,
 } from "./provider-tools";
 import { maskKey } from "@/lib/format";
@@ -71,11 +76,13 @@ export function CompatEditorSheet({
   isNew,
   onClose,
   onSave,
+  onSelectKind,
 }: {
   provider: CompatProvider;
   isNew: boolean;
   onClose: () => void;
   onSave: (next: CompatProvider) => void;
+  onSelectKind?: (kind: KindMeta, seed?: { name?: string; baseURL?: string }) => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<CompatProvider>(() => structuredClone(provider));
@@ -242,6 +249,13 @@ export function CompatEditorSheet({
         </SheetHeader>
 
         <div className="-mx-4 flex-1 space-y-7 overflow-y-auto px-4 py-5">
+          {isNew && onSelectKind ? (
+            <ProviderKindSelectorGrid
+              activeKindId={COMPAT_KIND.id}
+              onSelect={(nextKind) => onSelectKind(nextKind, { name: draft.name, baseURL: draft["base-url"] })}
+            />
+          ) : null}
+
           <EditorSection title={t("providers.basicInfo")}>
             <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
               <Field label={t("providers.fieldName")} required>
@@ -483,6 +497,55 @@ export function CompatEditorSheet({
 }
 
 // ----------------------------------------------------------------- sections
+
+export function ProviderKindSelectorGrid({
+  activeKindId,
+  onSelect,
+}: {
+  activeKindId: string;
+  onSelect: (kind: KindMeta) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <EditorSection title={t("providers.switchKindTitle")} hint={t("providers.switchKindHint")}>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {ALL_KINDS.map((kind) => {
+          const Icon = KIND_ICONS[kind.id] ?? Boxes;
+          const colors = KIND_COLORS[kind.id] ?? KIND_COLORS["openai-compatibility"]!;
+          const active = kind.id === activeKindId;
+          return (
+            <button
+              key={kind.id}
+              type="button"
+              onClick={() => {
+                if (!active) onSelect(kind);
+              }}
+              className={`group relative flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                active
+                  ? "border-primary bg-primary/8 text-foreground ring-1 ring-primary/30 shadow-2xs"
+                  : "border-border/70 bg-card hover:border-primary/40 hover:bg-accent/50"
+              }`}
+            >
+              <div className={`flex size-8 shrink-0 items-center justify-center rounded-lg border ${colors.bg} ${colors.text} ${colors.border}`}>
+                <Icon className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-xs leading-tight ${active ? "font-bold text-primary" : "font-semibold text-foreground"}`}>
+                  {t(`providers.kind.${kind.labelKey}`)}
+                </p>
+              </div>
+              {active ? (
+                <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Check className="size-2.5 stroke-[3]" />
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </EditorSection>
+  );
+}
 
 export function EditorSection({ title, hint, actions, children }: { title: string; hint?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (

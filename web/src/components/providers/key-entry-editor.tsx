@@ -20,7 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { EditorSection, HeadersEditor, SwitchRow } from "./compat-editor";
+import { EditorSection, HeadersEditor, ProviderKindSelectorGrid, SwitchRow } from "./compat-editor";
 import {
   ExcludedModelsEditor,
   FetchModelsButton,
@@ -127,12 +127,14 @@ export function KeyEntryEditorSheet({
   isNew,
   onClose,
   onSave,
+  onSelectKind,
 }: {
   kind: KindMeta;
   entry: Entry;
   isNew: boolean;
   onClose: () => void;
   onSave: (next: Entry) => void;
+  onSelectKind?: (kind: KindMeta, seed?: { name?: string; baseURL?: string }) => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<Entry>(() => structuredClone(entry));
@@ -281,6 +283,18 @@ export function KeyEntryEditorSheet({
         </SheetHeader>
 
         <div className="-mx-4 flex-1 space-y-7 overflow-y-auto px-4 py-5">
+          {isNew && onSelectKind ? (
+            <ProviderKindSelectorGrid
+              activeKindId={kind.id}
+              onSelect={(nextKind) =>
+                onSelectKind(nextKind, {
+                  name: typeof draft.name === "string" ? draft.name : undefined,
+                  baseURL: typeof draft["base-url"] === "string" ? draft["base-url"] : undefined,
+                })
+              }
+            />
+          ) : null}
+
           <EditorSection title={t("providers.basicInfo")}>
             <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
               {fields.map((field) => (

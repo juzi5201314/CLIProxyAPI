@@ -716,6 +716,11 @@ const en = {
     searchPlaceholder: "Search name / address / key",
     more: "More settings",
     addProvider: "Add provider",
+    addKind: "Add {{kind}}",
+    selectKind: "Select another provider type",
+    switchKindTitle: "Provider Type",
+    switchKindHint: "Click to switch provider type directly; your last choice is remembered automatically.",
+    defaultKindBadge: "Current",
     sort: {
       enabledFirst: "Enabled first",
       priority: "By priority",

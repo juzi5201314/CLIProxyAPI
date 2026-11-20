@@ -5,27 +5,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Boxes,
   Check,
+  ChevronDown,
   ChevronRight,
   Code2,
   Copy,
   Cpu,
   Ellipsis,
-  Feather,
-  Gem,
-  Infinity as InfinityIcon,
   KeyRound,
   LayoutGrid,
   List,
   Loader2,
-  MessagesSquare,
   Plus,
   Search,
   ServerOff,
   Terminal,
   Trash2,
-  Triangle,
   X,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -45,7 +40,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -69,33 +63,13 @@ import type { ModelEntry } from "@/components/providers/model-editor";
 import {
   ALL_KINDS,
   COMPAT_KIND,
+  KIND_COLORS,
+  KIND_ICONS,
   type Entry,
   type KindMeta,
 } from "@/components/providers/provider-tools";
 import { apiKeyProviders } from "@/api/management";
 import { errMessage } from "@/api/types";
-
-const KIND_ICONS: Record<string, LucideIcon> = {
-  "openai-compatibility": Boxes,
-  gemini: Gem,
-  claude: Feather,
-  codex: Terminal,
-  xai: Zap,
-  meta: InfinityIcon,
-  vertex: Triangle,
-  interactions: MessagesSquare,
-};
-
-const KIND_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  "openai-compatibility": { bg: "bg-emerald-50 dark:bg-emerald-950/40", text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-800/40" },
-  gemini: { bg: "bg-blue-50 dark:bg-blue-950/40", text: "text-blue-600 dark:text-blue-400", border: "border-blue-200 dark:border-blue-800/40" },
-  claude: { bg: "bg-amber-50 dark:bg-amber-950/40", text: "text-amber-600 dark:text-amber-400", border: "border-amber-200 dark:border-amber-800/40" },
-  codex: { bg: "bg-indigo-50 dark:bg-indigo-950/40", text: "text-indigo-600 dark:text-indigo-400", border: "border-indigo-200 dark:border-indigo-800/40" },
-  xai: { bg: "bg-purple-50 dark:bg-purple-950/40", text: "text-purple-600 dark:text-purple-400", border: "border-purple-200 dark:border-purple-800/40" },
-  meta: { bg: "bg-sky-50 dark:bg-sky-950/40", text: "text-sky-600 dark:text-sky-400", border: "border-sky-200 dark:border-sky-800/40" },
-  vertex: { bg: "bg-teal-50 dark:bg-teal-950/40", text: "text-teal-600 dark:text-teal-400", border: "border-teal-200 dark:border-teal-800/40" },
-  interactions: { bg: "bg-rose-50 dark:bg-rose-950/40", text: "text-rose-600 dark:text-rose-400", border: "border-rose-200 dark:border-rose-800/40" },
-};
 
 export interface ProviderRow {
   kind: KindMeta;
@@ -117,6 +91,7 @@ type ViewMode = "cards" | "table";
 type StatusFilter = "all" | "enabled" | "disabled";
 
 const STORAGE_KEY_PROVIDERS_VIEW_MODE = "cpa-providers-view-mode";
+const STORAGE_KEY_PROVIDERS_LAST_KIND = "cpa-providers-last-kind";
 
 export function ProvidersPage() {
   const { t } = useTranslation();
@@ -158,6 +133,26 @@ export function ProvidersPage() {
   const [keyEditing, setKeyEditing] = useState<{ kind: KindMeta; index: number; entry: Entry } | null>(null);
   const [secondary, setSecondary] = useState<"alias" | "excluded" | "keys" | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProviderRow | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [lastKindId, setLastKindId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PROVIDERS_LAST_KIND);
+      if (saved && ALL_KINDS.some((k) => k.id === saved)) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return COMPAT_KIND.id;
+  });
+
+  const effectiveAddKind = useMemo<KindMeta>(() => {
+    if (kindFilter !== "all") {
+      const matched = ALL_KINDS.find((k) => k.id === kindFilter);
+      if (matched) return matched;
+    }
+    return ALL_KINDS.find((k) => k.id === lastKindId) ?? COMPAT_KIND;
+  }, [kindFilter, lastKindId]);
 
   // Inspector Dialogs
   const [inspectingModels, setInspectingModels] = useState<ProviderRow | null>(null);
@@ -275,11 +270,33 @@ export function ProvidersPage() {
     return Object.fromEntries(ALL_KINDS.map((kind) => [kind.id, (data[kind.id] ?? []).length]));
   }, [overview.data]);
 
-  const addProvider = (kind: KindMeta) => {
+  const addProvider = (kind: KindMeta, seed?: { name?: string; baseURL?: string }) => {
+    setLastKindId(kind.id);
+    try {
+      localStorage.setItem(STORAGE_KEY_PROVIDERS_LAST_KIND, kind.id);
+    } catch {
+      // ignore
+    }
+    setAddMenuOpen(false);
+    const seedName = seed?.name?.trim() ?? "";
+    const seedBase = seed?.baseURL?.trim() ?? "";
     if (kind.id === "openai-compatibility") {
-      setCompatEditing({ index: -1, provider: { name: "", "base-url": "", models: [] } });
+      setKeyEditing(null);
+      setCompatEditing({
+        index: -1,
+        provider: { name: seedName, "base-url": seedBase, models: [] },
+      });
     } else {
-      setKeyEditing({ kind, index: -1, entry: { "api-key": "", "base-url": "" } });
+      setCompatEditing(null);
+      setKeyEditing({
+        kind,
+        index: -1,
+        entry: {
+          ...(seedName ? { name: seedName } : {}),
+          "api-key": "",
+          "base-url": seedBase,
+        },
+      });
     }
   };
 
@@ -486,30 +503,75 @@ export function ProvidersPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Add Provider Button */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" className="h-8.5 gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs text-xs font-semibold">
-                <Plus className="size-3.5" />
-                <span>{t("providers.addProvider")}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52 rounded-xl">
-              <DropdownMenuLabel className="text-[10px] uppercase text-slate-400">
-                {t("providers.addProvider")}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {ALL_KINDS.map((kind) => {
-                const Icon = KIND_ICONS[kind.id] ?? Boxes;
-                return (
-                  <DropdownMenuItem key={kind.id} onClick={() => addProvider(kind)} className="text-xs">
-                    <Icon className="mr-2 size-3.5 text-blue-500" />
-                    <span>{t(`providers.kind.${kind.labelKey}`)}</span>
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Add Provider Split Button: 1-Click Direct Add + Spacious 2-Column Visual Kind Grid */}
+          <div className="inline-flex items-center rounded-xl shadow-xs">
+            <Button
+              size="sm"
+              onClick={() => addProvider(effectiveAddKind)}
+              className="h-9 gap-1.5 rounded-l-xl rounded-r-none bg-blue-600 px-3.5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+            >
+              <Plus className="size-3.5" />
+              <span>{t("providers.addKind", { kind: t(`providers.kind.${effectiveAddKind.labelKey}`) })}</span>
+            </Button>
+
+            <DropdownMenu open={addMenuOpen} onOpenChange={setAddMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  aria-label={t("providers.selectKind")}
+                  title={t("providers.selectKind")}
+                  className="h-9 rounded-l-none rounded-r-xl border-l border-white/25 bg-blue-600 px-2.5 text-white hover:bg-blue-700 cursor-pointer"
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[340px] sm:w-[400px] rounded-2xl p-3 shadow-xl">
+                <div className="px-1 pb-2">
+                  <p className="text-xs font-bold text-foreground">{t("providers.addProvider")}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.switchKindHint")}</p>
+                </div>
+                <DropdownMenuSeparator className="mb-2.5" />
+                <div className="grid grid-cols-2 gap-2">
+                  {ALL_KINDS.map((kind) => {
+                    const Icon = KIND_ICONS[kind.id] ?? Boxes;
+                    const colors = KIND_COLORS[kind.id] ?? KIND_COLORS["openai-compatibility"]!;
+                    const isDefault = kind.id === effectiveAddKind.id;
+                    return (
+                      <button
+                        key={kind.id}
+                        type="button"
+                        onClick={() => addProvider(kind)}
+                        className={`group relative flex min-h-[56px] cursor-pointer items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all ${
+                          isDefault
+                            ? "border-primary bg-primary/8 text-foreground ring-1 ring-primary/30 shadow-2xs"
+                            : "border-border/70 bg-card hover:border-primary/40 hover:bg-accent/60"
+                        }`}
+                      >
+                        <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl border ${colors.bg} ${colors.text} ${colors.border}`}>
+                          <Icon className="size-4.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`truncate text-xs sm:text-[13px] leading-snug ${isDefault ? "font-bold text-primary" : "font-semibold text-foreground"}`}>
+                            {t(`providers.kind.${kind.labelKey}`)}
+                          </p>
+                          {isDefault ? (
+                            <span className="mt-0.5 inline-block text-[10px] font-medium text-primary/80">
+                              {t("providers.defaultKindBadge")}
+                            </span>
+                          ) : null}
+                        </div>
+                        {isDefault ? (
+                          <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                            <Check className="size-2.5 stroke-[3]" />
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
@@ -592,6 +654,7 @@ export function ProvidersPage() {
           provider={compatEditing.provider}
           isNew={compatEditing.index < 0}
           onClose={() => setCompatEditing(null)}
+          onSelectKind={compatEditing.index < 0 ? (nextKind, seed) => addProvider(nextKind, seed) : undefined}
           onSave={(next) => {
             persist.mutate({ kind: COMPAT_KIND, index: compatEditing.index, entry: next as Entry });
             setCompatEditing(null);
@@ -601,10 +664,12 @@ export function ProvidersPage() {
 
       {keyEditing ? (
         <KeyEntryEditorSheet
+          key={keyEditing.kind.id}
           kind={keyEditing.kind}
           entry={keyEditing.entry}
           isNew={keyEditing.index < 0}
           onClose={() => setKeyEditing(null)}
+          onSelectKind={keyEditing.index < 0 ? (nextKind, seed) => addProvider(nextKind, seed) : undefined}
           onSave={(next) => {
             persist.mutate({ kind: keyEditing.kind, index: keyEditing.index, entry: next });
             setKeyEditing(null);
