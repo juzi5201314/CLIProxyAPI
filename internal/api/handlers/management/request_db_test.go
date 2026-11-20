@@ -1,12 +1,16 @@
 package management
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/requestdb"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
 func TestParseRequestDBQueryDefaults(t *testing.T) {
@@ -173,5 +177,57 @@ func TestModelPricesManagementHandlers(t *testing.T) {
 	handler.DeleteModelPrice(cDel)
 	if wDel.Code != http.StatusOK {
 		t.Fatalf("DeleteModelPrice status = %d, want 200: %s", wDel.Code, wDel.Body.String())
+	}
+}
+
+func TestRequestDBRecordResolvesConfiguredProviderName(t *testing.T) {
+	manager := coreauth.NewManager(nil, nil, nil)
+	_, errReg := manager.Register(context.Background(), &coreauth.Auth{
+		ID:       "codex:apikey:fcbc1b1408d9",
+		Provider: "codex",
+		Label:    "chatflowsai",
+		Attributes: map[string]string{
+			"provider_name": "chatflowsai",
+			"base_url":      "https://ai.chatflowsai.com/v1",
+		},
+	})
+	if errReg != nil {
+		t.Fatalf("manager.Register() error = %v", errReg)
+	}
+
+	handler := &Handler{
+		authManager: manager,
+		cfg: &config.Config{
+			CodexKey: []config.CodexKey{
+				{
+					Name:    "千刀",
+					BaseURL: "https://api666.zzzcoding.org/v1",
+					APIKey:  "sk-test",
+				},
+			},
+		},
+	}
+
+	resolver := handler.buildProviderNameResolver()
+
+	// 1. Historical row with empty provider_name matched by AuthID
+	byAuthID := newRequestDBRecordResponse(&requestdb.Entry{
+		ID:       1,
+		Provider: "codex",
+		AuthID:   "codex:apikey:fcbc1b1408d9",
+		BaseURL:  "https://ai.chatflowsai.com/v1",
+	}, false, resolver)
+	if byAuthID.ProviderName != "chatflowsai" {
+		t.Fatalf("byAuthID.ProviderName = %q, want %q", byAuthID.ProviderName, "chatflowsai")
+	}
+
+	// 2. Historical row with empty provider_name matched by provider + base_url/host fallback
+	byBaseURL := newRequestDBRecordResponse(&requestdb.Entry{
+		ID:       2,
+		Provider: "codex",
+		BaseURL:  "http://api666.zzzcoding.org/v1",
+	}, false, resolver)
+	if byBaseURL.ProviderName != "千刀" {
+		t.Fatalf("byBaseURL.ProviderName = %q, want %q", byBaseURL.ProviderName, "千刀")
 	}
 }

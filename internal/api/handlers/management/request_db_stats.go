@@ -1,13 +1,13 @@
 package management
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/pricing"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/requestdb"
@@ -235,9 +235,10 @@ func (h *Handler) GetRequestDBStream(c *gin.Context) {
 	// subscription is active already, so the client deduplicates by record id.
 	backlog, errBacklog := requestdb.TailBacklog(c.Request.Context(), filter, defaultStreamBacklog)
 	if errBacklog == nil && len(backlog) > 0 {
+		resolveProviderName := h.buildProviderNameResolver()
 		records := make([]requestDBRecordResponse, 0, len(backlog))
 		for i := range backlog {
-			records = append(records, newRequestDBRecordResponse(&backlog[i], false))
+			records = append(records, newRequestDBRecordResponse(&backlog[i], false, resolveProviderName))
 		}
 		if !writeSSEEvent(writer, "backlog", gin.H{"records": records}) {
 			return
@@ -260,7 +261,7 @@ func (h *Handler) GetRequestDBStream(c *gin.Context) {
 				// Dropped as a slow consumer; the client reconnects.
 				return
 			}
-			if !writeSSEEvent(writer, "request", newRequestDBRecordResponse(entry, false)) {
+			if !writeSSEEvent(writer, "request", newRequestDBRecordResponse(entry, false, h.buildProviderNameResolver())) {
 				return
 			}
 		}

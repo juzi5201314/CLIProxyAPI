@@ -450,7 +450,13 @@ func expandV8Groups(groups *yaml.Node, provider string) (*yaml.Node, error) {
 			item := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 			for i := 0; i < len(group.Content); i += 2 {
 				field := group.Content[i].Value
-				if field == "name" || field == "base-url" || sharedKeyFields[field] {
+				if field == "name" {
+					if !isLegacyAutoV8GroupName(provider, group.Content[i+1].Value) {
+						setYAMLPath(item, field, group.Content[i+1])
+					}
+					continue
+				}
+				if field == "base-url" || sharedKeyFields[field] {
 					setYAMLPath(item, field, group.Content[i+1])
 				}
 			}
@@ -476,6 +482,26 @@ func expandV8Groups(groups *yaml.Node, provider string) (*yaml.Node, error) {
 		}
 	}
 	return out, nil
+}
+
+// isLegacyAutoV8GroupName reports whether rawName matches the synthetic
+// "<provider>-<1-based-index>" placeholder written by earlier v8 migrations.
+func isLegacyAutoV8GroupName(provider, rawName string) bool {
+	name := strings.TrimSpace(rawName)
+	prefix := provider + "-"
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	suffix := strings.TrimPrefix(name, prefix)
+	if suffix == "" || suffix[0] == '0' {
+		return false
+	}
+	for i := 0; i < len(suffix); i++ {
+		if suffix[i] < '0' || suffix[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // mergeConnectionPoolNode merges a per-key connection-pool block onto the group block.

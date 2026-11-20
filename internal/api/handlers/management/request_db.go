@@ -1,12 +1,14 @@
 package management
 
 import (
-	"encoding/json"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/pricing"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/requestdb"
 )
@@ -90,9 +92,10 @@ func (h *Handler) GetRequestDBRecords(c *gin.Context) {
 		c.JSON(requestDBErrorStatus(errQuery), gin.H{"error": errQuery.Error()})
 		return
 	}
+	resolveProviderName := h.buildProviderNameResolver()
 	records := make([]requestDBRecordResponse, 0, len(entries))
 	for i := range entries {
-		records = append(records, newRequestDBRecordResponse(&entries[i], false))
+		records = append(records, newRequestDBRecordResponse(&entries[i], false, resolveProviderName))
 	}
 	hasMore := int64(page*pageSize) < total
 	c.JSON(200, gin.H{
@@ -125,10 +128,144 @@ func (h *Handler) GetRequestDBRecordDetail(c *gin.Context) {
 		c.JSON(404, gin.H{"error": "record not found"})
 		return
 	}
-	c.JSON(200, newRequestDBRecordResponse(entry, true))
+	c.JSON(200, newRequestDBRecordResponse(entry, true, h.buildProviderNameResolver()))
 }
 
-func newRequestDBRecordResponse(e *requestdb.Entry, withContent bool) requestDBRecordResponse {
+func normalizeProviderBaseKey(provider, baseURL string) string {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	b := strings.TrimRight(strings.ToLower(strings.TrimSpace(baseURL)), "/")
+	if p == "" || b == "" {
+		return ""
+	}
+	return p + "|" + b
+}
+
+func normalizeProviderHostKey(provider, baseURL string) string {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	raw := strings.TrimSpace(baseURL)
+	if p == "" || raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return p + "|" + strings.ToLower(u.Host)
+}
+
+func (h *Handler) buildProviderNameResolver() func(*requestdb.Entry) string {
+	byAuthID := make(map[string]string)
+	byAuthIndex := make(map[string]string)
+	byProviderBase := make(map[string]string)
+	byProviderHost := make(map[string]string)
+
+	recordEndpoint := func(provider, baseURL, name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if key := normalizeProviderBaseKey(provider, baseURL); key != "" {
+			if _, exists := byProviderBase[key]; !exists {
+				byProviderBase[key] = name
+			}
+		}
+		if hostKey := normalizeProviderHostKey(provider, baseURL); hostKey != "" {
+			if _, exists := byProviderHost[hostKey]; !exists {
+				byProviderHost[hostKey] = name
+			}
+		}
+	}
+
+	if h != nil {
+		h.mu.Lock()
+		manager := h.authManager
+		var cfg *config.Config
+		if h.cfg != nil {
+			cfg = h.cfg.CloneForRuntime()
+		}
+		h.mu.Unlock()
+
+		if manager != nil {
+			for _, auth := range manager.List() {
+				if auth == nil || auth.Attributes == nil {
+					continue
+				}
+				name := strings.TrimSpace(auth.Attributes["provider_name"])
+				if name == "" {
+					continue
+				}
+				if id := strings.TrimSpace(auth.ID); id != "" {
+					byAuthID[id] = name
+				}
+				idx := strings.TrimSpace(auth.Index)
+				if idx == "" {
+					idx = auth.EnsureIndex()
+				}
+				if idx != "" {
+					byAuthIndex[idx] = name
+				}
+				recordEndpoint(auth.Provider, auth.Attributes["base_url"], name)
+			}
+		}
+
+		if cfg != nil {
+			for i := range cfg.GeminiKey {
+				recordEndpoint("gemini", cfg.GeminiKey[i].BaseURL, cfg.GeminiKey[i].Name)
+			}
+			for i := range cfg.InteractionsKey {
+				recordEndpoint("gemini-interactions", cfg.InteractionsKey[i].BaseURL, cfg.InteractionsKey[i].Name)
+				recordEndpoint("interactions", cfg.InteractionsKey[i].BaseURL, cfg.InteractionsKey[i].Name)
+			}
+			for i := range cfg.ClaudeKey {
+				recordEndpoint("claude", cfg.ClaudeKey[i].BaseURL, cfg.ClaudeKey[i].Name)
+			}
+			for i := range cfg.CodexKey {
+				recordEndpoint("codex", cfg.CodexKey[i].BaseURL, cfg.CodexKey[i].Name)
+			}
+			for i := range cfg.XAIKey {
+				recordEndpoint("xai", cfg.XAIKey[i].BaseURL, cfg.XAIKey[i].Name)
+			}
+			for i := range cfg.MetaKey {
+				recordEndpoint("meta", cfg.MetaKey[i].BaseURL, cfg.MetaKey[i].Name)
+			}
+			for i := range cfg.VertexCompatAPIKey {
+				recordEndpoint("vertex", cfg.VertexCompatAPIKey[i].BaseURL, cfg.VertexCompatAPIKey[i].Name)
+			}
+		}
+	}
+
+	return func(e *requestdb.Entry) string {
+		if e == nil {
+			return ""
+		}
+		if id := strings.TrimSpace(e.AuthID); id != "" {
+			if name := byAuthID[id]; name != "" {
+				return name
+			}
+		}
+		if idx := strings.TrimSpace(e.AuthIndex); idx != "" {
+			if name := byAuthIndex[idx]; name != "" {
+				return name
+			}
+		}
+		if stored := strings.TrimSpace(e.ProviderName); stored != "" {
+			return stored
+		}
+		if key := normalizeProviderBaseKey(e.Provider, e.BaseURL); key != "" {
+			if name := byProviderBase[key]; name != "" {
+				return name
+			}
+		}
+		if hostKey := normalizeProviderHostKey(e.Provider, e.BaseURL); hostKey != "" {
+			if name := byProviderHost[hostKey]; name != "" {
+				return name
+			}
+		}
+		return ""
+	}
+}
+
+func newRequestDBRecordResponse(e *requestdb.Entry, withContent bool, resolveProviderName func(*requestdb.Entry) string) requestDBRecordResponse {
 	inputTokens := e.InputTokens
 	if e.CacheReadTokens > 0 && inputTokens < e.CacheReadTokens {
 		inputTokens += e.CacheReadTokens + e.CacheCreationTokens
@@ -136,6 +273,12 @@ func newRequestDBRecordResponse(e *requestdb.Entry, withContent bool) requestDBR
 	totalTokens := e.TotalTokens
 	if totalTokens == 0 && (inputTokens > 0 || e.OutputTokens > 0) {
 		totalTokens = inputTokens + e.OutputTokens
+	}
+	providerName := strings.TrimSpace(e.ProviderName)
+	if resolveProviderName != nil {
+		if resolved := strings.TrimSpace(resolveProviderName(e)); resolved != "" {
+			providerName = resolved
+		}
 	}
 
 	response := requestDBRecordResponse{
@@ -154,7 +297,7 @@ func newRequestDBRecordResponse(e *requestdb.Entry, withContent bool) requestDBR
 		AccessProvider:   e.AccessProvider,
 		IsNativeKey:      e.IsNativeKey,
 		Provider:         e.Provider,
-		ProviderName:     e.ProviderName,
+		ProviderName:     providerName,
 		ExecutorType:     e.ExecutorType,
 		// CodexWebsocketsExecutor only stamps its name when the upstream call ran
 		// over the Responses WebSocket transport; HTTP fallbacks record CodexExecutor.
