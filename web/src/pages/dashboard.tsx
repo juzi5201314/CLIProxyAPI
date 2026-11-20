@@ -28,6 +28,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import bannerImage from "@/assets/dashboard-banner.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -287,6 +288,27 @@ export function DashboardPage() {
             ))}
           </div>
         ) : null}
+      </div>
+
+      {/* Hero Welcome Banner */}
+      <div className="card-surface mb-6 relative overflow-hidden p-5 sm:p-6">
+        <div className="absolute right-8 -bottom-4 hidden sm:block">
+          <img
+            src={bannerImage}
+            alt=""
+            width={115}
+            height={115}
+            className="size-[115px] object-contain"
+          />
+        </div>
+        <div className="relative z-10 max-w-xl pr-0 sm:pr-36">
+          <h2 className="text-base sm:text-lg font-semibold tracking-tight text-foreground">
+            {t("dashboard.heroTitle")}
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+            {t("dashboard.heroDesc")}
+          </p>
+        </div>
       </div>
 
       {/* 4 Core KPI StatCards */}
