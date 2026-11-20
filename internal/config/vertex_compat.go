@@ -11,6 +11,9 @@ import (
 //
 // Example services: zenmux.ai and similar Vertex-compatible providers.
 type VertexCompatKey struct {
+	// Name is an optional display name for this Vertex-compatible API key provider.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
 	// APIKey is the authentication key for accessing the Vertex-compatible API.
 	// Maps to the x-goog-api-key header.
 	APIKey string `yaml:"api-key" json:"api-key"`
@@ -74,6 +77,7 @@ type VertexCompatKey struct {
 	OpenAPILocation string `yaml:"openapi-location,omitempty" json:"openapi-location,omitempty"`
 }
 
+func (k VertexCompatKey) GetName() string     { return k.Name }
 func (k VertexCompatKey) GetAPIKey() string   { return k.APIKey }
 func (k VertexCompatKey) GetBaseURL() string  { return k.BaseURL }
 func (k VertexCompatKey) GetPrefix() string   { return k.Prefix }
@@ -120,6 +124,7 @@ func (cfg *Config) SanitizeVertexCompatKeys() {
 	out := cfg.VertexCompatAPIKey[:0]
 	for i := range cfg.VertexCompatAPIKey {
 		entry := cfg.VertexCompatAPIKey[i]
+		entry.Name = strings.TrimSpace(entry.Name)
 		entry.APIKey = strings.TrimSpace(entry.APIKey)
 		if entry.APIKey == "" {
 			continue

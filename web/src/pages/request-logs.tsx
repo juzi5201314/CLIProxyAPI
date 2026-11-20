@@ -114,22 +114,30 @@ function ModelChainDisplay({ record }: { record: RequestRecord }) {
   );
 }
 
+function resolveProviderQualifier(record: { provider_name?: string; base_url?: string }): string {
+  const customName = record.provider_name?.trim();
+  if (customName) return customName;
+  return extractHost(record.base_url);
+}
+
 function ProviderDisplay({ record }: { record: RequestRecord }) {
-  const host = extractHost(record.base_url);
+  const customName = record.provider_name?.trim();
+  const qualifier = resolveProviderQualifier(record);
   const provider = record.provider?.trim();
 
-  if (!provider && !host) {
+  if (!provider && !qualifier) {
     return <span className="text-muted-foreground">—</span>;
   }
 
-  const fullTitle = record.base_url
-    ? `${provider || "—"} (${record.base_url})`
-    : (provider || "—");
+  const titleParts = [provider || "—"];
+  if (customName) titleParts.push(`(${customName})`);
+  if (record.base_url) titleParts.push(customName ? `· ${record.base_url}` : `(${record.base_url})`);
+  const fullTitle = titleParts.join(" ");
 
   return (
     <span className="font-mono text-xs truncate block max-w-full" title={fullTitle}>
       <span className="text-foreground">{provider || "—"}</span>
-      {host ? <span className="text-muted-foreground/80 font-normal">({host})</span> : null}
+      {qualifier ? <span className="text-muted-foreground/80 font-normal">({qualifier})</span> : null}
     </span>
   );
 }
@@ -212,8 +220,8 @@ export function RequestLogsPage() {
 
   const exportCSV = () => {
     const rows = liveState.records.map((record) => {
-      const host = extractHost(record.base_url);
-      const provider = record.provider ? (host ? `${record.provider}(${host})` : record.provider) : "";
+      const qualifier = resolveProviderQualifier(record);
+      const provider = record.provider ? (qualifier ? `${record.provider}(${qualifier})` : record.provider) : "";
       const reqEffort = record.requested_reasoning_effort?.trim();
       const actEffort = record.reasoning_effort?.trim();
       const thinkingLevel = reqEffort && actEffort && reqEffort !== actEffort
@@ -618,8 +626,8 @@ function ModelFilterCombobox({ placeholder, value, range, onChange }: { placehol
                     [t("requestLogs.detail.upstreamModel", "实际模型"), data.model?.trim() || data.alias?.trim() || "—"],
                     [t("requestLogs.detail.responseModel", "响应模型"), data.response_model?.trim() || "—"],
                     [t("common.provider"), (() => {
-                      const host = extractHost(data.base_url);
-                      return data.provider ? (host ? `${data.provider}(${host})` : data.provider) : "—";
+                      const qualifier = resolveProviderQualifier(data);
+                      return data.provider ? (qualifier ? `${data.provider}(${qualifier})` : data.provider) : "—";
                     })()],
                     [t("requestLogs.detail.auth"), data.auth_id || data.auth_index ? `${data.auth_id || ""} ${data.auth_index ? `(#${data.auth_index})` : ""}` : "—"],
                     [t("common.apiKey"), data.api_key ? maskKey(data.api_key) : "—"],

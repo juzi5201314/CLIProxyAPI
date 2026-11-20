@@ -51,6 +51,7 @@ interface BehaviorRow {
   optionKeys?: [string, string, string];
 }
 
+const NAME_FIELD: ScalarField = { key: "name", labelKey: "fieldName", type: "string", hintKey: "optionalNameHint" };
 const KEY_BASE: ScalarField = { key: "api-key", labelKey: "apiKey", type: "password" };
 const BASE_URL: ScalarField = { key: "base-url", labelKey: "fieldBaseURL", type: "string", placeholder: "https://..." };
 const PRIORITY: ScalarField = { key: "priority", labelKey: "fieldPriority", type: "number" };
@@ -58,15 +59,15 @@ const WEIGHT: ScalarField = { key: "weight", labelKey: "fieldWeight", type: "num
 const PREFIX: ScalarField = { key: "prefix", labelKey: "fieldPrefix", type: "string", hintKey: "prefixHint" };
 const PROXY: ScalarField = { key: "proxy-url", labelKey: "fieldProxyURL", type: "string", placeholder: "socks5://..." };
 
-/** Scalar grid per kind; every kind carries key/base/priority/weight/prefix/proxy. */
+/** Scalar grid per kind; every kind carries name/key/base/priority/weight/prefix/proxy. */
 const KEY_EDITOR_FIELDS: Record<string, ScalarField[]> = {
-  gemini: [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
-  interactions: [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
-  claude: [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
-  vertex: [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
-  codex: [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
-  xai: [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
-  meta: [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
+  gemini: [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
+  interactions: [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
+  claude: [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
+  vertex: [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
+  codex: [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
+  xai: [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
+  meta: [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY],
 };
 
 const COOLING_ROW: BehaviorRow = { key: "disable-cooling", labelKey: "cooling", hintKey: "coolingHint", type: "tri", optionKeys: ["coolingFollow", "coolingDisable", "coolingEnable"] };
@@ -170,7 +171,7 @@ export function KeyEntryEditorSheet({
     patch("cloak", cleanCloak);
   };
 
-  const fields = KEY_EDITOR_FIELDS[kind.id] ?? [KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY];
+  const fields = KEY_EDITOR_FIELDS[kind.id] ?? [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY];
   const behavior = KIND_BEHAVIOR[kind.id] ?? [COOLING_ROW, RETRY_ROW];
   const apiKey = String(draft["api-key"] ?? "");
   const baseURL = String(draft["base-url"] ?? "") || kind.defaultBase;
@@ -200,6 +201,12 @@ export function KeyEntryEditorSheet({
       return;
     }
     const { "auth-index": _drop, ...clean } = draft;
+    const trimmedName = String(clean.name ?? "").trim();
+    if (trimmedName) {
+      clean.name = trimmedName;
+    } else {
+      delete clean.name;
+    }
     onSave({ ...clean, models: normalizeModelsForSave(models) });
   };
 

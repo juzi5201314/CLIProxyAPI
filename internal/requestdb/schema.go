@@ -7,7 +7,7 @@ import (
 
 // currentSchemaVersion is the schema revision this binary expects. Bump it and
 // add a migration step in migrate whenever the table layout changes.
-const currentSchemaVersion = 2
+const currentSchemaVersion = 3
 
 const schemaV1 = `
 CREATE TABLE IF NOT EXISTS request_logs (
@@ -108,5 +108,43 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("requestdb: record schema v2: %w", err)
 		}
 	}
+	if version < 3 {
+		exists, errCol := tableHasColumn(db, "request_logs", "provider_name")
+		if errCol != nil {
+			return fmt.Errorf("requestdb: inspect request_logs columns: %w", errCol)
+		}
+		if !exists {
+			if _, err := db.Exec(`ALTER TABLE request_logs ADD COLUMN provider_name TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("requestdb: apply schema v3: %w", err)
+			}
+		}
+		if _, err := db.Exec(`INSERT INTO schema_version (version) VALUES (3)`); err != nil {
+			return fmt.Errorf("requestdb: record schema v3: %w", err)
+		}
+	}
 	return nil
+}
+
+func tableHasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var dfltValue sql.NullString
+		var pk int
+		if errScan := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); errScan != nil {
+			return false, errScan
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }

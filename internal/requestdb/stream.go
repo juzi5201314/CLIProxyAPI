@@ -80,7 +80,7 @@ func matchesStreamFilter(q Query, e *Entry) bool {
 	} else if q.Model != "" && q.Model != e.Model {
 		return false
 	}
-	if q.Provider != "" && q.Provider != e.Provider {
+	if q.Provider != "" && q.Provider != e.Provider && q.Provider != e.ProviderName {
 		return false
 	}
 	if q.APIKey != "" && q.APIKey != e.APIKey {

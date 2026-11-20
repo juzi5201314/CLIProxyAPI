@@ -36,6 +36,7 @@ type UsageReporter struct {
 	selectionID          string
 	homeSelection        *usage.HomeSelection
 	provider             string
+	providerName         string
 	baseURL              string
 	executorType         string
 	model                string
@@ -117,9 +118,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 		}
 	}
 	baseURL := ""
+	providerName := ""
 	if auth != nil {
 		if auth.Attributes != nil {
 			baseURL = strings.TrimSpace(auth.Attributes["base_url"])
+			providerName = strings.TrimSpace(auth.Attributes["provider_name"])
 		}
 		if baseURL == "" && auth.Metadata != nil {
 			if v, ok := auth.Metadata["base_url"].(string); ok {
@@ -137,6 +140,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 		selectionID:     usage.SelectionIDFromContext(ctx),
 		homeSelection:   usage.HomeSelectionFromContext(ctx),
 		provider:        provider,
+		providerName:    providerName,
 		baseURL:         baseURL,
 		model:           model,
 		alias:           strings.TrimSpace(alias),
@@ -754,6 +758,7 @@ func (r *UsageReporter) buildRecordForModel(model string, detail usage.Detail, f
 		SelectionID:          r.selectionID,
 		HomeSelection:        r.homeSelection,
 		Provider:             r.provider,
+		ProviderName:         r.providerName,
 		BaseURL:              r.baseURL,
 		ExecutorType:         r.executorType,
 		Model:                model,

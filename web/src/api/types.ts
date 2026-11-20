@@ -17,6 +17,7 @@ export interface RequestRecord {
   access_provider?: string;
   is_native_key: boolean;
   provider?: string;
+  provider_name?: string;
   executor_type?: string;
   upstream_websocket?: boolean;
   auth_id?: string;

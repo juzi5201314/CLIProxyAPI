@@ -664,6 +664,7 @@ const en = {
     removeConfirmDesc: "The provider is removed from the config immediately. This cannot be undone from the panel.",
     basicInfo: "Basics",
     fieldName: "Name",
+    optionalNameHint: "Optional display name shown in provider list and request logs",
     apiKey: "API key",
     fieldBaseURL: "Base URL",
     fieldPriority: "Priority",

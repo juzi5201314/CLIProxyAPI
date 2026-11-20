@@ -770,6 +770,9 @@ type CloakConfig struct {
 // ClaudeKey represents the configuration for a Claude API key,
 // including the API key itself and an optional base URL for the API endpoint.
 type ClaudeKey struct {
+	// Name is an optional display name for this Claude API key provider.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
 	// APIKey is the authentication key for accessing Claude API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
@@ -851,6 +854,8 @@ type ClaudeKey struct {
 	ExperimentalCCHSigning bool `yaml:"experimental-cch-signing,omitempty" json:"experimental-cch-signing,omitempty"`
 }
 
+func (k ClaudeKey) GetName() string { return k.Name }
+
 func (k ClaudeKey) GetAPIKey() string { return k.APIKey }
 
 func (k ClaudeKey) GetBaseURL() string { return k.BaseURL }
@@ -899,6 +904,9 @@ func (m ClaudeModel) GetThinkingLevelMapping() map[string]string { return m.Thin
 // CodexKey represents the configuration for a Codex API key,
 // including the API key itself and an optional base URL for the API endpoint.
 type CodexKey struct {
+	// Name is an optional display name for this Codex API key provider.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
 	// APIKey is the authentication key for accessing Codex API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
@@ -962,6 +970,8 @@ type CodexKey struct {
 	// RequestScopedErrors configures custom classification rules for upstream errors.
 	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
 }
+
+func (k CodexKey) GetName() string { return k.Name }
 
 func (k CodexKey) GetAPIKey() string { return k.APIKey }
 
@@ -1030,6 +1040,9 @@ type MetaModel = CodexModel
 // GeminiKey represents the configuration for a Gemini API key,
 // including optional overrides for upstream base URL, proxy routing, and headers.
 type GeminiKey struct {
+	// Name is an optional display name for this Gemini API key provider.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
 	// APIKey is the authentication key for accessing Gemini API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
@@ -1079,6 +1092,8 @@ type GeminiKey struct {
 	// RequestScopedErrors configures custom classification rules for upstream errors.
 	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
 }
+
+func (k GeminiKey) GetName() string { return k.Name }
 
 func (k GeminiKey) GetAPIKey() string { return k.APIKey }
 

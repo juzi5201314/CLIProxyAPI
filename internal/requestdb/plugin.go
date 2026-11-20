@@ -151,6 +151,7 @@ func buildEntry(ctx context.Context, record coreusage.Record) Entry {
 		AccessProvider:           accessProvider,
 		IsNativeKey:              isNativeKey,
 		Provider:                 strings.TrimSpace(record.Provider),
+		ProviderName:             strings.TrimSpace(record.ProviderName),
 		ExecutorType:             strings.TrimSpace(record.ExecutorType),
 		AuthID:                   strings.TrimSpace(record.AuthID),
 		AuthIndex:                strings.TrimSpace(record.AuthIndex),

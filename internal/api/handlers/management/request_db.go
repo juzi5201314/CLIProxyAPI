@@ -33,6 +33,7 @@ type requestDBRecordResponse struct {
 	AccessProvider           string          `json:"access_provider,omitempty"`
 	IsNativeKey              bool            `json:"is_native_key"`
 	Provider                 string          `json:"provider,omitempty"`
+	ProviderName             string          `json:"provider_name,omitempty"`
 	ExecutorType             string          `json:"executor_type,omitempty"`
 	UpstreamWebsocket        bool            `json:"upstream_websocket,omitempty"`
 	AuthID                   string          `json:"auth_id,omitempty"`
@@ -153,6 +154,7 @@ func newRequestDBRecordResponse(e *requestdb.Entry, withContent bool) requestDBR
 		AccessProvider:   e.AccessProvider,
 		IsNativeKey:      e.IsNativeKey,
 		Provider:         e.Provider,
+		ProviderName:     e.ProviderName,
 		ExecutorType:     e.ExecutorType,
 		// CodexWebsocketsExecutor only stamps its name when the upstream call ran
 		// over the Responses WebSocket transport; HTTP fallbacks record CodexExecutor.

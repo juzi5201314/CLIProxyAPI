@@ -190,6 +190,11 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 		if base != "" {
 			attrs["base_url"] = base
 		}
+		entryLabel := label
+		if providerName := strings.TrimSpace(entry.Name); providerName != "" {
+			attrs["provider_name"] = providerName
+			entryLabel = providerName
+		}
 		if hash := diff.ComputeGeminiModelsHash(entry.Models); hash != "" {
 			attrs["models_hash"] = hash
 		}
@@ -197,7 +202,7 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 		a := &coreauth.Auth{
 			ID:         id,
 			Provider:   provider,
-			Label:      label,
+			Label:      entryLabel,
 			Prefix:     prefix,
 			Status:     coreauth.StatusActive,
 			ProxyURL:   proxyURL,
@@ -259,6 +264,11 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 		if base != "" {
 			attrs["base_url"] = base
 		}
+		entryLabel := "claude-apikey"
+		if providerName := strings.TrimSpace(ck.Name); providerName != "" {
+			attrs["provider_name"] = providerName
+			entryLabel = providerName
+		}
 		if ck.RebuildMidSystemMessage {
 			attrs["rebuild_mid_system_message"] = "true"
 		}
@@ -275,7 +285,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 		a := &coreauth.Auth{
 			ID:         id,
 			Provider:   "claude",
-			Label:      "claude-apikey",
+			Label:      entryLabel,
 			Prefix:     prefix,
 			Status:     coreauth.StatusActive,
 			ProxyURL:   proxyURL,
@@ -350,6 +360,11 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 		if baseURL != "" {
 			attrs["base_url"] = baseURL
 		}
+		entryLabel := provider + "-apikey"
+		if providerName := strings.TrimSpace(entry.Name); providerName != "" {
+			attrs["provider_name"] = providerName
+			entryLabel = providerName
+		}
 		if entry.Websockets {
 			attrs["websockets"] = "true"
 		}
@@ -369,7 +384,7 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 		a := &coreauth.Auth{
 			ID:                  id,
 			Provider:            provider,
-			Label:               provider + "-apikey",
+			Label:               entryLabel,
 			Prefix:              prefix,
 			Status:              coreauth.StatusActive,
 			ProxyURL:            strings.TrimSpace(entry.ProxyURL),
@@ -576,10 +591,15 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 			metadata["disable_cooling"] = *compat.DisableCooling
 		}
 		addRequestRetryToMetadata(compat.RequestRetry, metadata)
+		entryLabel := "vertex-apikey"
+		if customName := strings.TrimSpace(compat.Name); customName != "" {
+			attrs["provider_name"] = customName
+			entryLabel = customName
+		}
 		a := &coreauth.Auth{
 			ID:         id,
 			Provider:   providerName,
-			Label:      "vertex-apikey",
+			Label:      entryLabel,
 			Prefix:     prefix,
 			Status:     coreauth.StatusActive,
 			ProxyURL:   proxyURL,

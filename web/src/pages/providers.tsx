@@ -192,7 +192,8 @@ export function ProvidersPage() {
           kind.id === "openai-compatibility"
             ? ((entry["api-key-entries"] as Entry[] | undefined) ?? []).map((item) => String(item["api-key"] ?? "")).filter(Boolean)
             : [String(entry["api-key"] ?? "")].filter(Boolean);
-        const name = kind.id === "openai-compatibility" ? String(entry.name ?? "") : maskIdentity(entry, kind);
+        const explicitName = String(entry.name ?? "").trim();
+        const name = kind.id === "openai-compatibility" ? explicitName : (explicitName || maskIdentity(entry, kind));
         const baseURL = String(entry["base-url"] ?? "");
         const excludedList = (entry["excluded-models"] as string[] | undefined) ?? [];
         const isExcludedAll = excludedList.includes("*");

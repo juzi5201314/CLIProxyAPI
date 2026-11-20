@@ -662,6 +662,7 @@ const zhCN = {
     removeConfirmDesc: "该供应商会立即从配置中移除，此操作无法从面板撤销。",
     basicInfo: "基础信息",
     fieldName: "名称",
+    optionalNameHint: "可选显示名称，用于供应商列表与请求日志",
     apiKey: "API 密钥",
     fieldBaseURL: "Base URL",
     fieldPriority: "优先级",

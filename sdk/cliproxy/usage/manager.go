@@ -33,6 +33,8 @@ type Record struct {
 	// HomeSelection carries deferred accounting for reused Home dispatches.
 	HomeSelection *HomeSelection
 	Provider      string
+	// ProviderName stores the optional user-configured provider display name when set.
+	ProviderName string
 	// BaseURL stores the configured upstream base URL when available.
 	BaseURL string
 	// ExecutorType stores the concrete executor type that handled the request.

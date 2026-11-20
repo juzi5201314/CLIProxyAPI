@@ -36,6 +36,7 @@ type Entry struct {
 	AccessProvider           string
 	IsNativeKey              bool
 	Provider                 string
+	ProviderName             string
 	ExecutorType             string
 	AuthID                   string
 	AuthIndex                string
@@ -129,7 +130,7 @@ func (s *Store) Close() error {
 
 const insertColumns = `requested_at, request_id, trace_id, endpoint, client_ip, resolved_client_ip, x_forwarded_for, user_agent,
 	session_id, parent_session_id, api_key, access_provider, is_native_key,
-	provider, executor_type, auth_id, auth_index, auth_type, source, base_url,
+	provider, provider_name, executor_type, auth_id, auth_index, auth_type, source, base_url,
 	model, alias, response_model, reasoning_effort, requested_reasoning_effort,
 	service_tier, effective_service_tier, response_service_tier,
 	generate, stream, failed, status_code, latency_ms, ttft_ms,
@@ -145,7 +146,7 @@ func (s *Store) InsertBatch(ctx context.Context, entries []Entry) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	placeholders := "(" + strings.TrimSuffix(strings.Repeat("?,", 47), ",") + ")"
+	placeholders := "(" + strings.TrimSuffix(strings.Repeat("?,", 48), ",") + ")"
 	stmtText := "INSERT INTO request_logs (" + insertColumns + ") VALUES " + placeholders
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -161,7 +162,7 @@ func (s *Store) InsertBatch(ctx context.Context, entries []Entry) error {
 		res, errExec := stmt.ExecContext(ctx,
 			e.RequestedAtMS, e.RequestID, e.TraceID, e.Endpoint, e.ClientIP, e.ResolvedClientIP, e.XForwardedFor, e.UserAgent,
 			e.SessionID, e.ParentSessionID, e.APIKey, e.AccessProvider, boolToInt(e.IsNativeKey),
-			e.Provider, e.ExecutorType, e.AuthID, e.AuthIndex, e.AuthType, e.Source, e.BaseURL,
+			e.Provider, e.ProviderName, e.ExecutorType, e.AuthID, e.AuthIndex, e.AuthType, e.Source, e.BaseURL,
 			e.Model, e.Alias, e.ResponseModel, e.ReasoningEffort, e.RequestedReasoningEffort,
 			e.ServiceTier, e.EffectiveServiceTier, e.ResponseServiceTier,
 			boolToInt(e.Generate), boolToInt(e.Stream), boolToInt(e.Failed), e.StatusCode, e.LatencyMS, e.TTFTMS,
@@ -455,7 +456,7 @@ func (s *Store) Query(ctx context.Context, q Query) ([]Entry, error) {
 	where, args := buildWhere(q)
 	stmt := `SELECT id, requested_at, request_id, trace_id, endpoint, client_ip, resolved_client_ip, x_forwarded_for, user_agent,
 		session_id, parent_session_id, api_key, access_provider, is_native_key,
-		provider, executor_type, auth_id, auth_index, auth_type, source, base_url,
+		provider, provider_name, executor_type, auth_id, auth_index, auth_type, source, base_url,
 		model, alias, response_model, reasoning_effort, requested_reasoning_effort,
 		service_tier, effective_service_tier, response_service_tier,
 		generate, stream, failed, status_code, latency_ms, ttft_ms,
@@ -482,7 +483,7 @@ func (s *Store) Query(ctx context.Context, q Query) ([]Entry, error) {
 		var isNativeKey, generate, stream, failed int
 		if errScan := rows.Scan(&e.ID, &e.RequestedAtMS, &e.RequestID, &e.TraceID, &e.Endpoint, &e.ClientIP, &e.ResolvedClientIP, &e.XForwardedFor, &e.UserAgent,
 			&e.SessionID, &e.ParentSessionID, &e.APIKey, &e.AccessProvider, &isNativeKey,
-			&e.Provider, &e.ExecutorType, &e.AuthID, &e.AuthIndex, &e.AuthType, &e.Source, &e.BaseURL,
+			&e.Provider, &e.ProviderName, &e.ExecutorType, &e.AuthID, &e.AuthIndex, &e.AuthType, &e.Source, &e.BaseURL,
 			&e.Model, &e.Alias, &e.ResponseModel, &e.ReasoningEffort, &e.RequestedReasoningEffort,
 			&e.ServiceTier, &e.EffectiveServiceTier, &e.ResponseServiceTier,
 			&generate, &stream, &failed, &e.StatusCode, &e.LatencyMS, &e.TTFTMS,
@@ -509,7 +510,7 @@ func (s *Store) GetByID(ctx context.Context, id int64) (*Entry, error) {
 	}
 	stmt := `SELECT id, requested_at, request_id, trace_id, endpoint, client_ip, resolved_client_ip, x_forwarded_for, user_agent,
 		session_id, parent_session_id, api_key, access_provider, is_native_key,
-		provider, executor_type, auth_id, auth_index, auth_type, source, base_url,
+		provider, provider_name, executor_type, auth_id, auth_index, auth_type, source, base_url,
 		model, alias, response_model, reasoning_effort, requested_reasoning_effort,
 		service_tier, effective_service_tier, response_service_tier,
 		generate, stream, failed, status_code, latency_ms, ttft_ms,
@@ -521,7 +522,7 @@ func (s *Store) GetByID(ctx context.Context, id int64) (*Entry, error) {
 	var tokenBreakdown, requestHeaders, responseHeaders, errorBody, requestPreview, responsePreview []byte
 	err := s.db.QueryRowContext(ctx, stmt, id).Scan(&e.ID, &e.RequestedAtMS, &e.RequestID, &e.TraceID, &e.Endpoint, &e.ClientIP, &e.ResolvedClientIP, &e.XForwardedFor, &e.UserAgent,
 		&e.SessionID, &e.ParentSessionID, &e.APIKey, &e.AccessProvider, &isNativeKey,
-		&e.Provider, &e.ExecutorType, &e.AuthID, &e.AuthIndex, &e.AuthType, &e.Source, &e.BaseURL,
+		&e.Provider, &e.ProviderName, &e.ExecutorType, &e.AuthID, &e.AuthIndex, &e.AuthType, &e.Source, &e.BaseURL,
 		&e.Model, &e.Alias, &e.ResponseModel, &e.ReasoningEffort, &e.RequestedReasoningEffort,
 		&e.ServiceTier, &e.EffectiveServiceTier, &e.ResponseServiceTier,
 		&generate, &stream, &failed, &e.StatusCode, &e.LatencyMS, &e.TTFTMS,
@@ -601,8 +602,9 @@ func buildWhere(q Query) (string, []any) {
 		}
 		clauses = append(clauses, "provider IN ("+strings.Join(placeholders, ",")+")")
 	} else if q.Provider != "" {
-		clauses = append(clauses, "provider LIKE ? ESCAPE '\\'")
-		args = append(args, likeSubstring(q.Provider))
+		pattern := likeSubstring(q.Provider)
+		clauses = append(clauses, "(provider LIKE ? ESCAPE '\\' OR provider_name LIKE ? ESCAPE '\\')")
+		args = append(args, pattern, pattern)
 	}
 	if q.SessionID != "" {
 		clauses = append(clauses, "session_id LIKE ? ESCAPE '\\'")

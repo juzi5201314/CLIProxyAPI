@@ -450,7 +450,7 @@ func expandV8Groups(groups *yaml.Node, provider string) (*yaml.Node, error) {
 			item := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 			for i := 0; i < len(group.Content); i += 2 {
 				field := group.Content[i].Value
-				if field == "base-url" || sharedKeyFields[field] {
+				if field == "name" || field == "base-url" || sharedKeyFields[field] {
 					setYAMLPath(item, field, group.Content[i+1])
 				}
 			}
@@ -498,7 +498,7 @@ func mergeConnectionPoolNode(base, override *yaml.Node) *yaml.Node {
 // do not imply equal routing, headers, models, or credential policies.
 func groupLegacyKeys(keys *yaml.Node, provider string) *yaml.Node {
 	out := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-	for index, entry := range keys.Content {
+	for _, entry := range keys.Content {
 		group := deepCopyNode(entry)
 		if provider == "openai-compatibility" {
 			entries := yamlPath(group, "api-key-entries")
@@ -509,14 +509,24 @@ func groupLegacyKeys(keys *yaml.Node, provider string) *yaml.Node {
 			deleteYAMLPath(group, "api-key-entries")
 		} else {
 			group = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-			setYAMLPath(group, "name", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: fmt.Sprintf("%s-%d", provider, index+1)})
 			key := deepCopyNode(entry)
+			var explicitName *yaml.Node
 			for i := 0; i < len(entry.Content); i += 2 {
 				field := entry.Content[i].Value
+				if field == "name" {
+					if strings.TrimSpace(entry.Content[i+1].Value) != "" {
+						explicitName = entry.Content[i+1]
+					}
+					deleteYAMLPath(key, field)
+					continue
+				}
 				if field == "base-url" || sharedKeyFields[field] {
 					setYAMLPath(group, field, entry.Content[i+1])
 					deleteYAMLPath(key, field)
 				}
+			}
+			if explicitName != nil {
+				setYAMLPath(group, "name", explicitName)
 			}
 			setYAMLPath(group, "keys", &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{key}})
 		}
