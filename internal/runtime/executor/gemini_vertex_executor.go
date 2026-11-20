@@ -1954,7 +1954,7 @@ func (e *GeminiVertexExecutor) executeInteractions(ctx context.Context, auth *cl
 
 	url := vertexInteractionsURL(baseURL, projectID, false)
 
-	helps.ApplyPayloadConfigWithRequestDoc(e.cfg, targetName, "interactions", fromProtocol, "", doc, originalTranslated, requestedModel, requestPath, opts.Headers)
+	helps.ApplyPayloadConfigWithRequestAndAuthDoc(e.cfg, targetName, "interactions", fromProtocol, "", doc, originalTranslated, requestedModel, requestPath, opts.Headers, auth)
 	body = doc.Bytes()
 	reporter.SetTranslatedRequestMetadata(body, "interactions")
 
@@ -2084,7 +2084,7 @@ func (e *GeminiVertexExecutor) executeInteractionsStream(ctx context.Context, au
 
 	url := vertexInteractionsURL(baseURL, projectID, true)
 
-	helps.ApplyPayloadConfigWithRequestDoc(e.cfg, targetName, "interactions", fromProtocol, "", doc, originalTranslated, requestedModel, requestPath, opts.Headers)
+	helps.ApplyPayloadConfigWithRequestAndAuthDoc(e.cfg, targetName, "interactions", fromProtocol, "", doc, originalTranslated, requestedModel, requestPath, opts.Headers, auth)
 	body = doc.Bytes()
 	reporter.SetTranslatedRequestMetadata(body, "interactions")
 

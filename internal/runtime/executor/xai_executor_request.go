@@ -90,16 +90,16 @@ func resolveXAISignatureTargetModel(baseModel string, req cliproxyexecutor.Reque
 	return "grok"
 }
 
-func (e *XAIExecutor) prepareResponsesRequest(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool) (*xaiPreparedRequest, error) {
-	return e.prepareResponsesRequestTo(ctx, req, opts, stream, sdktranslator.FormatCodex)
+func (e *XAIExecutor) prepareResponsesRequest(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool, auths ...*cliproxyauth.Auth) (*xaiPreparedRequest, error) {
+	return e.prepareResponsesRequestTo(ctx, req, opts, stream, sdktranslator.FormatCodex, auths...)
 }
 
-func (e *XAIExecutor) prepareResponsesRequestDoc(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool) (*xaiPreparedRequest, error) {
-	return e.prepareResponsesRequestToDoc(ctx, req, opts, stream, sdktranslator.FormatCodex)
+func (e *XAIExecutor) prepareResponsesRequestDoc(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool, auths ...*cliproxyauth.Auth) (*xaiPreparedRequest, error) {
+	return e.prepareResponsesRequestToDoc(ctx, req, opts, stream, sdktranslator.FormatCodex, auths...)
 }
 
-func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool, to sdktranslator.Format) (*xaiPreparedRequest, error) {
-	prepared, err := e.prepareResponsesRequestToDoc(ctx, req, opts, stream, to)
+func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool, to sdktranslator.Format, auths ...*cliproxyauth.Auth) (*xaiPreparedRequest, error) {
+	prepared, err := e.prepareResponsesRequestToDoc(ctx, req, opts, stream, to, auths...)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 	return prepared, nil
 }
 
-func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool, to sdktranslator.Format) (*xaiPreparedRequest, error) {
+func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool, to sdktranslator.Format, auths ...*cliproxyauth.Auth) (*xaiPreparedRequest, error) {
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 	from := opts.SourceFormat
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -137,7 +137,7 @@ func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req clip
 		return nil, err
 	}
 
-	finalizePayload := helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts)
+	finalizePayload := helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts, auths...)
 	helps.SetStringIfDifferentDoc(doc, "model", baseModel)
 	helps.SetBoolIfDifferentDoc(doc, "stream", stream)
 	_ = doc.Delete("previous_response_id")

@@ -517,3 +517,50 @@ func TestPayloadBarrierMultiExecutorSingleDocConsistency(t *testing.T) {
 		}
 	})
 }
+
+func TestProviderConfiguredServiceTierAndResponseTierTracking(t *testing.T) {
+	completedDefaultTier := []byte(`{"type":"response.completed","response":{"id":"resp_tier","status":"completed","model":"gpt-5.4","service_tier":"default","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}}}`)
+	captured := make(chan []byte, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		captured <- body
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write(append(append([]byte("data: "), completedDefaultTier...), '\n', '\n'))
+	}))
+	defer server.Close()
+
+	authID := t.Name()
+	plugin := &captureEffectiveServiceTierPlugin{
+		authID:  authID,
+		records: make(chan usage.Record, 2),
+	}
+	usage.RegisterPlugin(plugin)
+
+	executor := NewCodexExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		ID:       authID,
+		Provider: "codex",
+		Attributes: map[string]string{
+			"api_key":      "sk-test",
+			"base_url":     server.URL,
+			"service_tier": "fast",
+		},
+	}
+	ctx := usage.WithServiceTier(context.Background(), usage.AutoServiceTier)
+	req := cliproxyexecutor.Request{
+		Model:   "gpt-5.4",
+		Payload: []byte(`{"model":"gpt-5.4","input":"hello"}`),
+	}
+	opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse}
+	if _, errExec := executor.Execute(ctx, auth, req, opts); errExec != nil {
+		t.Fatalf("Execute error: %v", errExec)
+	}
+	upstreamBody := <-captured
+	if got := ojson.GetBytesNoCopy(upstreamBody, "service_tier").String(); got != "priority" {
+		t.Fatalf("upstream body service_tier = %q, want priority", got)
+	}
+	record := <-plugin.records
+	if record.ServiceTier != "auto" || record.EffectiveServiceTier != "priority" || record.ResponseServiceTier != "default" {
+		t.Fatalf("usage tiers = requested:%q effective:%q response:%q, want auto/priority/default", record.ServiceTier, record.EffectiveServiceTier, record.ResponseServiceTier)
+	}
+}

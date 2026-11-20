@@ -84,7 +84,7 @@ func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, auth *clipro
 	helps.NormalizeCodexToolIntegerTypesDoc(doc, opts.Headers)
 	helps.EnsureMetaMuseToolNamespaceDoc(doc)
 
-	helps.ApplyPayloadConfigWithRequestDoc(e.cfg, baseModel, e.Identifier(), from.String(), "", doc, originalTranslated, requestedModel, requestPath, opts.Headers)
+	helps.ApplyPayloadConfigWithRequestAndAuthDoc(e.cfg, baseModel, e.Identifier(), from.String(), "", doc, originalTranslated, requestedModel, requestPath, opts.Headers, auth)
 	effectiveModel := strings.TrimSpace(doc.Get("model").String())
 	if effectiveModel == "" {
 		effectiveModel = baseModel

@@ -20,7 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { EditorSection, HeadersEditor, ProviderKindSelectorGrid, SwitchRow } from "./compat-editor";
+import { EditorSection, HeadersEditor, ProviderKindSelectorGrid, ServiceTierSelect, SwitchRow } from "./compat-editor";
 import {
   ExcludedModelsEditor,
   FetchModelsButton,
@@ -45,7 +45,7 @@ interface BehaviorRow {
   key: string;
   labelKey: string;
   hintKey?: string;
-  type: "switch" | "tri" | "number" | "string";
+  type: "switch" | "tri" | "number" | "string" | "service-tier";
   placeholder?: string;
   /** Option labels for tri rows: [follow, on, off]; defaults to generic tri.* keys. */
   optionKeys?: [string, string, string];
@@ -73,7 +73,8 @@ const KEY_EDITOR_FIELDS: Record<string, ScalarField[]> = {
 const COOLING_ROW: BehaviorRow = { key: "disable-cooling", labelKey: "cooling", hintKey: "coolingHint", type: "tri", optionKeys: ["coolingFollow", "coolingDisable", "coolingEnable"] };
 const RETRY_ROW: BehaviorRow = { key: "request-retry", labelKey: "requestRetry", hintKey: "requestRetryHint", type: "number", placeholder: "∞" };
 const MAX_CONCURRENCY_ROW: BehaviorRow = { key: "max-concurrency", labelKey: "maxConcurrency", hintKey: "maxConcurrencyHint", type: "number", placeholder: "∞" };
-const COOLING_RETRY: BehaviorRow[] = [COOLING_ROW, RETRY_ROW, MAX_CONCURRENCY_ROW];
+const SERVICE_TIER_ROW: BehaviorRow = { key: "service-tier", labelKey: "serviceTier", hintKey: "serviceTierHint", type: "service-tier" };
+const COOLING_RETRY: BehaviorRow[] = [COOLING_ROW, RETRY_ROW, MAX_CONCURRENCY_ROW, SERVICE_TIER_ROW];
 /** Field-availability follows the Go structs: alpha-search is codex-only
  *  (sanitize force-clears it on xai/meta), websockets has no meta executor,
  *  and codex cloaking is consumed by the codex/xai request paths. */
@@ -449,6 +450,20 @@ function BehaviorControl({ row, draft, onPatch }: { row: BehaviorRow; draft: Ent
               <SelectItem value="off">{t(`providers.${offKey}`)}</SelectItem>
             </SelectContent>
           </Select>
+        }
+      />
+    );
+  }
+  if (row.type === "service-tier") {
+    return (
+      <SwitchRow
+        label={t(`providers.${row.labelKey}`)}
+        hint={hint}
+        control={
+          <ServiceTierSelect
+            value={typeof raw === "string" ? raw : undefined}
+            onChange={(value) => onPatch(row.key, value)}
+          />
         }
       />
     );

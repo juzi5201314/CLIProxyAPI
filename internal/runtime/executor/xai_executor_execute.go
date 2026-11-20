@@ -36,7 +36,7 @@ func (e *XAIExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req 
 	baseURL := xaiChatBaseURL(auth)
 	logXAIResolvedBaseURL(ctx, baseURL)
 
-	prepared, err := e.prepareResponsesRequestDoc(ctx, req, opts, true)
+	prepared, err := e.prepareResponsesRequestDoc(ctx, req, opts, true, auth)
 	if err != nil {
 		return resp, err
 	}
@@ -286,7 +286,7 @@ func (e *XAIExecutor) executeCompactRequest(ctx context.Context, auth *cliproxya
 	baseURL := xaiCompactBaseURL(auth)
 	logXAIResolvedBaseURL(ctx, baseURL)
 
-	prepared, err := e.prepareResponsesRequestToDoc(ctx, req, opts, false, sdktranslator.FormatOpenAIResponse)
+	prepared, err := e.prepareResponsesRequestToDoc(ctx, req, opts, false, sdktranslator.FormatOpenAIResponse, auth)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

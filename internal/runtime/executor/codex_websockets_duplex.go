@@ -718,7 +718,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
 					if codexUseSIWCForRequest(ctx, auth, steerHeaders) {
 						thinking.StripConfigurationUpdatesDoc(steerDoc)
 					}
-					steerCtx := helps.WithPayloadFinalizer(streamCtx, helps.NewPayloadFinalizer(e.cfg, "codex-websockets", thinking.ParseSuffix(req.Model).ModelName, "codex", "", steerReq.Payload, steerReq, steerOpts))
+					steerCtx := helps.WithPayloadFinalizer(streamCtx, helps.NewPayloadFinalizer(e.cfg, "codex-websockets", thinking.ParseSuffix(req.Model).ModelName, "codex", "", steerReq.Payload, steerReq, steerOpts, auth))
 					helps.FinalizePayloadDoc(steerCtx, steerDoc)
 					_ = steerDoc.Set("type", "response.steer")
 					parent := strings.Clone(steerDoc.Get("previous_response_id").String())

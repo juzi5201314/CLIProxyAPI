@@ -75,6 +75,10 @@ type VertexCompatKey struct {
 
 	// OpenAPILocation overrides the location used for OpenAPI requests.
 	OpenAPILocation string `yaml:"openapi-location,omitempty" json:"openapi-location,omitempty"`
+
+	// ServiceTier optionally forces the outbound service_tier for requests routed to this credential.
+	// Omitted or "auto" preserves the downstream client's requested service tier.
+	ServiceTier string `yaml:"service-tier,omitempty" json:"service-tier,omitempty"`
 }
 
 func (k VertexCompatKey) GetName() string     { return k.Name }
@@ -133,6 +137,7 @@ func (cfg *Config) SanitizeVertexCompatKeys() {
 		entry.BaseURL = strings.TrimSpace(entry.BaseURL)
 		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
 		entry.OpenAPILocation = strings.TrimSpace(entry.OpenAPILocation)
+		entry.ServiceTier = NormalizeConfiguredServiceTier(entry.ServiceTier)
 		entry.Headers = NormalizeHeaders(entry.Headers)
 		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
 

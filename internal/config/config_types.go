@@ -852,6 +852,10 @@ type ClaudeKey struct {
 	// ExperimentalCCHSigning is retained for configuration compatibility.
 	// CCH signing is automatic for Claude OAuth and supported direct upstreams.
 	ExperimentalCCHSigning bool `yaml:"experimental-cch-signing,omitempty" json:"experimental-cch-signing,omitempty"`
+
+	// ServiceTier optionally forces the outbound service_tier for requests routed to this credential.
+	// Omitted or "auto" preserves the downstream client's requested service tier.
+	ServiceTier string `yaml:"service-tier,omitempty" json:"service-tier,omitempty"`
 }
 
 func (k ClaudeKey) GetName() string { return k.Name }
@@ -969,6 +973,10 @@ type CodexKey struct {
 
 	// RequestScopedErrors configures custom classification rules for upstream errors.
 	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
+
+	// ServiceTier optionally forces the outbound service_tier for requests routed to this credential.
+	// Omitted or "auto" preserves the downstream client's requested service tier.
+	ServiceTier string `yaml:"service-tier,omitempty" json:"service-tier,omitempty"`
 }
 
 func (k CodexKey) GetName() string { return k.Name }
@@ -1091,6 +1099,10 @@ type GeminiKey struct {
 
 	// RequestScopedErrors configures custom classification rules for upstream errors.
 	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
+
+	// ServiceTier optionally forces the outbound service_tier for requests routed to this credential.
+	// Omitted or "auto" preserves the downstream client's requested service tier.
+	ServiceTier string `yaml:"service-tier,omitempty" json:"service-tier,omitempty"`
 }
 
 func (k GeminiKey) GetName() string { return k.Name }
@@ -1188,6 +1200,10 @@ type OpenAICompatibility struct {
 
 	// RequestScopedErrors configures custom classification rules for upstream errors.
 	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
+
+	// ServiceTier optionally forces the outbound service_tier for requests routed to this provider.
+	// Omitted or "auto" preserves the downstream client's requested service tier.
+	ServiceTier string `yaml:"service-tier,omitempty" json:"service-tier,omitempty"`
 }
 
 // OpenAICompatibilityAPIKey represents an API key configuration with optional proxy setting.

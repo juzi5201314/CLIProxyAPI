@@ -195,6 +195,9 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 			attrs["provider_name"] = providerName
 			entryLabel = providerName
 		}
+		if serviceTier := config.NormalizeConfiguredServiceTier(entry.ServiceTier); serviceTier != "" {
+			attrs["service_tier"] = serviceTier
+		}
 		if hash := diff.ComputeGeminiModelsHash(entry.Models); hash != "" {
 			attrs["models_hash"] = hash
 		}
@@ -268,6 +271,9 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 		if providerName := strings.TrimSpace(ck.Name); providerName != "" {
 			attrs["provider_name"] = providerName
 			entryLabel = providerName
+		}
+		if serviceTier := config.NormalizeConfiguredServiceTier(ck.ServiceTier); serviceTier != "" {
+			attrs["service_tier"] = serviceTier
 		}
 		if ck.RebuildMidSystemMessage {
 			attrs["rebuild_mid_system_message"] = "true"
@@ -365,6 +371,9 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 			attrs["provider_name"] = providerName
 			entryLabel = providerName
 		}
+		if serviceTier := config.NormalizeConfiguredServiceTier(entry.ServiceTier); serviceTier != "" {
+			attrs["service_tier"] = serviceTier
+		}
 		if entry.Websockets {
 			attrs["websockets"] = "true"
 		}
@@ -458,6 +467,9 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 			if compat.Priority != 0 {
 				attrs["priority"] = strconv.Itoa(compat.Priority)
 			}
+			if serviceTier := config.NormalizeConfiguredServiceTier(compat.ServiceTier); serviceTier != "" {
+				attrs["service_tier"] = serviceTier
+			}
 			addWeightToAttrs(entry.Weight, attrs)
 			addMaxConcurrencyToAttrs(entry.MaxConcurrency, attrs)
 			addProviderMaxConcurrencyToAttrs(compat.MaxConcurrency, providerConcurrencyKey, attrs)
@@ -511,6 +523,9 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 			addRequestScopedErrorsToMetadata(compat.RequestScopedErrors, metadata)
 			if compat.Priority != 0 {
 				attrs["priority"] = strconv.Itoa(compat.Priority)
+			}
+			if serviceTier := config.NormalizeConfiguredServiceTier(compat.ServiceTier); serviceTier != "" {
+				attrs["service_tier"] = serviceTier
 			}
 			addProviderMaxConcurrencyToAttrs(compat.MaxConcurrency, providerConcurrencyKey, attrs)
 			if hash := diff.ComputeOpenAICompatModelsHash(compat.Models); hash != "" {
@@ -595,6 +610,9 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 		if customName := strings.TrimSpace(compat.Name); customName != "" {
 			attrs["provider_name"] = customName
 			entryLabel = customName
+		}
+		if serviceTier := config.NormalizeConfiguredServiceTier(compat.ServiceTier); serviceTier != "" {
+			attrs["service_tier"] = serviceTier
 		}
 		a := &coreauth.Auth{
 			ID:         id,

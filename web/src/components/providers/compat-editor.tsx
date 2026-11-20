@@ -64,6 +64,7 @@ export interface CompatProvider {
   "disable-cooling"?: boolean;
   "request-retry"?: number;
   "max-concurrency"?: number;
+  "service-tier"?: string;
   "request-scoped-errors"?: unknown[];
   "api-key-entries"?: CompatKeyEntry[];
   models?: ModelEntry[];
@@ -330,6 +331,16 @@ export function CompatEditorSheet({
                   />
                 }
               />
+              <SwitchRow
+                label={t("providers.serviceTier")}
+                hint={t("providers.serviceTierHint")}
+                control={
+                  <ServiceTierSelect
+                    value={draft["service-tier"]}
+                    onChange={(value) => patch({ "service-tier": value })}
+                  />
+                }
+              />
             </div>
           </EditorSection>
 
@@ -572,6 +583,41 @@ function Field({ label, hint, required, children }: { label: string; hint?: stri
       {children}
       {hint ? <p className="text-muted-foreground text-[11px] leading-snug">{hint}</p> : null}
     </div>
+  );
+}
+
+export function ServiceTierSelect({
+  value,
+  onChange,
+}: {
+  value?: string;
+  onChange: (next: string | undefined) => void;
+}) {
+  const { t } = useTranslation();
+  const normalized = (() => {
+    const raw = (value ?? "").trim().toLowerCase();
+    if (!raw || raw === "auto") return "auto";
+    if (raw === "fast") return "priority";
+    return raw;
+  })();
+
+  return (
+    <Select
+      value={normalized}
+      onValueChange={(next) => onChange(next === "auto" ? undefined : next)}
+    >
+      <SelectTrigger className="h-8 w-52 text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="auto">{t("providers.serviceTierAuto")}</SelectItem>
+        <SelectItem value="priority">{t("providers.serviceTierFast")}</SelectItem>
+        <SelectItem value="default">{t("providers.serviceTierDefault")}</SelectItem>
+        <SelectItem value="flex">{t("providers.serviceTierFlex")}</SelectItem>
+        <SelectItem value="scale">{t("providers.serviceTierScale")}</SelectItem>
+        <SelectItem value="ultrafast">{t("providers.serviceTierUltrafast")}</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
 

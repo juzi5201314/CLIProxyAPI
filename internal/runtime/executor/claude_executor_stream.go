@@ -244,9 +244,9 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 	// Keep built-in cleanup before the final user payload rules.
 	stripPromptCacheOptionsDoc(doc)
 	// User rules match the fully prepared business body and are applied only once.
-	touchedPayloadPaths := helps.ApplyPayloadConfigWithTrackedPathsDoc(
+	touchedPayloadPaths := helps.ApplyPayloadConfigWithTrackedPathsAndAuthDoc(
 		e.cfg, baseModel, to.String(), from.String(), "", doc, stripTranslatedDefaultMaxTokens(from, originalPayload, originalTranslated),
-		helps.PayloadRequestedModel(opts, req.Model), helps.PayloadRequestPath(opts), opts.Headers,
+		helps.PayloadRequestedModel(opts, req.Model), helps.PayloadRequestPath(opts), opts.Headers, auth,
 		"diagnostics", "betas",
 	)
 	if touchedPayloadPaths["diagnostics"] {

@@ -142,6 +142,45 @@ function ProviderDisplay({ record }: { record: RequestRecord }) {
   );
 }
 
+function resolveActualServiceTier(record: {
+  response_service_tier?: string;
+  effective_service_tier?: string;
+  service_tier?: string;
+}): string {
+  return (
+    record.response_service_tier?.trim() ||
+    record.effective_service_tier?.trim() ||
+    record.service_tier?.trim() ||
+    ""
+  );
+}
+
+function ServiceTierDisplay({ record }: { record: RequestRecord }) {
+  const { t } = useTranslation();
+  const responseTier = record.response_service_tier?.trim();
+  const sentTier = record.effective_service_tier?.trim();
+  const requestedTier = record.service_tier?.trim();
+  const displayed = resolveActualServiceTier(record);
+
+  if (!displayed) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  const tooltipLines = [
+    responseTier ? `${t("requestLogs.detail.responseTier", "上游响应层级")}: ${responseTier}` : null,
+    sentTier ? `${t("requestLogs.detail.sentTier", "发送上游层级")}: ${sentTier}` : null,
+    requestedTier ? `${t("requestLogs.detail.requestedTier", "下游请求层级")}: ${requestedTier}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return (
+    <span className="font-mono text-xs text-foreground truncate block max-w-full" title={tooltipLines || displayed}>
+      {displayed}
+    </span>
+  );
+}
+
 function ThinkingLevelDisplay({ record }: { record: RequestRecord }) {
   const { t } = useTranslation();
   const requested = record.requested_reasoning_effort?.trim();
@@ -250,7 +289,7 @@ export function RequestLogsPage() {
         record.alias ? `${record.alias} -> ${record.model}` : (record.model ?? ""),
         record.response_model ?? "",
         provider,
-        record.effective_service_tier || record.service_tier || "",
+        resolveActualServiceTier(record),
         thinkingLevel,
         record.api_key ?? "",
         resolveTotalInputTokens(record),
@@ -433,12 +472,8 @@ export function RequestLogsPage() {
                       <TableCell className="text-xs overflow-hidden">
                         <ProviderDisplay record={record} />
                       </TableCell>
-                      <TableCell className="truncate font-mono text-xs" title={record.effective_service_tier || record.service_tier || record.response_service_tier || ""}>
-                        {record.effective_service_tier || record.service_tier || record.response_service_tier ? (
-                          <span className="text-foreground">{record.effective_service_tier || record.service_tier || record.response_service_tier}</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                      <TableCell className="overflow-hidden">
+                        <ServiceTierDisplay record={record} />
                       </TableCell>
                       <TableCell className="overflow-hidden">
                         <ThinkingLevelDisplay record={record} />
@@ -712,7 +747,17 @@ function ModelFilterCombobox({ placeholder, value, range, onChange }: { placehol
                     [t("requestLogs.detail.session"), data.session_id || "—"],
                     [t("requestLogs.detail.clientIp"), data.client_ip || "—"],
                     [t("requestLogs.detail.userAgent"), data.user_agent || "—"],
-                    [t("requestLogs.detail.tier"), data.effective_service_tier || data.service_tier || "—"],
+                    [t("requestLogs.detail.tier"), (() => {
+                      const resp = data.response_service_tier?.trim();
+                      const sent = data.effective_service_tier?.trim();
+                      const req = data.service_tier?.trim();
+                      const primary = resp || sent || req;
+                      if (!primary) return "—";
+                      if (resp && sent && sent !== resp) {
+                        return `${resp} (${t("requestLogs.detail.sentTier", "发送上游层级")}: ${sent})`;
+                      }
+                      return primary;
+                    })()],
                     [t("requestLogs.detail.reasoning"), (() => {
                       const req = data.requested_reasoning_effort?.trim();
                       const act = data.reasoning_effort?.trim();

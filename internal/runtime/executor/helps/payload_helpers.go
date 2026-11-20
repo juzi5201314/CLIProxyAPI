@@ -50,6 +50,11 @@ func ApplyPayloadConfigWithRequestDoc(cfg *config.Config, model, protocol, fromP
 	_ = ApplyPayloadConfigWithRequestTrackedDoc(cfg, model, protocol, fromProtocol, root, doc, original, requestedModel, requestPath, headers, "")
 }
 
+// ApplyPayloadConfigWithRequestAndAuthDoc applies credential-level overrides and payload config in place on doc.
+func ApplyPayloadConfigWithRequestAndAuthDoc(cfg *config.Config, model, protocol, fromProtocol, root string, doc *ojson.Doc, original []byte, requestedModel string, requestPath string, headers http.Header, auth *cliproxyauth.Auth) {
+	_, _ = applyPayloadConfigWithTrackedPathsForExecutorAndAuthDoc(cfg, "", model, protocol, fromProtocol, root, doc, original, requestedModel, requestPath, headers, auth)
+}
+
 // ApplyPayloadConfigWithRequestForExecutor applies payload config with explicit target executor context.
 func ApplyPayloadConfigWithRequestForExecutor(cfg *config.Config, targetExecutor, model, protocol, fromProtocol, root string, payload, original []byte, requestedModel string, requestPath string, headers http.Header) []byte {
 	out, _ := ApplyPayloadConfigWithTrackedPathsForExecutor(cfg, targetExecutor, model, protocol, fromProtocol, root, payload, original, requestedModel, requestPath, headers)
@@ -78,6 +83,12 @@ func ApplyPayloadConfigWithTrackedPathsDoc(cfg *config.Config, model, protocol, 
 	return ApplyPayloadConfigWithTrackedPathsForExecutorDoc(cfg, "", model, protocol, fromProtocol, root, doc, original, requestedModel, requestPath, headers, trackedPaths...)
 }
 
+// ApplyPayloadConfigWithTrackedPathsAndAuthDoc applies credential-level overrides and payload config in place on doc.
+func ApplyPayloadConfigWithTrackedPathsAndAuthDoc(cfg *config.Config, model, protocol, fromProtocol, root string, doc *ojson.Doc, original []byte, requestedModel string, requestPath string, headers http.Header, auth *cliproxyauth.Auth, trackedPaths ...string) map[string]bool {
+	touched, _ := applyPayloadConfigWithTrackedPathsForExecutorAndAuthDoc(cfg, "", model, protocol, fromProtocol, root, doc, original, requestedModel, requestPath, headers, auth, trackedPaths...)
+	return touched
+}
+
 // ApplyPayloadConfigWithTrackedPathsForExecutor applies payload config with target executor awareness.
 // When headers indicate a Codex client and the target executor is not Codex or Codex WebSocket,
 // it normalizes tool parameter integer types to satisfy client-side integer deserialization (#6237).
@@ -104,6 +115,52 @@ func applyPayloadConfigWithTrackedPathsForExecutorDoc(cfg *config.Config, target
 	return applyPayloadConfigWithTrackedPathsForExecutorAndAuthDoc(cfg, targetExecutor, model, protocol, fromProtocol, root, doc, original, requestedModel, requestPath, headers, nil, trackedPaths...)
 }
 
+// ApplyAuthServiceTierDoc applies a credential-level service_tier override (from
+// auth.Attributes["service_tier"]) to doc before user payload rules run.
+// Omitted or "auto" leaves the downstream request's service_tier untouched.
+func ApplyAuthServiceTierDoc(doc *ojson.Doc, targetExecutor, protocol, root string, auth *cliproxyauth.Auth) (changed bool, applied bool) {
+	if doc == nil || auth == nil || len(auth.Attributes) == 0 {
+		return false, false
+	}
+	tier := strings.ToLower(strings.TrimSpace(auth.Attributes["service_tier"]))
+	if tier == "" || tier == "auto" {
+		return false, false
+	}
+	proto := strings.ToLower(strings.TrimSpace(protocol))
+	// Native Gemini/Vertex generateContent and Devin protobuf payloads do not accept top-level service_tier.
+	if proto == "gemini" || proto == "vertex" || proto == "antigravity" || proto == "devin" {
+		return false, false
+	}
+	// Do not inject service_tier into non-generation payload shapes (e.g. video status polling).
+	if !doc.Get(buildPayloadPath(root, "model")).Exists() {
+		return false, false
+	}
+	path := buildPayloadPath(root, "service_tier")
+	if path == "" {
+		return false, false
+	}
+	if isCodexTargetExecutor(targetExecutor) || proto == "codex" {
+		switch tier {
+		case "fast", "priority":
+			return setPayloadValueIfDifferentDocTracked(doc, path, "priority")
+		case "ultrafast":
+			return setPayloadValueIfDifferentDocTracked(doc, path, "ultrafast")
+		case "default", "standard":
+			if doc.Get(path).Exists() {
+				_ = doc.Delete(path)
+				return true, true
+			}
+			return false, true
+		default:
+			return setPayloadValueIfDifferentDocTracked(doc, path, tier)
+		}
+	}
+	if tier == "fast" {
+		tier = "priority"
+	}
+	return setPayloadValueIfDifferentDocTracked(doc, path, tier)
+}
+
 func applyPayloadConfigWithTrackedPathsForExecutorAndAuthDoc(cfg *config.Config, targetExecutor, model, protocol, fromProtocol, root string, doc *ojson.Doc, original []byte, requestedModel, requestPath string, headers http.Header, auth *cliproxyauth.Auth, trackedPaths ...string) (map[string]bool, bool) {
 	payloadConfigEvaluations.Add(1)
 	touched := make(map[string]bool)
@@ -115,6 +172,10 @@ func applyPayloadConfigWithTrackedPathsForExecutorAndAuthDoc(cfg *config.Config,
 		if NormalizeCodexToolIntegerTypesDoc(doc, headers) {
 			mutated = true
 		}
+	}
+	tierChanged, authSetServiceTier := ApplyAuthServiceTierDoc(doc, targetExecutor, protocol, root, auth)
+	if tierChanged {
+		mutated = true
 	}
 	if cfg == nil {
 		return touched, mutated
@@ -205,7 +266,11 @@ func applyPayloadConfigWithTrackedPathsForExecutorAndAuthDoc(cfg *config.Config,
 			appliedDefaults := make(map[string]struct{})
 			var createdByDefault map[string]struct{}
 			var initialArrayLengths map[string]int
+			serviceTierPath := buildPayloadPath(root, "service_tier")
 			sourcePathExists := func(resolvedPath string) bool {
+				if authSetServiceTier && serviceTierPath != "" && resolvedPath == serviceTierPath {
+					return true
+				}
 				if len(original) > 0 {
 					return ojson.GetBytesNoCopy(original, resolvedPath).Exists()
 				}

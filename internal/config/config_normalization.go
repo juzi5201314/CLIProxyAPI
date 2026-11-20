@@ -284,6 +284,16 @@ func (cfg *Config) SanitizeOAuthRequestScopedErrors() {
 	cfg.OAuthRequestScopedErrors = out
 }
 
+// NormalizeConfiguredServiceTier trims and lower-cases an optional provider-level
+// service-tier override. Empty or "auto" normalizes to "" (follow downstream).
+func NormalizeConfiguredServiceTier(raw string) string {
+	tier := strings.ToLower(strings.TrimSpace(raw))
+	if tier == "" || tier == "auto" {
+		return ""
+	}
+	return tier
+}
+
 // SanitizeOpenAICompatibility removes OpenAI-compatibility provider entries that are
 // not actionable, specifically those missing a BaseURL. It trims whitespace before
 // evaluation and preserves the relative order of remaining entries.
@@ -297,6 +307,7 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
 		e.Name = strings.TrimSpace(e.Name)
 		e.Prefix = normalizeModelPrefix(e.Prefix)
 		e.BaseURL = strings.TrimSpace(e.BaseURL)
+		e.ServiceTier = NormalizeConfiguredServiceTier(e.ServiceTier)
 		e.Headers = NormalizeHeaders(e.Headers)
 		if e.BaseURL == "" {
 			// Skip providers with no base-url; treated as removed
@@ -357,6 +368,7 @@ func sanitizeMetaKeyEntries(entries []MetaKey) []MetaKey {
 		}
 		e.Headers = NormalizeHeaders(e.Headers)
 		e.ExcludedModels = NormalizeExcludedModels(e.ExcludedModels)
+		e.ServiceTier = NormalizeConfiguredServiceTier(e.ServiceTier)
 		e.AlphaSearch = false
 		e.WebsocketRelay = false
 		out = append(out, e)
@@ -374,6 +386,7 @@ func sanitizeCodexKeyEntries(entries []CodexKey) []CodexKey {
 		e.Name = strings.TrimSpace(e.Name)
 		e.Prefix = normalizeModelPrefix(e.Prefix)
 		e.BaseURL = strings.TrimSpace(e.BaseURL)
+		e.ServiceTier = NormalizeConfiguredServiceTier(e.ServiceTier)
 		e.Headers = NormalizeHeaders(e.Headers)
 		e.ExcludedModels = NormalizeExcludedModels(e.ExcludedModels)
 		if e.BaseURL == "" {
@@ -495,6 +508,7 @@ func (cfg *Config) SanitizeClaudeKeys() {
 		entry := &cfg.ClaudeKey[i]
 		entry.Name = strings.TrimSpace(entry.Name)
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
+		entry.ServiceTier = NormalizeConfiguredServiceTier(entry.ServiceTier)
 		entry.Headers = NormalizeHeaders(entry.Headers)
 		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
 		entry.Cloak = NormalizeCloakConfig(entry.Cloak)
@@ -522,6 +536,7 @@ func sanitizeGeminiKeyEntries(entries []GeminiKey) []GeminiKey {
 		}
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
 		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
+		entry.ServiceTier = NormalizeConfiguredServiceTier(entry.ServiceTier)
 		entry.Headers = NormalizeHeaders(entry.Headers)
 		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
 		uniqueKey := formatGeminiKeyDedupID(entry)

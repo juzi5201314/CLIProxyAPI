@@ -493,7 +493,7 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
 		baseURL = xaiauth.DefaultAPIBaseURL
 	}
 
-	prepared, err := e.prepareResponsesWebsocketRequestDoc(ctx, req, opts)
+	prepared, err := e.prepareResponsesWebsocketRequestDoc(ctx, req, opts, auth)
 	if err != nil {
 		return nil, err
 	}
@@ -1162,8 +1162,8 @@ func xaiBareWebsocketErrorStatus(payload []byte) int {
 	return http.StatusInternalServerError
 }
 
-func (e *XAIWebsocketsExecutor) prepareResponsesWebsocketRequest(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*xaiPreparedRequest, error) {
-	prepared, err := e.prepareResponsesWebsocketRequestDoc(ctx, req, opts)
+func (e *XAIWebsocketsExecutor) prepareResponsesWebsocketRequest(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, auths ...*cliproxyauth.Auth) (*xaiPreparedRequest, error) {
+	prepared, err := e.prepareResponsesWebsocketRequestDoc(ctx, req, opts, auths...)
 	if err != nil {
 		return nil, err
 	}
@@ -1173,8 +1173,8 @@ func (e *XAIWebsocketsExecutor) prepareResponsesWebsocketRequest(ctx context.Con
 	return prepared, nil
 }
 
-func (e *XAIWebsocketsExecutor) prepareResponsesWebsocketRequestDoc(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*xaiPreparedRequest, error) {
-	prepared, err := e.prepareResponsesRequestDoc(ctx, req, opts, true)
+func (e *XAIWebsocketsExecutor) prepareResponsesWebsocketRequestDoc(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, auths ...*cliproxyauth.Auth) (*xaiPreparedRequest, error) {
+	prepared, err := e.prepareResponsesRequestDoc(ctx, req, opts, true, auths...)
 	if err != nil {
 		return nil, err
 	}
