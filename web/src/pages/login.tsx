@@ -51,13 +51,10 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
-      {/* Ambient background */}
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      {/* Subtle architectural grid background */}
       <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-background" />
-        <div className="bg-primary/15 absolute -top-40 left-1/2 size-[36rem] -translate-x-1/2 rounded-full blur-3xl" />
-        <div className="bg-primary/8 absolute right-[10%] bottom-[-10rem] size-[28rem] rounded-full blur-3xl" />
-        <div className="absolute inset-0 opacity-[0.35] [background-image:linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [background-size:56px_56px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_40%,black,transparent)]" />
+        <div className="absolute inset-0 opacity-[0.28] [background-image:linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [background-size:48px_48px] [mask-image:radial-gradient(ellipse_55%_45%_at_50%_45%,black,transparent)]" />
       </div>
 
       <div className="absolute top-4 right-4 flex items-center gap-1">
@@ -65,21 +62,21 @@ export function LoginPage() {
         <ThemeToggle />
       </div>
 
-      <Card className="w-full max-w-sm rounded-3xl border border-slate-200/80 bg-white/95 py-6 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
+      <Card className="card-surface w-full max-w-sm py-6 shadow-sm">
         <CardHeader className="items-center text-center pb-2">
           <div className="mb-2 flex justify-center">
             <img
               src={faviconImage}
               alt=""
-              width={72}
-              height={72}
-              className="size-[72px] object-contain"
+              width={56}
+              height={56}
+              className="size-14 object-contain"
             />
           </div>
-          <CardTitle className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          <CardTitle className="text-lg font-semibold tracking-tight text-foreground">
             {t("login.title")}
           </CardTitle>
-          <CardDescription className="mx-auto max-w-xs text-xs text-slate-500 mt-1">
+          <CardDescription className="mx-auto max-w-xs text-xs text-muted-foreground mt-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <span

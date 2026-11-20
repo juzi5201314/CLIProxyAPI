@@ -55,6 +55,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Switch } from "@/components/ui/switch";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatCard } from "@/components/shared/stat-card";
 import { CompatEditorSheet, type CompatProvider } from "@/components/providers/compat-editor";
 import { KeyEntryEditorSheet } from "@/components/providers/key-entry-editor";
 import { AccessKeysDialog, ExcludedModelsDialog, ModelAliasDialog } from "@/components/providers/secondary-editors";
@@ -334,39 +335,25 @@ export function ProvidersPage() {
       <PageHeader title={t("nav.providersItem")} subtitle={t("providers.subtitle")} />
 
       {/* Top Overview Metrics Banner */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-6">
-        <div className="card-surface p-4.5 flex items-center justify-between transition-all duration-200 hover:border-primary/30 hover:shadow-md">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{t("providers.stats.totalProviders")}</p>
-            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalCount}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.stats.enabledBreakdown", { enabled: enabledCount, disabled: disabledCount })}</p>
-          </div>
-          <div className="size-11 rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15 flex items-center justify-center">
-            <Boxes className="size-5" />
-          </div>
-        </div>
-
-        <div className="card-surface p-4.5 flex items-center justify-between transition-all duration-200 hover:border-emerald-500/30 hover:shadow-md">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{t("providers.stats.activeKeys")}</p>
-            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalKeysCount}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.stats.loadBalancing")}</p>
-          </div>
-          <div className="size-11 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/15 flex items-center justify-center">
-            <KeyRound className="size-5" />
-          </div>
-        </div>
-
-        <div className="card-surface p-4.5 flex items-center justify-between transition-all duration-200 hover:border-purple-500/30 hover:shadow-md">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{t("providers.stats.modelsCount")}</p>
-            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalModelsCount}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.stats.modelsSubtitle")}</p>
-          </div>
-          <div className="size-11 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-1 ring-purple-500/15 flex items-center justify-center">
-            <Cpu className="size-5" />
-          </div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <StatCard
+          label={t("providers.stats.totalProviders")}
+          value={totalCount}
+          sub={t("providers.stats.enabledBreakdown", { enabled: enabledCount, disabled: disabledCount })}
+          icon={Boxes}
+        />
+        <StatCard
+          label={t("providers.stats.activeKeys")}
+          value={totalKeysCount}
+          sub={t("providers.stats.loadBalancing")}
+          icon={KeyRound}
+        />
+        <StatCard
+          label={t("providers.stats.modelsCount")}
+          value={totalModelsCount}
+          sub={t("providers.stats.modelsSubtitle")}
+          icon={Cpu}
+        />
       </div>
 
       {/* Category Kind Pills Bar */}
@@ -396,7 +383,7 @@ export function ProvidersPage() {
         <div className="relative">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
           <Input
-            className="h-8.5 w-60 sm:w-72 rounded-xl pl-8.5 pr-7 text-xs bg-card border-border shadow-2xs"
+            className="h-9 w-60 sm:w-72 rounded-lg pl-8.5 pr-7 text-xs bg-card border-border"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t("providers.searchPlaceholder")}
@@ -413,12 +400,12 @@ export function ProvidersPage() {
         </div>
 
         {/* Status Filter Segmented Buttons */}
-        <div className="flex items-center rounded-xl border border-slate-200/80 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900 shadow-2xs">
+        <div className="flex h-9 items-center rounded-lg border border-border bg-card p-0.5">
           <button
             type="button"
             onClick={() => setStatusFilter("all")}
-            className={`px-2.5 py-1 text-xs font-medium rounded-lg transition ${
-              statusFilter === "all" ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100 font-semibold" : "text-slate-500 hover:text-slate-900"
+            className={`px-2.5 h-full text-xs font-medium rounded-md transition-colors ${
+              statusFilter === "all" ? "bg-secondary text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {t("providers.filter.allStatus")}
@@ -426,8 +413,8 @@ export function ProvidersPage() {
           <button
             type="button"
             onClick={() => setStatusFilter("enabled")}
-            className={`px-2.5 py-1 text-xs font-medium rounded-lg transition ${
-              statusFilter === "enabled" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-semibold" : "text-slate-500 hover:text-slate-900"
+            className={`px-2.5 h-full text-xs font-medium rounded-md transition-colors ${
+              statusFilter === "enabled" ? "bg-secondary text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {t("providers.filter.onlyEnabled")}
@@ -435,8 +422,8 @@ export function ProvidersPage() {
           <button
             type="button"
             onClick={() => setStatusFilter("disabled")}
-            className={`px-2.5 py-1 text-xs font-medium rounded-lg transition ${
-              statusFilter === "disabled" ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-semibold" : "text-slate-500 hover:text-slate-900"
+            className={`px-2.5 h-full text-xs font-medium rounded-md transition-colors ${
+              statusFilter === "disabled" ? "bg-secondary text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {t("providers.filter.onlyDisabled")}
@@ -445,10 +432,10 @@ export function ProvidersPage() {
 
         {/* Sort Mode Dropdown */}
         <Select value={sortMode} onValueChange={(value) => setSortMode(value as SortMode)}>
-          <SelectTrigger className="h-8.5 w-36 rounded-xl text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xs">
+          <SelectTrigger className="h-9 w-36 rounded-lg text-xs bg-card border-border">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent className="rounded-xl">
+          <SelectContent className="rounded-lg">
             <SelectItem value="enabled">{t("providers.sort.enabledFirst") || "优先已启用"}</SelectItem>
             <SelectItem value="priority">{t("providers.sort.priority") || "按优先级"}</SelectItem>
             <SelectItem value="name">{t("providers.sort.name") || "按名称"}</SelectItem>
@@ -456,12 +443,12 @@ export function ProvidersPage() {
         </Select>
 
         {/* View Mode Toggle (Cards vs Table) */}
-        <div className="flex items-center rounded-xl border border-slate-200/80 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900 shadow-2xs">
+        <div className="flex h-9 items-center rounded-lg border border-border bg-card p-0.5">
           <button
             type="button"
             onClick={() => handleViewModeChange("cards")}
-            className={`flex size-7.5 items-center justify-center rounded-lg transition ${
-              viewMode === "cards" ? "bg-blue-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+            className={`flex size-7.5 items-center justify-center rounded-md transition-colors ${
+              viewMode === "cards" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
             title="卡片视图"
           >
@@ -470,8 +457,8 @@ export function ProvidersPage() {
           <button
             type="button"
             onClick={() => handleViewModeChange("table")}
-            className={`flex size-7.5 items-center justify-center rounded-lg transition ${
-              viewMode === "table" ? "bg-blue-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+            className={`flex size-7.5 items-center justify-center rounded-md transition-colors ${
+              viewMode === "table" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
             title="表格视图"
           >
@@ -484,12 +471,12 @@ export function ProvidersPage() {
           {/* Secondary settings dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8.5 rounded-xl text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xs">
+              <Button variant="outline" size="sm" className="h-9 rounded-lg text-xs bg-card border-border">
                 <Ellipsis className="size-3.5" />
                 <span>{t("providers.more")}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 rounded-xl">
+            <DropdownMenuContent align="end" className="w-48 rounded-lg">
               <DropdownMenuItem onClick={() => setSecondary("alias")}>
                 <span>{t("providers.modelAlias")}</span>
               </DropdownMenuItem>
@@ -504,11 +491,11 @@ export function ProvidersPage() {
           </DropdownMenu>
 
           {/* Add Provider Split Button: 1-Click Direct Add + Spacious 2-Column Visual Kind Grid */}
-          <div className="inline-flex items-center rounded-xl shadow-xs">
+          <div className="inline-flex items-center rounded-lg shadow-2xs">
             <Button
               size="sm"
               onClick={() => addProvider(effectiveAddKind)}
-              className="h-9 gap-1.5 rounded-l-xl rounded-r-none bg-blue-600 px-3.5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer"
+              className="h-9 gap-1.5 rounded-l-lg rounded-r-none bg-primary px-3.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 cursor-pointer"
             >
               <Plus className="size-3.5" />
               <span>{t("providers.addKind", { kind: t(`providers.kind.${effectiveAddKind.labelKey}`) })}</span>
@@ -520,12 +507,12 @@ export function ProvidersPage() {
                   size="sm"
                   aria-label={t("providers.selectKind")}
                   title={t("providers.selectKind")}
-                  className="h-9 rounded-l-none rounded-r-xl border-l border-white/25 bg-blue-600 px-2.5 text-white hover:bg-blue-700 cursor-pointer"
+                  className="h-9 rounded-l-none rounded-r-lg border-l border-primary-foreground/20 bg-primary px-2.5 text-primary-foreground hover:bg-primary/90 cursor-pointer"
                 >
                   <ChevronDown className="size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[340px] sm:w-[400px] rounded-2xl p-3 shadow-xl">
+              <DropdownMenuContent align="end" className="w-[340px] sm:w-[400px] rounded-xl p-3 shadow-xl">
                 <div className="px-1 pb-2">
                   <p className="text-xs font-bold text-foreground">{t("providers.addProvider")}</p>
                   <p className="text-[11px] text-muted-foreground mt-0.5">{t("providers.switchKindHint")}</p>
@@ -743,15 +730,15 @@ function KindPill({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs transition-all duration-150 shadow-2xs ${
+      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs transition-colors duration-150 cursor-pointer ${
         active
-          ? "bg-blue-600 font-medium text-white shadow-xs"
-          : "bg-white/80 text-slate-600 hover:bg-white hover:text-slate-900 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800"
+          ? "border-foreground/15 bg-foreground text-background font-medium"
+          : "border-border bg-card text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
       }`}
     >
       <Icon className="size-3.5" />
       <span>{label}</span>
-      <span className={`rounded-full px-1.5 text-[10px] tabular-nums font-semibold ${active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-800"}`}>
+      <span className={`rounded px-1.5 text-[10px] tabular-nums font-mono font-medium ${active ? "bg-background/15 text-background" : "bg-muted text-muted-foreground"}`}>
         {count}
       </span>
     </button>
@@ -813,7 +800,7 @@ function ProviderCardElement({
 
   return (
     <div
-      className={`card-surface flex flex-col justify-between p-5 transition-all duration-200 hover:border-primary/30 hover:shadow-md ${
+      className={`card-surface flex flex-col justify-between p-5 transition-colors duration-150 hover:border-foreground/20 ${
         row.disabled ? "opacity-60 bg-muted/30" : ""
       }`}
     >
@@ -821,15 +808,15 @@ function ProviderCardElement({
         {/* Card Header: Type Pill & Enable Switch */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className={`flex size-8 items-center justify-center rounded-xl border ${color.bg} ${color.text} ${color.border}`}>
-              <Icon className="size-4" />
+            <span className={`flex size-7.5 items-center justify-center rounded-lg border ${color.bg} ${color.text} ${color.border}`}>
+              <Icon className="size-3.5" />
             </span>
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
+              <span className="font-semibold text-xs text-foreground">
                 {t(`providers.kind.${row.kind.labelKey}`)}
               </span>
               {row.priority !== undefined && (
-                <Badge variant="outline" className="text-[10px] font-mono text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-900/50">
+                <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground border-border">
                   P{row.priority}
                 </Badge>
               )}
@@ -839,9 +826,9 @@ function ProviderCardElement({
           {/* Quick Enable/Disable switch right on the card */}
           <div className="flex items-center gap-2">
             <span
-              className={`size-2 rounded-full ${
+              className={`size-1.5 rounded-full ${
                 row.disabled
-                  ? "bg-slate-300 dark:bg-slate-600"
+                  ? "bg-muted-foreground/40"
                   : "bg-emerald-500"
               }`}
             />
@@ -858,32 +845,32 @@ function ProviderCardElement({
           <div className="flex items-center justify-between gap-2">
             <h4
               onClick={handleEdit}
-              className="truncate font-bold text-sm text-foreground cursor-pointer hover:text-primary transition-colors"
+              className="truncate font-semibold text-sm text-foreground cursor-pointer hover:text-primary transition-colors"
               title={row.name}
             >
               {row.name || t("common.unknown")}
             </h4>
 
             {row.disabled ? (
-              <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-200">
+              <Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
                 {t("providers.disabledTag")}
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] text-emerald-600/80 border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-950/20">
+              <Badge variant="outline" className="text-[10px] text-emerald-600 dark:text-emerald-400 border-emerald-500/25 bg-emerald-500/5">
                 {t("providers.ready")}
               </Badge>
             )}
           </div>
 
           {/* Base URL with dedicated 1-click Copy button */}
-          <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800/60 px-3 py-1.5 text-xs font-mono text-slate-500 dark:text-slate-400">
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 border border-border/70 px-3 py-1.5 text-xs font-mono text-muted-foreground">
             <span className="truncate flex-1" title={row.baseURL}>
               {row.baseURL || row.kind.defaultBase || t("providers.baseURLOptionalHint")}
             </span>
             <button
               type="button"
               onClick={copyBaseURL}
-              className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition shrink-0"
+              className="text-muted-foreground/70 hover:text-foreground transition shrink-0 cursor-pointer"
               title={t("common.copy")}
             >
               {copiedBase ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
@@ -892,28 +879,28 @@ function ProviderCardElement({
         </div>
 
         {/* Interactive Feature Pills */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
           {/* Models Pill (Click to open Model Inspector dialog!) */}
           <button
             type="button"
             onClick={onOpenModels}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-purple-50/80 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 px-2.5 py-1 text-[11px] font-medium text-purple-700 dark:text-purple-300 transition border border-purple-200/50 dark:border-purple-800/40"
+            className="inline-flex items-center gap-1.5 rounded-md bg-secondary/70 hover:bg-secondary px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors border border-border/70 cursor-pointer"
             title={t("providers.modelsList")}
           >
-            <Cpu className="size-3 text-purple-500" />
+            <Cpu className="size-3 text-muted-foreground" />
             <span>{row.modelCount > 0 ? t("providers.modelsPreview", { count: row.modelCount }) : t("providers.allModels")}</span>
-            <ChevronRight className="size-3 text-purple-400" />
+            <ChevronRight className="size-3 text-muted-foreground/70" />
           </button>
 
           {/* Keys Count Pill */}
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/40 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40">
-            <KeyRound className="size-3 text-emerald-500" />
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground border border-border/70">
+            <KeyRound className="size-3 text-muted-foreground" />
             <span>{t("providers.keysCount_other", { count: row.keyCount })}</span>
           </span>
 
           {/* Prefix Pill */}
           {row.prefix && (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 px-2 py-1 font-mono text-[10px] text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40">
+            <span className="inline-flex items-center gap-1 rounded-md bg-secondary/70 px-2 py-1 font-mono text-[10px] text-muted-foreground border border-border/70">
               {t("providers.fieldPrefix")}: {row.prefix}
             </span>
           )}
@@ -921,7 +908,7 @@ function ProviderCardElement({
           {/* Proxy Pill */}
           {Boolean(row.entry["proxy-url"]) && (
             <span
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 px-2 py-1 font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate max-w-44"
+              className="inline-flex items-center gap-1 rounded-md bg-secondary/70 px-2 py-1 font-mono text-[10px] text-muted-foreground border border-border/70 truncate max-w-44"
               title={String(row.entry["proxy-url"])}
             >
               {t("providers.proxy")}: {String(row.entry["proxy-url"])}
@@ -931,13 +918,13 @@ function ProviderCardElement({
       </div>
 
       {/* Card Footer Actions: Rich & Effortless */}
-      <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/70 pt-3 mt-4">
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between border-t border-border/60 pt-3 mt-4">
+        <div className="flex items-center gap-1">
           {/* One-click Playground Test */}
           <Button
             variant="ghost"
             size="sm"
-            className="h-7.5 gap-1.5 px-2.5 text-xs text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-lg"
+            className="h-7.5 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground rounded-md"
             onClick={jumpToPlayground}
             title={t("providers.debug")}
           >
@@ -949,7 +936,7 @@ function ProviderCardElement({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7.5 gap-1.5 px-2.5 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 rounded-lg"
+            className="h-7.5 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground rounded-md"
             onClick={onOpenCurl}
             title={t("providers.connect")}
           >
@@ -959,13 +946,13 @@ function ProviderCardElement({
         </div>
 
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7.5 text-xs rounded-lg px-2.5" onClick={handleEdit}>
+          <Button variant="ghost" size="sm" className="h-7.5 text-xs rounded-md px-2.5" onClick={handleEdit}>
             {t("common.edit")}
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="size-7.5 rounded-lg text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+            className="size-7.5 rounded-md text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10"
             onClick={() => onDelete(row)}
             title={t("common.delete")}
           >

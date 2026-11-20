@@ -97,21 +97,25 @@ export function AppShell() {
       {/* Main App Frame */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Modern Top Header */}
-        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border/80 bg-card/85 px-4 md:px-6 backdrop-blur-md transition-colors duration-300 ease-in-out select-none">
-          {/* Page Title */}
-          <div className="flex items-center gap-2.5 min-w-0">
+        <header className="sticky top-0 z-30 flex h-13 shrink-0 items-center justify-between border-b border-border/80 bg-card/85 px-4 sm:px-6 lg:px-8 backdrop-blur-md transition-colors duration-300 ease-in-out select-none">
+          {/* Breadcrumb Title */}
+          <div className="flex items-center gap-2 min-w-0">
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 rounded-xl md:hidden text-muted-foreground hover:text-foreground"
+              className="size-8 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
               onClick={() => setMobileNavOpen(true)}
               aria-label="Toggle navigation menu"
             >
               <Menu className="size-4.5" />
             </Button>
-            <h2 className="text-sm md:text-base font-bold text-foreground truncate tracking-tight">
-              {t(titleKey) || "CLIProxyAPI"}
-            </h2>
+            <div className="flex items-center gap-2 text-xs min-w-0">
+              <span className="hidden sm:inline text-muted-foreground">CLIProxyAPI</span>
+              <span className="hidden sm:inline text-muted-foreground/40">/</span>
+              <span className="font-medium text-foreground truncate">
+                {t(titleKey) || "CLIProxyAPI"}
+              </span>
+            </div>
           </div>
 
           {/* Right Controls */}
@@ -120,7 +124,7 @@ export function AppShell() {
             <button
               type="button"
               onClick={() => setCommandPaletteOpen(true)}
-              className="hidden sm:inline-flex h-8 items-center gap-2.5 rounded-xl border border-border/80 bg-muted/40 px-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/80 hover:text-foreground cursor-pointer"
+              className="hidden sm:inline-flex h-8 items-center gap-2.5 rounded-lg border border-border bg-background/60 px-2.5 text-xs text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-muted/60 hover:text-foreground cursor-pointer"
               aria-label={t("nav.quickSearch", "Quick search (⌘K)")}
             >
               <Search className="size-3.5 text-muted-foreground" />
@@ -132,7 +136,7 @@ export function AppShell() {
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 rounded-xl sm:hidden text-muted-foreground hover:text-foreground"
+              className="size-8 rounded-lg sm:hidden text-muted-foreground hover:text-foreground"
               onClick={() => setCommandPaletteOpen(true)}
               aria-label={t("nav.quickSearch", "Quick search (⌘K)")}
             >
@@ -146,7 +150,7 @@ export function AppShell() {
                   <Badge
                     variant="outline"
                     onClick={() => navigate("/system")}
-                    className="cursor-pointer gap-1.5 font-mono text-[11px] text-muted-foreground border-border/80 bg-muted/30 hover:bg-muted/70 hover:text-foreground transition-colors hidden md:inline-flex h-7 px-2.5 rounded-lg"
+                    className="cursor-pointer gap-1.5 font-mono text-[11px] text-muted-foreground border-border bg-background/50 hover:bg-muted/60 hover:text-foreground transition-colors hidden md:inline-flex h-7 px-2.5 rounded-md"
                   >
                     <span className="size-1.5 rounded-full bg-emerald-500" />
                     v{info.data.version}
@@ -169,7 +173,7 @@ export function AppShell() {
                   variant={inspectorOpen ? "secondary" : "ghost"}
                   size="icon"
                   className={cn(
-                    "size-8 rounded-xl",
+                    "size-8 rounded-lg",
                     inspectorOpen && "bg-primary/10 text-primary hover:bg-primary/15",
                   )}
                   aria-label={t("nav.realtimeInspector", "实时测控面板")}
@@ -188,11 +192,11 @@ export function AppShell() {
           className={cn(
             "flex-1 overflow-y-auto",
             isPluginPage
-              ? "p-4 sm:p-6 md:p-8 pb-20 md:pb-8 flex flex-col overflow-hidden"
-              : "p-4 sm:p-6 md:p-8 pb-20 md:pb-8",
+              ? "px-5 py-6 sm:px-8 sm:py-7 lg:px-10 pb-20 md:pb-10 flex flex-col overflow-hidden"
+              : "px-5 py-6 sm:px-8 sm:py-7 lg:px-10 pb-20 md:pb-10",
           )}
         >
-          <div className={cn("mx-auto w-full", isPluginPage ? "flex-1 flex flex-col max-w-none" : "max-w-[1700px]")}>
+          <div className={cn("mx-auto w-full", isPluginPage ? "flex-1 flex flex-col max-w-none" : "max-w-[1680px]")}>
             <ErrorBoundary>
               <PageTransition className={isPluginPage ? "flex flex-1 flex-col min-h-0" : undefined} />
             </ErrorBoundary>

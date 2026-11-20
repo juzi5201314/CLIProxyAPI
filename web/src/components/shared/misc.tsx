@@ -264,14 +264,14 @@ export function SectionCard({ title, hint, actions, children, className }: {
 }) {
   return (
     <div className={cn("card-surface", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-5 py-4">
         <div>
-          <h3 className="text-sm font-semibold">{title}</h3>
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
           {hint ? <p className="text-muted-foreground mt-0.5 text-xs">{hint}</p> : null}
         </div>
         {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
       </div>
-      <div className="p-4">{children}</div>
+      <div className="p-5">{children}</div>
     </div>
   );
 }

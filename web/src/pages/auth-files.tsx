@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatCard } from "@/components/shared/stat-card";
 import { DetailList, JsonView, SectionCard } from "@/components/shared/misc";
 import { credentials, quota } from "@/api/management";
 import { errMessage, type AuthFileEntry } from "@/api/types";
@@ -478,56 +479,33 @@ export function AuthFilesPage() {
       </PageHeader>
 
       {/* Top Overview KPI Banner */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-5">
-        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-primary/30 hover:shadow-md">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.totalFiles")}</p>
-            <p className="text-2xl font-bold font-mono text-foreground mt-1">{totalFiles}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.activeBreakdown", { active: activeFiles, disabled: disabledFiles })}</p>
-          </div>
-          <div className="size-11 rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15 flex items-center justify-center">
-            <KeyRound className="size-5" />
-          </div>
-        </div>
-
-        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-purple-500/30 hover:shadow-md">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.quotaSupport")}</p>
-            <p className="text-2xl font-bold font-mono text-foreground mt-1">
-              {entries.filter((e) => e.supports_quota).length}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.quotaSubtitle")}</p>
-          </div>
-          <div className="size-11 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-1 ring-purple-500/15 flex items-center justify-center">
-            <ShieldCheck className="size-5" />
-          </div>
-        </div>
-
-        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-emerald-500/30 hover:shadow-md">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.totalSuccess")}</p>
-            <p className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-              {formatInt(totalSuccess)}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.successSubtitle")}</p>
-          </div>
-          <div className="size-11 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/15 flex items-center justify-center">
-            <CheckCircle2 className="size-5" />
-          </div>
-        </div>
-
-        <div className="card-surface p-4 flex items-center justify-between transition-all duration-200 hover:border-rose-500/30 hover:shadow-md">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium">{t("authFiles.stats.totalFailed")}</p>
-            <p className="text-2xl font-bold font-mono text-rose-500 mt-1">
-              {formatInt(totalFailed)}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{t("authFiles.stats.failedSubtitle")}</p>
-          </div>
-          <div className="size-11 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-1 ring-rose-500/15 flex items-center justify-center">
-            <Activity className="size-5" />
-          </div>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <StatCard
+          label={t("authFiles.stats.totalFiles")}
+          value={totalFiles}
+          sub={t("authFiles.stats.activeBreakdown", { active: activeFiles, disabled: disabledFiles })}
+          icon={KeyRound}
+        />
+        <StatCard
+          label={t("authFiles.stats.quotaSupport")}
+          value={entries.filter((e) => e.supports_quota).length}
+          sub={t("authFiles.stats.quotaSubtitle")}
+          icon={ShieldCheck}
+        />
+        <StatCard
+          label={t("authFiles.stats.totalSuccess")}
+          value={formatInt(totalSuccess)}
+          sub={t("authFiles.stats.successSubtitle")}
+          icon={CheckCircle2}
+          valueClassName="text-emerald-600 dark:text-emerald-400"
+        />
+        <StatCard
+          label={t("authFiles.stats.totalFailed")}
+          value={formatInt(totalFailed)}
+          sub={t("authFiles.stats.failedSubtitle")}
+          icon={Activity}
+          valueClassName={totalFailed > 0 ? "text-rose-500" : undefined}
+        />
       </div>
 
       {/* CPAMP Filter & Control Bar */}
@@ -537,7 +515,7 @@ export function AuthFilesPage() {
           <div className="relative flex-1">
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
             <Input
-              className="h-9.5 w-full rounded-xl pl-9.5 pr-8 text-xs bg-muted/40 border-border/80 shadow-2xs focus-visible:ring-1"
+              className="h-9 w-full rounded-lg pl-9.5 pr-8 text-xs bg-background border-border"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("authFiles.searchAdvanced")}
@@ -556,9 +534,9 @@ export function AuthFilesPage() {
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {/* Page Size */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-400 shrink-0">{t("authFiles.pageSize")}</span>
+              <span className="text-[11px] text-muted-foreground shrink-0">{t("authFiles.pageSize")}</span>
               <Select value={pageSizeOption} onValueChange={setPageSizeOption}>
-                <SelectTrigger className="h-9 w-20 text-xs rounded-xl bg-slate-50/60 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800/80">
+                <SelectTrigger className="h-9 w-20 text-xs rounded-lg bg-background border-border">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -573,9 +551,9 @@ export function AuthFilesPage() {
 
             {/* Sort */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-400 shrink-0">{t("authFiles.sort")}</span>
+              <span className="text-[11px] text-muted-foreground shrink-0">{t("authFiles.sort")}</span>
               <Select value={sortOption} onValueChange={setSortOption}>
-                <SelectTrigger className="h-9 w-26 text-xs rounded-xl bg-slate-50/60 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800/80">
+                <SelectTrigger className="h-9 w-26 text-xs rounded-lg bg-background border-border">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -593,7 +571,7 @@ export function AuthFilesPage() {
             {/* Status Filter */}
             <div className="flex items-center gap-1.5">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-9 w-28 text-xs rounded-xl bg-slate-50/60 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800/80">
+                <SelectTrigger className="h-9 w-28 text-xs rounded-lg bg-background border-border">
                   <SelectValue placeholder={t("authFiles.statusAll")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -609,7 +587,7 @@ export function AuthFilesPage() {
             {/* Plan Filter */}
             <div className="flex items-center gap-1.5">
               <Select value={planFilter} onValueChange={setPlanFilter}>
-                <SelectTrigger className="h-9 w-26 text-xs rounded-xl bg-slate-50/60 dark:bg-slate-950/40 border-slate-200/80 dark:border-slate-800/80">
+                <SelectTrigger className="h-9 w-26 text-xs rounded-lg bg-background border-border">
                   <SelectValue placeholder={t("authFiles.planAll")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -625,7 +603,7 @@ export function AuthFilesPage() {
         </div>
 
         {/* Row 2: Provider pills + Toggle options */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800/70">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-border/60">
           {/* Provider quick pills */}
           <div className="flex flex-wrap gap-1.5 items-center">
             {providerNames.map((name) => (
@@ -633,16 +611,16 @@ export function AuthFilesPage() {
                 key={name}
                 size="sm"
                 variant="ghost"
-                className={`h-7.5 rounded-full px-2.5 text-xs transition ${
+                className={`h-7.5 rounded-lg border px-2.5 text-xs transition-colors ${
                   providerFilter === name
-                    ? "bg-blue-600 text-white hover:bg-blue-700 font-medium shadow-2xs"
-                    : "bg-slate-100/80 dark:bg-slate-800/70 hover:bg-slate-200/80 text-slate-600 dark:text-slate-300"
+                    ? "border-foreground/15 bg-foreground text-background hover:bg-foreground/90 hover:text-background font-medium"
+                    : "border-border bg-background/60 hover:bg-secondary text-muted-foreground hover:text-foreground"
                 }`}
                 onClick={() => setProviderFilter(name)}
               >
                 {name === "all" ? t("common.all") : formatProviderLabel(name)}
                 {name !== "all" ? (
-                  <span className={`ml-1 px-1 rounded-full text-[10px] ${providerFilter === name ? "bg-white/20 text-white" : "bg-slate-200/80 dark:bg-slate-700 text-slate-500"}`}>
+                  <span className={`ml-1 px-1 rounded text-[10px] font-mono ${providerFilter === name ? "bg-background/15 text-background" : "bg-muted text-muted-foreground"}`}>
                     {entries.filter((entry) => entry.provider === name).length}
                   </span>
                 ) : null}

@@ -28,7 +28,6 @@ import {
   Search,
   X,
 } from "lucide-react";
-import bannerImage from "@/assets/dashboard-banner.png";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -190,13 +189,13 @@ export function DashboardPage() {
         <Button
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 rounded-xl text-xs cursor-pointer text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+          className="h-8 gap-1.5 rounded-lg text-xs cursor-pointer"
           onClick={() => handleOpenPricing()}
         >
-          <Coins className="size-3.5 text-amber-500" />
+          <Coins className="size-3.5 text-muted-foreground" />
           <span>{t("dashboard.pricing.button", "模型价格")}</span>
         </Button>
-        <label className="text-muted-foreground flex items-center gap-2 text-sm">
+        <label className="text-muted-foreground flex items-center gap-2 text-xs font-medium">
           {t("common.autoRefresh")}
           <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
         </label>
@@ -204,7 +203,7 @@ export function DashboardPage() {
         <Button
           variant="outline"
           size="icon"
-          className="size-8 rounded-xl"
+          className="size-8 rounded-lg"
           onClick={() => {
             stats.refetch();
             timeseries.refetch();
@@ -212,14 +211,14 @@ export function DashboardPage() {
             providers.refetch();
           }}
         >
-          {stats.isFetching ? <Loader2 className="size-4 animate-spin text-blue-500" /> : <RefreshCw className="size-4" />}
+          {stats.isFetching ? <Loader2 className="size-4 animate-spin text-primary" /> : <RefreshCw className="size-4" />}
         </Button>
       </PageHeader>
 
       {/* Interactive Multi-Select Filter Toolbar */}
-      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-border/80 bg-card/80 p-2.5 backdrop-blur-sm shadow-2xs">
-        <div className="flex items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground">
-          <Filter className="size-3.5 text-primary" />
+      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-2xs">
+        <div className="flex items-center gap-1.5 pr-1 text-xs font-medium text-muted-foreground">
+          <Filter className="size-3.5 text-muted-foreground" />
           <span>{t("dashboard.filters.label", "自由筛选")}</span>
         </div>
 
@@ -248,7 +247,7 @@ export function DashboardPage() {
             variant="ghost"
             size="sm"
             onClick={clearAllFilters}
-            className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-rose-500 cursor-pointer"
+            className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
           >
             <RotateCcw className="size-3" />
             <span>{t("dashboard.filters.reset", "重置筛选")}</span>
@@ -264,7 +263,7 @@ export function DashboardPage() {
               <Badge
                 key={m}
                 variant="secondary"
-                className="gap-1 border-primary/20 bg-primary/10 text-[11px] font-mono text-primary"
+                className="gap-1 border-border bg-secondary text-[11px] font-mono text-foreground"
               >
                 {m}
                 <X
@@ -277,7 +276,7 @@ export function DashboardPage() {
               <Badge
                 key={p}
                 variant="secondary"
-                className="gap-1 border-emerald-500/20 bg-emerald-500/10 text-[11px] font-mono text-emerald-600 dark:text-emerald-400"
+                className="gap-1 border-border bg-secondary text-[11px] font-mono text-foreground"
               >
                 {p}
                 <X
@@ -288,28 +287,6 @@ export function DashboardPage() {
             ))}
           </div>
         ) : null}
-      </div>
-
-      {/* Hero Welcome Banner */}
-      <div className="card-surface mb-6 relative overflow-hidden bg-linear-to-r from-primary/[0.06] via-card to-card p-5 sm:p-6">
-        <div className="pointer-events-none absolute -top-24 -left-24 size-64 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute right-8 -bottom-4 hidden sm:block">
-          <img
-            src={bannerImage}
-            alt=""
-            width={115}
-            height={115}
-            className="size-[115px] object-contain drop-shadow-sm"
-          />
-        </div>
-        <div className="relative z-10 max-w-xl pr-0 sm:pr-36">
-          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
-            {t("dashboard.heroTitle")}
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-            {t("dashboard.heroDesc")}
-          </p>
-        </div>
       </div>
 
       {/* 4 Core KPI StatCards */}
@@ -715,9 +692,9 @@ function ComprehensiveBreakdownTable({
               variant="outline"
               size="sm"
               onClick={() => onConfigureModelPrice("")}
-              className="h-8 gap-1.5 text-xs text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10 cursor-pointer"
+              className="h-8 gap-1.5 text-xs cursor-pointer"
             >
-              <Coins className="size-3.5 text-amber-500" />
+              <Coins className="size-3.5 text-muted-foreground" />
               <span>{t("dashboard.pricing.button", "模型价格")}</span>
             </Button>
           )}

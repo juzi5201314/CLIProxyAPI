@@ -15,22 +15,20 @@ type StatCardProps = {
 
 export function StatCard({ label, value, sub, icon: Icon, loading, className, valueClassName }: StatCardProps) {
   return (
-    <Card className={cn("card-surface gap-0 py-4 sm:py-5 transition-all duration-200 hover:border-primary/30 hover:shadow-md", className)}>
-      <CardContent className="flex items-start justify-between gap-3 px-4 sm:px-5">
-        <div className="min-w-0 flex-1">
+    <Card className={cn("card-surface gap-0 py-4 sm:py-5", className)}>
+      <CardContent className="px-5">
+        <div className="flex items-center justify-between gap-2">
           <p className="text-muted-foreground text-xs font-medium">{label}</p>
-          {loading ? (
-            <Skeleton className="mt-2 h-8 w-24 rounded-lg" />
-          ) : (
-            <p className={cn("mt-1 truncate text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight tabular-nums font-mono text-foreground", valueClassName)}>{value}</p>
-          )}
-          {sub && !loading ? <div className="text-muted-foreground mt-1.5 text-xs">{sub}</div> : null}
+          {Icon ? <Icon className="size-4 shrink-0 text-muted-foreground/60" /> : null}
         </div>
-        {Icon ? (
-          <div className="bg-primary/10 text-primary flex size-10 sm:size-11 shrink-0 items-center justify-center rounded-2xl ring-1 ring-primary/15">
-            <Icon className="size-5" />
-          </div>
-        ) : null}
+        {loading ? (
+          <Skeleton className="mt-2.5 h-8 w-24 rounded-md" />
+        ) : (
+          <p className={cn("mt-2 truncate text-2xl sm:text-[26px] font-semibold tracking-tight tabular-nums font-mono text-foreground", valueClassName)}>
+            {value}
+          </p>
+        )}
+        {sub && !loading ? <div className="text-muted-foreground mt-1.5 text-xs">{sub}</div> : null}
       </CardContent>
     </Card>
   );
