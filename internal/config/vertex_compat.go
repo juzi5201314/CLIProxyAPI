@@ -97,17 +97,18 @@ type VertexCompatModel struct {
 	// OpenAPI overrides endpoint selection for this model.
 	OpenAPI *bool `yaml:"openapi,omitempty" json:"openapi,omitempty"`
 
-	// Thinking is a retired per-model capability override kept for compatibility
-	// with older configuration files. Runtime capability resolution ignores it.
-	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+	// ThinkingLevelMapping optionally remaps incoming thinking levels for this model
+	// (e.g. {"high": "low"}). Unmapped levels pass through verbatim.
+	ThinkingLevelMapping map[string]string `yaml:"thinking-level-mapping,omitempty" json:"thinking-level-mapping,omitempty"`
 }
 
 func (m VertexCompatModel) GetOpenAPI() *bool { return m.OpenAPI }
 
-func (m VertexCompatModel) GetName() string        { return m.Name }
-func (m VertexCompatModel) GetAlias() string       { return m.Alias }
-func (m VertexCompatModel) GetDisplayName() string { return m.DisplayName }
-func (m VertexCompatModel) GetForceMapping() bool  { return m.ForceMapping }
+func (m VertexCompatModel) GetName() string                            { return m.Name }
+func (m VertexCompatModel) GetAlias() string                           { return m.Alias }
+func (m VertexCompatModel) GetDisplayName() string                     { return m.DisplayName }
+func (m VertexCompatModel) GetForceMapping() bool                      { return m.ForceMapping }
+func (m VertexCompatModel) GetThinkingLevelMapping() map[string]string { return m.ThinkingLevelMapping }
 
 // SanitizeVertexCompatKeys deduplicates and normalizes Vertex-compatible API key credentials.
 func (cfg *Config) SanitizeVertexCompatKeys() {

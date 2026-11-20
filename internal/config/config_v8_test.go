@@ -998,7 +998,7 @@ func TestV8SecretHashResolvesReferences(t *testing.T) {
 	}
 }
 
-func TestValidateV8ConfigAcceptsLegacyModelThinking(t *testing.T) {
+func TestValidateV8ConfigAcceptsThinkingLevelMapping(t *testing.T) {
 	raw := []byte(`config-version: 8
 api-keys:
   claude:
@@ -1008,17 +1008,18 @@ api-keys:
       models:
         - name: claude-model
           alias: claude-model
-          thinking:
-            levels: [low, high]
+          thinking-level-mapping:
+            high: low
   codex:
     - name: codex-compat
+      base-url: https://codex.example.com/v1
       keys:
         - api-key: test-codex
       models:
         - name: codex-model
           alias: codex-model
-          thinking:
-            levels: [high]
+          thinking-level-mapping:
+            xhigh: high
   gemini:
     - name: gemini-compat
       keys:
@@ -1026,9 +1027,8 @@ api-keys:
       models:
         - name: gemini-model
           alias: gemini-model
-          thinking:
-            min: 1024
-            max: 8192
+          thinking-level-mapping:
+            max: medium
   vertex:
     - name: vertex-compat
       keys:
@@ -1036,8 +1036,8 @@ api-keys:
       models:
         - name: vertex-model
           alias: vertex-model
-          thinking:
-            zero-allowed: true
+          thinking-level-mapping:
+            high: none
   openai-compatibility:
     - name: compat
       base-url: https://example.com/v1
@@ -1046,18 +1046,32 @@ api-keys:
       models:
         - name: compat-model
           alias: compat-model
-          thinking:
-            levels: [low, medium, high]
+          thinking-level-mapping:
+            high: low
+            xhigh: high
 `)
 	cfg, errParse := ParseConfigBytes(raw)
 	if errParse != nil {
 		t.Fatalf("ParseConfigBytes error: %v", errParse)
 	}
-	if got := cfg.OpenAICompatibility[0].Models[0].Thinking; got == nil || !reflect.DeepEqual(got.Levels, []string{"low", "medium", "high"}) {
-		t.Fatalf("legacy thinking levels were not decoded: %#v", got)
+	wantCompat := map[string]string{"high": "low", "xhigh": "high"}
+	if got := cfg.OpenAICompatibility[0].Models[0].ThinkingLevelMapping; !reflect.DeepEqual(got, wantCompat) {
+		t.Fatalf("openai-compatibility thinking-level-mapping = %#v, want %#v", got, wantCompat)
+	}
+	if got := cfg.ClaudeKey[0].Models[0].ThinkingLevelMapping; !reflect.DeepEqual(got, map[string]string{"high": "low"}) {
+		t.Fatalf("claude thinking-level-mapping = %#v, want map[high:low]", got)
+	}
+	if got := cfg.CodexKey[0].Models[0].ThinkingLevelMapping; !reflect.DeepEqual(got, map[string]string{"xhigh": "high"}) {
+		t.Fatalf("codex thinking-level-mapping = %#v, want map[xhigh:high]", got)
+	}
+	if got := cfg.GeminiKey[0].Models[0].ThinkingLevelMapping; !reflect.DeepEqual(got, map[string]string{"max": "medium"}) {
+		t.Fatalf("gemini thinking-level-mapping = %#v, want map[max:medium]", got)
+	}
+	if got := cfg.VertexCompatAPIKey[0].Models[0].ThinkingLevelMapping; !reflect.DeepEqual(got, map[string]string{"high": "none"}) {
+		t.Fatalf("vertex thinking-level-mapping = %#v, want map[high:none]", got)
 	}
 	if errValidate := ValidateV8Config(raw); errValidate != nil {
-		t.Fatalf("ValidateV8Config rejected legacy model thinking: %v", errValidate)
+		t.Fatalf("ValidateV8Config rejected thinking-level-mapping: %v", errValidate)
 	}
 }
 

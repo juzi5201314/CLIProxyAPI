@@ -251,6 +251,7 @@ func lookupUnlistedCodexAPIKeyModelCapability(routing *apiKeyModelRoutingSnapsho
 			info := modelconfig.ResolveModelInfo(upstreamModel, "codex")
 			info.SupportConfigurationUpdate = configured.SupportConfigurationUpdate
 			info.IsCompat = configured.IsCompat
+			info.ThinkingLevelMapping = cloneNormalizedThinkingLevelMapping(configured.ThinkingLevelMapping)
 			return info, true
 		}
 	}
@@ -321,6 +322,9 @@ func attachResolvedHomeModelInfo(req cliproxyexecutor.Request, auth *Auth, route
 	}
 	if configured {
 		selected.IsCompat = options.IsCompat
+		selected.ThinkingLevelMapping = cloneNormalizedThinkingLevelMapping(options.ThinkingLevelMapping)
+	} else if sameModel && len(local.ThinkingLevelMapping) > 0 {
+		selected.ThinkingLevelMapping = cloneNormalizedThinkingLevelMapping(local.ThinkingLevelMapping)
 	}
 
 	metadata[resolvedHomeModelInfoMetadataKey] = &selected
@@ -386,7 +390,7 @@ func compileAPIKeyModelCapabilitiesForAuth(cfg *internalconfig.Config, auth *Aut
 		if entry := resolveCodexAPIKeyConfig(cfg, auth); entry != nil {
 			for i := range entry.Models {
 				configured := entry.Models[i]
-				info := addConfiguredModelCapability(out, configured.Name, configured.Alias, "codex", configured.IsCompat)
+				info := addConfiguredModelCapability(out, configured.Name, configured.Alias, "codex", configured.IsCompat, configured.ThinkingLevelMapping)
 				if info != nil {
 					info.SupportConfigurationUpdate = configured.SupportConfigurationUpdate
 				}
@@ -399,7 +403,7 @@ func compileAPIKeyModelCapabilitiesForAuth(cfg *internalconfig.Config, auth *Aut
 	case "vertex":
 		if entry := resolveVertexAPIKeyConfig(cfg, auth); entry != nil {
 			for _, configured := range entry.Models {
-				addConfiguredModelCapability(out, configured.Name, configured.Alias, "gemini", false)
+				addConfiguredModelCapability(out, configured.Name, configured.Alias, "gemini", false, configured.ThinkingLevelMapping)
 			}
 		}
 	case "meta":
@@ -431,17 +435,40 @@ func compileConfiguredModelCapabilities[T interface {
 		if compatModel, okCompat := any(models[i]).(interface{ GetIsCompat() bool }); okCompat {
 			isCompat = compatModel.GetIsCompat()
 		}
-		addConfiguredModelCapability(out, models[i].GetName(), models[i].GetAlias(), modelType, isCompat)
+		var thinkingLevelMapping map[string]string
+		if mappedModel, okMapped := any(models[i]).(interface{ GetThinkingLevelMapping() map[string]string }); okMapped {
+			thinkingLevelMapping = mappedModel.GetThinkingLevelMapping()
+		}
+		addConfiguredModelCapability(out, models[i].GetName(), models[i].GetAlias(), modelType, isCompat, thinkingLevelMapping)
 	}
 }
 
 func compileOpenAICompatibleModelCapabilities(out map[string][]apiKeyModelCapabilityRoute, models []internalconfig.OpenAICompatibilityModel) {
 	for i := range models {
-		addConfiguredModelCapability(out, models[i].Name, models[i].Alias, "openai-compatibility", models[i].IsCompat)
+		addConfiguredModelCapability(out, models[i].Name, models[i].Alias, "openai-compatibility", models[i].IsCompat, models[i].ThinkingLevelMapping)
 	}
 }
 
-func addConfiguredModelCapability(out map[string][]apiKeyModelCapabilityRoute, name, alias, modelType string, isCompat bool) *registry.ModelInfo {
+func cloneNormalizedThinkingLevelMapping(raw map[string]string) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for key, value := range raw {
+		nk := strings.ToLower(strings.TrimSpace(key))
+		nv := strings.ToLower(strings.TrimSpace(value))
+		if nk == "" || nv == "" {
+			continue
+		}
+		out[nk] = nv
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func addConfiguredModelCapability(out map[string][]apiKeyModelCapabilityRoute, name, alias, modelType string, isCompat bool, thinkingLevelMapping map[string]string) *registry.ModelInfo {
 	name = strings.TrimSpace(name)
 	alias = strings.TrimSpace(alias)
 	if name == "" {
@@ -464,6 +491,7 @@ func addConfiguredModelCapability(out map[string][]apiKeyModelCapabilityRoute, n
 		modelInfo.Thinking = nil
 	}
 	modelInfo.IsCompat = isCompat
+	modelInfo.ThinkingLevelMapping = cloneNormalizedThinkingLevelMapping(thinkingLevelMapping)
 	route := apiKeyModelCapabilityRoute{upstreamModel: name, modelInfo: modelInfo}
 	seenKeys := make(map[string]struct{})
 	for _, routeModel := range []string{alias, name} {

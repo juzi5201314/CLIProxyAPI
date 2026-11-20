@@ -56,9 +56,13 @@ export type ModelEntry = Record<string, unknown>;
 export interface ModelFieldDef {
   key: string;
   labelKey: string;
-  type: "string" | "number" | "switch" | "list" | "tri";
+  type: "string" | "number" | "switch" | "list" | "tri" | "level-mapping";
   placeholder?: string;
 }
+
+const THINKING_SOURCE_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max", "auto", "none"] as const;
+const THINKING_TARGET_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "auto"] as const;
+const DEFAULT_SOURCE_ORDER = ["high", "xhigh", "max", "medium", "low", "minimal", "auto", "none"] as const;
 
 const COMPAT_MODEL_FIELDS: ModelFieldDef[] = [
   { key: "display-name", labelKey: "displayName", type: "string" },
@@ -69,12 +73,14 @@ const COMPAT_MODEL_FIELDS: ModelFieldDef[] = [
   { key: "force-mapping", labelKey: "forceMapping", type: "switch" },
   { key: "is-compat", labelKey: "isCompat", type: "switch" },
   { key: "use-max-completion-tokens", labelKey: "useMaxCompletionTokens", type: "switch" },
+  { key: "thinking-level-mapping", labelKey: "thinkingLevelMapping", type: "level-mapping" },
 ];
 const GEMINI_MODEL_FIELDS: ModelFieldDef[] = [
   { key: "display-name", labelKey: "displayName", type: "string" },
   { key: "max-context-length", labelKey: "maxContextLength", type: "number" },
   { key: "is-compat", labelKey: "isCompat", type: "switch" },
   { key: "force-mapping", labelKey: "forceMapping", type: "switch" },
+  { key: "thinking-level-mapping", labelKey: "thinkingLevelMapping", type: "level-mapping" },
 ];
 const CLAUDE_MODEL_FIELDS: ModelFieldDef[] = GEMINI_MODEL_FIELDS;
 const CODEX_MODEL_FIELDS: ModelFieldDef[] = [
@@ -83,11 +89,13 @@ const CODEX_MODEL_FIELDS: ModelFieldDef[] = [
   { key: "is-compat", labelKey: "isCompat", type: "switch" },
   { key: "force-mapping", labelKey: "forceMapping", type: "switch" },
   { key: "support-configuration-update", labelKey: "supportConfigurationUpdate", type: "switch" },
+  { key: "thinking-level-mapping", labelKey: "thinkingLevelMapping", type: "level-mapping" },
 ];
 const VERTEX_MODEL_FIELDS: ModelFieldDef[] = [
   { key: "display-name", labelKey: "displayName", type: "string" },
   { key: "force-mapping", labelKey: "forceMapping", type: "switch" },
   { key: "openapi", labelKey: "modelOpenAPI", type: "tri" },
+  { key: "thinking-level-mapping", labelKey: "thinkingLevelMapping", type: "level-mapping" },
 ];
 
 /** Advanced per-model fields by provider kind (matching the Go structs). */
@@ -123,7 +131,18 @@ export function normalizeModelsForSave(models: ModelEntry[]): ModelEntry[] {
     .map((model) => {
       const name = String(model.name ?? "").trim();
       const alias = String(model.alias ?? "").trim() || name;
-      return { ...model, name, alias };
+      const next: ModelEntry = { ...model, name, alias };
+      const rawMapping = next["thinking-level-mapping"];
+      if (rawMapping && typeof rawMapping === "object" && !Array.isArray(rawMapping)) {
+        const cleaned: Record<string, string> = {};
+        for (const [k, v] of Object.entries(rawMapping as Record<string, unknown>)) {
+          const nk = k.trim().toLowerCase();
+          const nv = String(v ?? "").trim().toLowerCase();
+          if (nk && nv) cleaned[nk] = nv;
+        }
+        next["thinking-level-mapping"] = Object.keys(cleaned).length > 0 ? cleaned : undefined;
+      }
+      return next;
     })
     .filter((model) => model.name !== "");
 }
@@ -187,7 +206,9 @@ function ModelAdvancedPopover({ model, kindId, onChange }: { model: ModelEntry; 
   const fields = MODEL_ADVANCED_FIELDS[kindId] ?? [];
   const advancedSet = fields.some((field) => {
     const value = model[field.key];
-    return Array.isArray(value) ? value.length > 0 : Boolean(value);
+    if (Array.isArray(value)) return value.length > 0;
+    if (value && typeof value === "object") return Object.keys(value).length > 0;
+    return Boolean(value);
   });
   return (
     <Popover>
@@ -201,7 +222,7 @@ function ModelAdvancedPopover({ model, kindId, onChange }: { model: ModelEntry; 
           <Settings2 className="size-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 space-y-3">
+      <PopoverContent align="end" className="w-80 space-y-3">
         {fields.map((field) => (
           <ModelAdvancedField key={field.key} field={field} model={model} onChange={onChange} />
         ))}
@@ -270,6 +291,19 @@ function ModelAdvancedField({ field, model, onChange }: { field: ModelFieldDef; 
       </div>
     );
   }
+  if (field.type === "level-mapping") {
+    const mapping =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, string>)
+        : {};
+    return (
+      <ThinkingLevelMappingEditor
+        label={t(`providers.${field.labelKey}`)}
+        mapping={mapping}
+        onChange={(next) => onChange({ [field.key]: next })}
+      />
+    );
+  }
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{t(`providers.${field.labelKey}`)}</Label>
@@ -278,6 +312,125 @@ function ModelAdvancedField({ field, model, onChange }: { field: ModelFieldDef; 
         value={typeof value === "string" ? value : ""}
         onChange={(event) => onChange({ [field.key]: event.target.value || undefined })}
       />
+    </div>
+  );
+}
+
+function ThinkingLevelMappingEditor({
+  label,
+  mapping,
+  onChange,
+}: {
+  label: string;
+  mapping: Record<string, string>;
+  onChange: (next: Record<string, string> | undefined) => void;
+}) {
+  const { t } = useTranslation();
+  const entries = Object.entries(mapping);
+  const usedSources = new Set(entries.map(([k]) => k.toLowerCase()));
+  const nextSource = DEFAULT_SOURCE_ORDER.find((lvl) => !usedSources.has(lvl));
+
+  const commit = (next: Record<string, string>) => {
+    onChange(Object.keys(next).length > 0 ? next : undefined);
+  };
+
+  const handleAdd = () => {
+    if (!nextSource) return;
+    const defaultTarget = nextSource === "low" ? "high" : "low";
+    commit({ ...mapping, [nextSource]: defaultTarget });
+  };
+
+  const handleSourceChange = (oldKey: string, newKey: string) => {
+    if (oldKey === newKey) return;
+    const next: Record<string, string> = {};
+    for (const [k, v] of entries) {
+      if (k === oldKey) {
+        next[newKey] = v;
+      } else if (k !== newKey) {
+        next[k] = v;
+      }
+    }
+    commit(next);
+  };
+
+  const handleTargetChange = (key: string, newTarget: string) => {
+    commit({ ...mapping, [key]: newTarget });
+  };
+
+  const handleRemove = (key: string) => {
+    const next: Record<string, string> = {};
+    for (const [k, v] of entries) {
+      if (k !== key) next[k] = v;
+    }
+    commit(next);
+  };
+
+  return (
+    <div className="space-y-2 border-t border-border/50 pt-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-xs">{label}</Label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-[11px]"
+          disabled={!nextSource}
+          onClick={handleAdd}
+        >
+          <Plus className="mr-1 size-3" />
+          {t("providers.thinkingLevelMappingAdd")}
+        </Button>
+      </div>
+      {entries.length === 0 ? (
+        <p className="text-muted-foreground text-[11px]">{t("providers.thinkingLevelMappingHint")}</p>
+      ) : (
+        <div className="space-y-1.5">
+          {entries.map(([source, target]) => {
+            const sourceOptions = THINKING_SOURCE_LEVELS.filter(
+              (lvl) => lvl === source || !usedSources.has(lvl),
+            );
+            return (
+              <div key={source} className="flex items-center gap-1.5">
+                <Select value={source} onValueChange={(next) => handleSourceChange(source, next)}>
+                  <SelectTrigger className="h-7 flex-1 font-mono text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sourceOptions.map((lvl) => (
+                      <SelectItem key={lvl} value={lvl} className="font-mono text-xs">
+                        {lvl}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <ArrowRight className="text-muted-foreground size-3 shrink-0" />
+                <Select value={target} onValueChange={(next) => handleTargetChange(source, next)}>
+                  <SelectTrigger className="h-7 flex-1 font-mono text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {THINKING_TARGET_LEVELS.map((lvl) => (
+                      <SelectItem key={lvl} value={lvl} className="font-mono text-xs">
+                        {lvl}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-destructive size-7 shrink-0"
+                  title={t("common.delete")}
+                  onClick={() => handleRemove(source)}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

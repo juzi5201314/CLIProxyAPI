@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -18,7 +19,7 @@ func ComputeOpenAICompatModelsHash(models []config.OpenAICompatibilityModel) str
 			if name == "" && alias == "" {
 				continue
 			}
-			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("image=%t", model.Image) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat) + "|" + fmt.Sprintf("use-max-completion-tokens=%t", model.UseMaxCompletionTokens) + "|input=" + strings.Join(normalizeModalities(model.InputModalities), ",") + "|output=" + strings.Join(normalizeModalities(model.OutputModalities), ","))
+			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("image=%t", model.Image) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat) + "|" + fmt.Sprintf("use-max-completion-tokens=%t", model.UseMaxCompletionTokens) + "|input=" + strings.Join(normalizeModalities(model.InputModalities), ",") + "|output=" + strings.Join(normalizeModalities(model.OutputModalities), ",") + "|thinking-level-mapping=" + formatThinkingLevelMapping(model.ThinkingLevelMapping))
 		}
 	})
 	return hashJoined(keys)
@@ -37,6 +38,7 @@ func ComputeVertexCompatModelsHash(models []config.VertexCompatModel) string {
 			if model.OpenAPI != nil {
 				key += fmt.Sprintf("|openapi=%t", *model.OpenAPI)
 			}
+			key += "|thinking-level-mapping=" + formatThinkingLevelMapping(model.ThinkingLevelMapping)
 			out(key)
 		}
 	})
@@ -52,7 +54,7 @@ func ComputeClaudeModelsHash(models []config.ClaudeModel) string {
 			if name == "" && alias == "" {
 				continue
 			}
-			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat))
+			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat) + "|thinking-level-mapping=" + formatThinkingLevelMapping(model.ThinkingLevelMapping))
 		}
 	})
 	return hashJoined(keys)
@@ -67,7 +69,7 @@ func ComputeCodexModelsHash(models []config.CodexModel) string {
 			if name == "" && alias == "" {
 				continue
 			}
-			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat))
+			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat) + "|thinking-level-mapping=" + formatThinkingLevelMapping(model.ThinkingLevelMapping))
 		}
 	})
 	return hashJoined(keys)
@@ -82,10 +84,27 @@ func ComputeGeminiModelsHash(models []config.GeminiModel) string {
 			if name == "" && alias == "" {
 				continue
 			}
-			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat))
+			out(strings.ToLower(name) + "|" + strings.ToLower(alias) + "|" + strings.TrimSpace(model.DisplayName) + "|" + fmt.Sprintf("force-mapping=%t", model.ForceMapping) + "|" + fmt.Sprintf("is-compat=%t", model.IsCompat) + "|thinking-level-mapping=" + formatThinkingLevelMapping(model.ThinkingLevelMapping))
 		}
 	})
 	return hashJoined(keys)
+}
+
+func formatThinkingLevelMapping(raw map[string]string) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	pairs := make([]string, 0, len(raw))
+	for k, v := range raw {
+		nk := strings.ToLower(strings.TrimSpace(k))
+		nv := strings.ToLower(strings.TrimSpace(v))
+		if nk == "" || nv == "" {
+			continue
+		}
+		pairs = append(pairs, nk+"="+nv)
+	}
+	sort.Strings(pairs)
+	return strings.Join(pairs, ",")
 }
 
 func normalizeModalities(raw []string) []string {

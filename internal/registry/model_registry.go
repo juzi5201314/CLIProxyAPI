@@ -95,6 +95,10 @@ type ModelInfo struct {
 	// This is optional and currently used for Gemini thinking budget normalization.
 	Thinking *ThinkingSupport `json:"thinking,omitempty"`
 
+	// ThinkingLevelMapping optionally remaps incoming thinking levels for this model
+	// (e.g. {"high": "low"}). Unmapped levels pass through verbatim.
+	ThinkingLevelMapping map[string]string `json:"-"`
+
 	// Config holds model-specific runtime overrides loaded from models.json.
 	Config *ModelConfig `json:"config,omitempty"`
 
@@ -888,6 +892,12 @@ func cloneModelInfo(model *ModelInfo) *ModelInfo {
 			copyThinking.Levels = append([]string(nil), model.Thinking.Levels...)
 		}
 		copyModel.Thinking = &copyThinking
+	}
+	if len(model.ThinkingLevelMapping) > 0 {
+		copyModel.ThinkingLevelMapping = make(map[string]string, len(model.ThinkingLevelMapping))
+		for key, value := range model.ThinkingLevelMapping {
+			copyModel.ThinkingLevelMapping[key] = value
+		}
 	}
 	if model.Config != nil {
 		copyConfig := *model.Config

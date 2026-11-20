@@ -438,6 +438,8 @@ func applyThinkingDocCore(doc *ojson.Doc, docValid bool, sourceBody []byte, mode
 		}
 		return modified, nil
 	}
+	config = applyThinkingLevelMapping(config, modelInfo)
+
 	// 5. Validate and normalize configuration
 	validated, err := ValidateConfig(config, modelInfo, fromFormat, providerFormat, suffixResult.HasSuffix)
 	if err != nil {
@@ -612,6 +614,8 @@ func applyUserDefinedModelDoc(doc *ojson.Doc, docValid bool, modelInfo *registry
 		return false, nil
 	}
 
+	config = applyThinkingLevelMapping(config, modelInfo)
+
 	if !isPluginApplier {
 		config = normalizeUserDefinedConfig(config, modelInfo, fromFormat, toFormat)
 	}
@@ -633,6 +637,48 @@ func applyUserDefinedModelDoc(doc *ojson.Doc, docValid bool, modelInfo *registry
 		modified = true
 	}
 	return modified, nil
+}
+
+func applyThinkingLevelMapping(config ThinkingConfig, modelInfo *registry.ModelInfo) ThinkingConfig {
+	if modelInfo == nil || len(modelInfo.ThinkingLevelMapping) == 0 {
+		return config
+	}
+	var sourceLevel string
+	switch config.Mode {
+	case ModeLevel:
+		sourceLevel = strings.ToLower(strings.TrimSpace(string(config.Level)))
+	case ModeNone:
+		sourceLevel = string(LevelNone)
+	case ModeAuto:
+		sourceLevel = string(LevelAuto)
+	default:
+		return config
+	}
+	if sourceLevel == "" {
+		return config
+	}
+	target := ""
+	if mapped, ok := modelInfo.ThinkingLevelMapping[sourceLevel]; ok {
+		target = strings.ToLower(strings.TrimSpace(mapped))
+	} else {
+		for key, value := range modelInfo.ThinkingLevelMapping {
+			if strings.EqualFold(strings.TrimSpace(key), sourceLevel) {
+				target = strings.ToLower(strings.TrimSpace(value))
+				break
+			}
+		}
+	}
+	if target == "" {
+		return config
+	}
+	switch target {
+	case string(LevelNone):
+		return ThinkingConfig{Mode: ModeNone, Budget: 0}
+	case string(LevelAuto):
+		return ThinkingConfig{Mode: ModeAuto, Budget: -1}
+	default:
+		return ThinkingConfig{Mode: ModeLevel, Level: ThinkingLevel(target)}
+	}
 }
 
 func normalizeUserDefinedConfig(config ThinkingConfig, modelInfo *registry.ModelInfo, fromFormat, toFormat string) ThinkingConfig {

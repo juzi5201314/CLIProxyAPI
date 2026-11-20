@@ -859,18 +859,6 @@ func (k ClaudeKey) GetPrefix() string { return k.Prefix }
 
 func (k ClaudeKey) GetProxyURL() string { return k.ProxyURL }
 
-// LegacyModelThinking is the retired per-model thinking capability override.
-// Configurations written by older releases may still contain it, so it remains
-// decodable and round-trippable. Runtime capability resolution ignores it.
-type LegacyModelThinking struct {
-	Min            int      `yaml:"min,omitempty" json:"min,omitempty"`
-	Max            int      `yaml:"max,omitempty" json:"max,omitempty"`
-	ZeroAllowed    bool     `yaml:"zero-allowed,omitempty" json:"zero_allowed,omitempty"`
-	DynamicAllowed bool     `yaml:"dynamic-allowed,omitempty" json:"dynamic_allowed,omitempty"`
-	DisableType    string   `yaml:"disable-type,omitempty" json:"disable_type,omitempty"`
-	Levels         []string `yaml:"levels,omitempty" json:"levels,omitempty"`
-}
-
 // ClaudeModel describes a mapping between an alias and the actual upstream model name.
 type ClaudeModel struct {
 	// Name is the upstream model identifier used when issuing requests.
@@ -893,19 +881,20 @@ type ClaudeModel struct {
 	// Default false keeps the normal signature validation behavior.
 	IsCompat bool `yaml:"is-compat,omitempty" json:"is-compat,omitempty"`
 
-	// Thinking is a retired per-model capability override kept for compatibility
-	// with older configuration files. Runtime capability resolution ignores it.
-	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+	// ThinkingLevelMapping optionally remaps incoming thinking levels for this model
+	// (e.g. {"high": "low"}). Unmapped levels pass through verbatim.
+	ThinkingLevelMapping map[string]string `yaml:"thinking-level-mapping,omitempty" json:"thinking-level-mapping,omitempty"`
 }
 
 func (m ClaudeModel) GetName() string { return m.Name }
 
 func (m ClaudeModel) GetAlias() string { return m.Alias }
 
-func (m ClaudeModel) GetDisplayName() string   { return m.DisplayName }
-func (m ClaudeModel) GetMaxContextLength() int { return m.MaxContextLength }
-func (m ClaudeModel) GetForceMapping() bool    { return m.ForceMapping }
-func (m ClaudeModel) GetIsCompat() bool        { return m.IsCompat }
+func (m ClaudeModel) GetDisplayName() string                     { return m.DisplayName }
+func (m ClaudeModel) GetMaxContextLength() int                   { return m.MaxContextLength }
+func (m ClaudeModel) GetForceMapping() bool                      { return m.ForceMapping }
+func (m ClaudeModel) GetIsCompat() bool                          { return m.IsCompat }
+func (m ClaudeModel) GetThinkingLevelMapping() map[string]string { return m.ThinkingLevelMapping }
 
 // CodexKey represents the configuration for a Codex API key,
 // including the API key itself and an optional base URL for the API endpoint.
@@ -1011,19 +1000,20 @@ type CodexModel struct {
 	// It defaults to false, independently of the built-in OAuth model catalog.
 	SupportConfigurationUpdate bool `yaml:"support-configuration-update,omitempty" json:"support-configuration-update,omitempty"`
 
-	// Thinking is a retired per-model capability override kept for compatibility
-	// with older configuration files. Runtime capability resolution ignores it.
-	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+	// ThinkingLevelMapping optionally remaps incoming thinking levels for this model
+	// (e.g. {"high": "low"}). Unmapped levels pass through verbatim.
+	ThinkingLevelMapping map[string]string `yaml:"thinking-level-mapping,omitempty" json:"thinking-level-mapping,omitempty"`
 }
 
 func (m CodexModel) GetName() string { return m.Name }
 
 func (m CodexModel) GetAlias() string { return m.Alias }
 
-func (m CodexModel) GetDisplayName() string   { return m.DisplayName }
-func (m CodexModel) GetMaxContextLength() int { return m.MaxContextLength }
-func (m CodexModel) GetForceMapping() bool    { return m.ForceMapping }
-func (m CodexModel) GetIsCompat() bool        { return m.IsCompat }
+func (m CodexModel) GetDisplayName() string                     { return m.DisplayName }
+func (m CodexModel) GetMaxContextLength() int                   { return m.MaxContextLength }
+func (m CodexModel) GetForceMapping() bool                      { return m.ForceMapping }
+func (m CodexModel) GetIsCompat() bool                          { return m.IsCompat }
+func (m CodexModel) GetThinkingLevelMapping() map[string]string { return m.ThinkingLevelMapping }
 
 // XAIKey uses the Codex API key structure for native xAI execution.
 type XAIKey = CodexKey
@@ -1119,19 +1109,20 @@ type GeminiModel struct {
 	// Default false keeps the normal signature validation behavior.
 	IsCompat bool `yaml:"is-compat,omitempty" json:"is-compat,omitempty"`
 
-	// Thinking is a retired per-model capability override kept for compatibility
-	// with older configuration files. Runtime capability resolution ignores it.
-	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+	// ThinkingLevelMapping optionally remaps incoming thinking levels for this model
+	// (e.g. {"high": "low"}). Unmapped levels pass through verbatim.
+	ThinkingLevelMapping map[string]string `yaml:"thinking-level-mapping,omitempty" json:"thinking-level-mapping,omitempty"`
 }
 
 func (m GeminiModel) GetName() string { return m.Name }
 
 func (m GeminiModel) GetAlias() string { return m.Alias }
 
-func (m GeminiModel) GetDisplayName() string   { return m.DisplayName }
-func (m GeminiModel) GetMaxContextLength() int { return m.MaxContextLength }
-func (m GeminiModel) GetForceMapping() bool    { return m.ForceMapping }
-func (m GeminiModel) GetIsCompat() bool        { return m.IsCompat }
+func (m GeminiModel) GetDisplayName() string                     { return m.DisplayName }
+func (m GeminiModel) GetMaxContextLength() int                   { return m.MaxContextLength }
+func (m GeminiModel) GetForceMapping() bool                      { return m.ForceMapping }
+func (m GeminiModel) GetIsCompat() bool                          { return m.IsCompat }
+func (m GeminiModel) GetThinkingLevelMapping() map[string]string { return m.ThinkingLevelMapping }
 
 // OpenAICompatibility represents the configuration for OpenAI API compatibility
 // with external providers, allowing model aliases to be routed through OpenAI API format.
@@ -1242,9 +1233,9 @@ type OpenAICompatibilityModel struct {
 	// Default false preserves max_tokens for older compatible upstreams.
 	UseMaxCompletionTokens bool `yaml:"use-max-completion-tokens,omitempty" json:"use-max-completion-tokens,omitempty"`
 
-	// Thinking is a retired per-model capability override kept for compatibility
-	// with older configuration files. Runtime capability resolution ignores it.
-	Thinking *LegacyModelThinking `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+	// ThinkingLevelMapping optionally remaps incoming thinking levels for this model
+	// (e.g. {"high": "low"}). Unmapped levels pass through verbatim.
+	ThinkingLevelMapping map[string]string `yaml:"thinking-level-mapping,omitempty" json:"thinking-level-mapping,omitempty"`
 }
 
 func (m OpenAICompatibilityModel) GetName() string { return m.Name }
@@ -1256,3 +1247,6 @@ func (m OpenAICompatibilityModel) GetMaxContextLength() int        { return m.Ma
 func (m OpenAICompatibilityModel) GetForceMapping() bool           { return m.ForceMapping }
 func (m OpenAICompatibilityModel) GetIsCompat() bool               { return m.IsCompat }
 func (m OpenAICompatibilityModel) GetUseMaxCompletionTokens() bool { return m.UseMaxCompletionTokens }
+func (m OpenAICompatibilityModel) GetThinkingLevelMapping() map[string]string {
+	return m.ThinkingLevelMapping
+}
