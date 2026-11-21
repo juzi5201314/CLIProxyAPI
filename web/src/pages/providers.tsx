@@ -192,7 +192,8 @@ export function ProvidersPage() {
         const explicitName = String(entry.name ?? "").trim();
         const name = kind.id === "openai-compatibility" ? explicitName : (explicitName || maskIdentity(entry, kind));
         const baseURL = String(entry["base-url"] ?? "");
-        const isDisabled = Boolean(entry.disabled);
+        const excludedList = (entry["excluded-models"] as string[] | undefined) ?? [];
+        const isDisabled = Boolean(entry.disabled) || excludedList.some((m) => String(m).trim() === "*");
 
         out.push({
           kind,
@@ -305,8 +306,15 @@ export function ProvidersPage() {
   };
 
   const toggleDisabled = (row: ProviderRow, enabled: boolean) => {
-    const { disabled: _drop, ...rest } = row.entry;
-    const nextEntry: Entry = enabled ? rest : { ...rest, disabled: true };
+    const currentExcluded = ((row.entry["excluded-models"] as string[] | undefined) ?? [])
+      .map((m) => String(m).trim())
+      .filter((m) => Boolean(m) && m !== "*");
+    const { disabled: _dropDisabled, "excluded-models": _dropExcluded, ...rest } = row.entry;
+    const nextEntry: Entry = {
+      ...rest,
+      ...(currentExcluded.length > 0 ? { "excluded-models": currentExcluded } : {}),
+      ...(!enabled ? { disabled: true } : {}),
+    };
     persist.mutate({ kind: row.kind, index: row.index, entry: nextEntry });
   };
 

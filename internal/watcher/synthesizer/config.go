@@ -169,7 +169,7 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next(idKind, idParts...)
-		if entry.Disabled {
+		if entry.Disabled || hasExcludedAllPattern(entry.ExcludedModels) {
 			continue
 		}
 		attrs := map[string]string{
@@ -249,7 +249,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next("claude:apikey", idParts...)
-		if ck.Disabled {
+		if ck.Disabled || hasExcludedAllPattern(ck.ExcludedModels) {
 			continue
 		}
 		attrs := map[string]string{
@@ -351,7 +351,7 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next(provider+":apikey", idParts...)
-		if entry.Disabled {
+		if entry.Disabled || hasExcludedAllPattern(entry.ExcludedModels) {
 			continue
 		}
 		attrs := map[string]string{
@@ -583,7 +583,7 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next(idKind, idParts...)
-		if compat.Disabled {
+		if compat.Disabled || hasExcludedAllPattern(compat.ExcludedModels) {
 			continue
 		}
 		attrs := map[string]string{
@@ -647,4 +647,13 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 		out = append(out, a)
 	}
 	return out
+}
+
+func hasExcludedAllPattern(models []string) bool {
+	for _, m := range models {
+		if strings.TrimSpace(m) == "*" {
+			return true
+		}
+	}
+	return false
 }

@@ -367,7 +367,7 @@ func sanitizeMetaKeyEntries(entries []MetaKey) []MetaKey {
 			e.BaseURL = "https://api.meta.ai/v1"
 		}
 		e.Headers = NormalizeHeaders(e.Headers)
-		e.ExcludedModels = NormalizeExcludedModels(e.ExcludedModels)
+		e.ExcludedModels, e.Disabled = migrateExcludedAllToDisabled(e.ExcludedModels, e.Disabled)
 		e.ServiceTier = NormalizeConfiguredServiceTier(e.ServiceTier)
 		e.AlphaSearch = false
 		e.WebsocketRelay = false
@@ -388,7 +388,7 @@ func sanitizeCodexKeyEntries(entries []CodexKey) []CodexKey {
 		e.BaseURL = strings.TrimSpace(e.BaseURL)
 		e.ServiceTier = NormalizeConfiguredServiceTier(e.ServiceTier)
 		e.Headers = NormalizeHeaders(e.Headers)
-		e.ExcludedModels = NormalizeExcludedModels(e.ExcludedModels)
+		e.ExcludedModels, e.Disabled = migrateExcludedAllToDisabled(e.ExcludedModels, e.Disabled)
 		if e.BaseURL == "" {
 			continue
 		}
@@ -510,7 +510,7 @@ func (cfg *Config) SanitizeClaudeKeys() {
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
 		entry.ServiceTier = NormalizeConfiguredServiceTier(entry.ServiceTier)
 		entry.Headers = NormalizeHeaders(entry.Headers)
-		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
+		entry.ExcludedModels, entry.Disabled = migrateExcludedAllToDisabled(entry.ExcludedModels, entry.Disabled)
 		entry.Cloak = NormalizeCloakConfig(entry.Cloak)
 		// Only a recognized value is rewritten. An unrecognized one is preserved as
 		// written so sanitizing a config file never destroys operator input; the
@@ -538,7 +538,7 @@ func sanitizeGeminiKeyEntries(entries []GeminiKey) []GeminiKey {
 		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
 		entry.ServiceTier = NormalizeConfiguredServiceTier(entry.ServiceTier)
 		entry.Headers = NormalizeHeaders(entry.Headers)
-		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
+		entry.ExcludedModels, entry.Disabled = migrateExcludedAllToDisabled(entry.ExcludedModels, entry.Disabled)
 		uniqueKey := formatGeminiKeyDedupID(entry)
 		if _, exists := seen[uniqueKey]; exists {
 			continue
@@ -678,6 +678,31 @@ func NormalizeExcludedModels(models []string) []string {
 		return nil
 	}
 	return out
+}
+
+// migrateExcludedAllToDisabled converts the legacy excluded-models: ["*"] disable
+// sentinel into disabled: true and strips "*" from ExcludedModels.
+func migrateExcludedAllToDisabled(models []string, disabled bool) ([]string, bool) {
+	normalized := NormalizeExcludedModels(models)
+	if len(normalized) == 0 {
+		return nil, disabled
+	}
+	hasWildcard := false
+	filtered := make([]string, 0, len(normalized))
+	for _, item := range normalized {
+		if item == "*" {
+			hasWildcard = true
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if !hasWildcard {
+		return normalized, disabled
+	}
+	if len(filtered) == 0 {
+		filtered = nil
+	}
+	return filtered, true
 }
 
 // NormalizeOAuthExcludedModels cleans provider -> excluded models mappings by normalizing provider keys

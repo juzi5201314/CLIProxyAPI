@@ -142,7 +142,7 @@ func (cfg *Config) SanitizeVertexCompatKeys() {
 		entry.OpenAPILocation = strings.TrimSpace(entry.OpenAPILocation)
 		entry.ServiceTier = NormalizeConfiguredServiceTier(entry.ServiceTier)
 		entry.Headers = NormalizeHeaders(entry.Headers)
-		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
+		entry.ExcludedModels, entry.Disabled = migrateExcludedAllToDisabled(entry.ExcludedModels, entry.Disabled)
 
 		// Sanitize models: remove entries without valid model name
 		sanitizedModels := make([]VertexCompatModel, 0, len(entry.Models))

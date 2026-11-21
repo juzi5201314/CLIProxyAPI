@@ -1152,3 +1152,45 @@ func TestV8APIKeyDisabledField(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyExcludedAllMigratesToDisabled(t *testing.T) {
+	v8Raw := []byte(`config-version: 8
+api-keys:
+  codex:
+    - name: codex-legacy
+      base-url: https://example.invalid
+      excluded-models:
+        - "*"
+        - gpt-5
+      keys:
+        - api-key: key-1
+    - name: codex-active
+      base-url: https://example.invalid
+      keys:
+        - api-key: key-2
+`)
+	cfg, errParse := ParseConfigBytes(v8Raw)
+	if errParse != nil {
+		t.Fatalf("ParseConfigBytes error: %v", errParse)
+	}
+	if len(cfg.CodexKey) != 2 || !cfg.CodexKey[0].Disabled || cfg.CodexKey[1].Disabled {
+		t.Fatalf("CodexKey disabled states = %+v, want [true, false]", cfg.CodexKey)
+	}
+	if len(cfg.CodexKey[0].ExcludedModels) != 1 || cfg.CodexKey[0].ExcludedModels[0] != "gpt-5" {
+		t.Fatalf("CodexKey[0].ExcludedModels = %#v, want [gpt-5]", cfg.CodexKey[0].ExcludedModels)
+	}
+
+	normalized, changed, errNorm := NormalizeConfigLayout(v8Raw, true)
+	if errNorm != nil {
+		t.Fatalf("NormalizeConfigLayout error: %v", errNorm)
+	}
+	if !changed {
+		t.Fatal("expected NormalizeConfigLayout(..., true) to report migration change")
+	}
+	if strings.Contains(string(normalized), `"*"`) {
+		t.Fatalf("migrated YAML still contains wildcard '*':\n%s", string(normalized))
+	}
+	if !strings.Contains(string(normalized), "disabled: true") {
+		t.Fatalf("migrated YAML missing disabled: true:\n%s", string(normalized))
+	}
+}

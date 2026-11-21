@@ -505,6 +505,71 @@ func isLegacyAutoV8GroupName(provider, rawName string) bool {
 	return true
 }
 
+func migrateV8APIKeysExcludedAllDisabled(root *yaml.Node) bool {
+	if root == nil || root.Kind != yaml.MappingNode {
+		return false
+	}
+	changed := false
+	for _, family := range v8KeyFamilies {
+		if family.current == "openai-compatibility" {
+			continue
+		}
+		groups := yamlPath(root, "api-keys."+family.current)
+		if groups == nil || groups.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, group := range groups.Content {
+			if group == nil || group.Kind != yaml.MappingNode {
+				continue
+			}
+			if migrateYAMLNodeExcludedAllToDisabled(group) {
+				changed = true
+			}
+			keys := yamlPath(group, "keys")
+			if keys == nil || keys.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, key := range keys.Content {
+				if migrateYAMLNodeExcludedAllToDisabled(key) {
+					changed = true
+				}
+			}
+		}
+	}
+	return changed
+}
+
+func migrateYAMLNodeExcludedAllToDisabled(node *yaml.Node) bool {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return false
+	}
+	excluded := yamlPath(node, "excluded-models")
+	if excluded == nil || excluded.Kind != yaml.SequenceNode || len(excluded.Content) == 0 {
+		return false
+	}
+	hasWildcard := false
+	kept := make([]*yaml.Node, 0, len(excluded.Content))
+	for _, item := range excluded.Content {
+		if item != nil && item.Kind == yaml.ScalarNode && strings.TrimSpace(item.Value) == "*" {
+			hasWildcard = true
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if !hasWildcard {
+		return false
+	}
+	if len(kept) == 0 {
+		deleteYAMLPath(node, "excluded-models")
+	} else {
+		excluded.Content = kept
+	}
+	if yamlPath(node, "disabled") == nil {
+		setYAMLPath(node, "disabled", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"})
+	}
+	return true
+}
+
 // mergeConnectionPoolNode merges a per-key connection-pool block onto the group block.
 // Missing sub-keys fall back to the group value; the result is always a fresh node.
 func mergeConnectionPoolNode(base, override *yaml.Node) *yaml.Node {
@@ -664,6 +729,9 @@ func normalizeConfigLayout(data []byte, migrate bool) ([]byte, bool, []ArchivedV
 	}
 	var commented []ArchivedV8Section
 	if migrate {
+		if migrateV8APIKeysExcludedAllDisabled(root) {
+			changed = true
+		}
 		// Existing unknown fields are ignored by the runtime. Retain their
 		// contents as comments while keeping new v8 writes strictly validated.
 		var errComment error

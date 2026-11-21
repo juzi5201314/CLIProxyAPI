@@ -1516,6 +1516,7 @@ func TestConfigSynthesizerSkipsDisabledAPIKeys(t *testing.T) {
 		},
 		CodexKey: []config.CodexKey{
 			{APIKey: "x-disabled", BaseURL: "https://example.invalid", Disabled: true},
+			{APIKey: "x-legacy-disabled", BaseURL: "https://example.invalid", ExcludedModels: []string{"*"}},
 			{APIKey: "x-enabled", BaseURL: "https://example.invalid"},
 		},
 		XAIKey: []config.XAIKey{
