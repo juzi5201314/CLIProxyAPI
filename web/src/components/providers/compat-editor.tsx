@@ -29,8 +29,8 @@ import {
   NumberValue,
   ProbeStatusBadge,
   ScopedErrorsEditor,
-  mergeModelNames,
   normalizeModelsForSave,
+  syncFetchedModelNames,
   type ModelEntry,
 } from "./model-editor";
 import {
@@ -449,7 +449,8 @@ export function CompatEditorSheet({
                 <FetchModelsButton
                   target={{ baseURL: draft["base-url"] ?? "", auth: "bearer", modelsPath: "models" }}
                   keys={keys.map((entry) => entry["api-key"] ?? "")}
-                  onAdd={(names) => patch({ models: mergeModelNames(models, names) })}
+                  existingModels={models.map((m) => String(m.name ?? "").trim()).filter(Boolean)}
+                  onAdd={(selectedNames, fetchedNames) => patch({ models: syncFetchedModelNames(models, fetchedNames, selectedNames) })}
                 />
                 <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => patch({ models: [...models, { alias: "" }] })}>
                   <Plus className="size-3.5" />

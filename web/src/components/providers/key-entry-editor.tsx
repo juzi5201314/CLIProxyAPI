@@ -28,8 +28,8 @@ import {
   ModelRowsEditor,
   NumberValue,
   ScopedErrorsEditor,
-  mergeModelNames,
   normalizeModelsForSave,
+  syncFetchedModelNames,
   type ModelEntry,
 } from "./model-editor";
 import { probeCodexWebsocket, probeUpstream, targetFor, type CodexWebsocketProbeResult, type Entry, type KindMeta, type ProbeResult } from "./provider-tools";
@@ -369,7 +369,8 @@ export function KeyEntryEditorSheet({
                   target={{ baseURL: String(draft["base-url"] ?? "") || kind.defaultBase, auth: kind.auth, modelsPath: kind.modelsPath }}
                   keys={[apiKey]}
                   proxyURL={String(draft["proxy-url"] ?? "") || undefined}
-                  onAdd={(names) => patch("models", mergeModelNames(models, names))}
+                  existingModels={configuredModels}
+                  onAdd={(selectedNames, fetchedNames) => patch("models", syncFetchedModelNames(models, fetchedNames, selectedNames))}
                 />
                 <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => patch("models", [...models, { alias: "" }])}>
                   <Plus className="size-3.5" />

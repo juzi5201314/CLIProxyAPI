@@ -1,6 +1,6 @@
 // Shared model-list / excluded-models / fetch / combobox pieces used by both
 // the OpenAI-compatible provider editor and the typed key-entry editors.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -122,6 +122,48 @@ export function mergeModelNames(models: ModelEntry[], names: string[]): ModelEnt
   }
   toast.success(i18n.t("providers.modelsAdded", { count: additions.length }));
   return [...models, ...additions];
+}
+
+/** Sync fetched upstream models with the provider list: keep unselected models
+ *  not returned by /models intact, preserve existing metadata on kept models,
+ *  remove fetched models that were unchecked, and append newly checked ones. */
+export function syncFetchedModelNames(models: ModelEntry[], fetchedNames: string[], selectedNames: string[]): ModelEntry[] {
+  const fetchedSet = new Set(fetchedNames.map((n) => n.trim()).filter(Boolean));
+  const selectedSet = new Set(selectedNames.map((n) => n.trim()).filter(Boolean));
+
+  let removedCount = 0;
+  const kept: ModelEntry[] = [];
+  for (const model of models) {
+    const name = String(model.name ?? "").trim();
+    if (name && fetchedSet.has(name) && !selectedSet.has(name)) {
+      removedCount++;
+      continue;
+    }
+    kept.push(model);
+  }
+
+  const keptNames = new Set(kept.map((model) => String(model.name ?? "").trim()).filter(Boolean));
+  const additions: ModelEntry[] = [];
+  for (const rawName of selectedNames) {
+    const name = rawName.trim();
+    if (!name || keptNames.has(name)) continue;
+    keptNames.add(name);
+    additions.push({ name, alias: name });
+  }
+  const addedCount = additions.length;
+
+  if (addedCount === 0 && removedCount === 0) {
+    toast.info(i18n.t("providers.modelsAlreadyPresent"));
+    return models;
+  }
+  if (addedCount > 0 && removedCount > 0) {
+    toast.success(i18n.t("providers.modelsSynced", { added: addedCount, removed: removedCount }));
+  } else if (addedCount > 0) {
+    toast.success(i18n.t("providers.modelsAdded", { count: addedCount }));
+  } else {
+    toast.success(i18n.t("providers.modelsRemoved", { count: removedCount }));
+  }
+  return [...kept, ...additions];
 }
 
 /** Drop nameless rows and default the alias to the name: the runtime resolves
@@ -575,13 +617,15 @@ export function FetchModelsButton({
   target,
   keys,
   proxyURL,
+  existingModels,
   onAdd,
 }: {
   /** Kind metadata + base URL; the credential comes from `keys`. */
   target: Pick<UpstreamTarget, "baseURL" | "auth" | "modelsPath">;
   keys: string[];
   proxyURL?: string;
-  onAdd: (names: string[]) => void;
+  existingModels?: string[];
+  onAdd: (selected: string[], fetched: string[]) => void;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -597,9 +641,10 @@ export function FetchModelsButton({
         <FetchModelsDialog
           target={{ ...target, apiKey: "", proxyURL }}
           keys={usableKeys}
+          existingModels={existingModels}
           onClose={() => setOpen(false)}
-          onAdd={(names) => {
-            onAdd(names);
+          onAdd={(selectedNames, fetchedNames) => {
+            onAdd(selectedNames, fetchedNames);
             setOpen(false);
           }}
         />
@@ -611,13 +656,15 @@ export function FetchModelsButton({
 function FetchModelsDialog({
   target,
   keys,
+  existingModels,
   onClose,
   onAdd,
 }: {
   target: UpstreamTarget;
   keys: string[];
+  existingModels?: string[];
   onClose: () => void;
-  onAdd: (names: string[]) => void;
+  onAdd: (selected: string[], fetched: string[]) => void;
 }) {
   const { t } = useTranslation();
   const [keyIndex, setKeyIndex] = useState("0");
@@ -626,6 +673,14 @@ function FetchModelsDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
 
+  const existingList = useMemo(
+    () => [...new Set((existingModels ?? []).map((n) => n.trim()).filter(Boolean))],
+    [existingModels],
+  );
+  const existingSet = useMemo(() => new Set(existingList), [existingList]);
+  const existingListRef = useRef(existingList);
+  existingListRef.current = existingList;
+
   const runWithKey = async (indexStr: string) => {
     const key = keys[Number(indexStr)] ?? "";
     if (!key) return;
@@ -633,7 +688,7 @@ function FetchModelsDialog({
     try {
       const names = await fetchUpstreamModels({ ...target, apiKey: key });
       setFetched(names);
-      setSelected(new Set(names));
+      setSelected(new Set(existingListRef.current));
       if (names.length === 0) toast.info(t("providers.fetchedEmpty"));
       else toast.success(t("providers.fetchedCount", { count: names.length }));
     } catch (error) {
@@ -649,7 +704,21 @@ function FetchModelsDialog({
     }
   }, []);
 
-  const visible = (fetched ?? []).filter((name) => name.toLowerCase().includes(filter.toLowerCase()));
+  const fetchedList = fetched ?? [];
+  const fetchedSet = useMemo(() => new Set(fetchedList), [fetched]);
+  const missingFromUpstream = useMemo(
+    () => existingList.filter((name) => !fetchedSet.has(name)),
+    [existingList, fetchedSet],
+  );
+  const managedNames = useMemo(
+    () => [...fetchedList, ...missingFromUpstream],
+    [fetched, missingFromUpstream],
+  );
+
+  const lowerFilter = filter.toLowerCase();
+  const visibleUpstream = fetchedList.filter((name) => name.toLowerCase().includes(lowerFilter));
+  const visibleMissing = missingFromUpstream.filter((name) => name.toLowerCase().includes(lowerFilter));
+
   const toggle = (name: string, checked: boolean) => {
     setSelected((current) => {
       const next = new Set(current);
@@ -658,6 +727,21 @@ function FetchModelsDialog({
       return next;
     });
   };
+
+  let addedCount = 0;
+  let removedCount = 0;
+  for (const name of managedNames) {
+    const inList = existingSet.has(name);
+    const isChecked = selected.has(name);
+    if (!inList && isChecked) addedCount++;
+    if (inList && !isChecked) removedCount++;
+  }
+  const hasChanges = addedCount > 0 || removedCount > 0;
+  const confirmDisabled = existingList.length > 0 ? !hasChanges : selected.size === 0;
+  const orderedSelected = [
+    ...missingFromUpstream.filter((name) => selected.has(name)),
+    ...fetchedList.filter((name) => selected.has(name)),
+  ];
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -701,7 +785,7 @@ function FetchModelsDialog({
                 size="sm"
                 className="h-8 text-xs rounded-xl"
                 onClick={() => {
-                  setSelected(new Set(visible));
+                  setSelected((current) => new Set([...current, ...visibleUpstream]));
                 }}
               >
                 {t("common.all") || "全选"}
@@ -710,22 +794,80 @@ function FetchModelsDialog({
                 variant="ghost"
                 size="sm"
                 className="h-8 text-xs rounded-xl text-slate-500"
-                onClick={() => setSelected(new Set())}
+                onClick={() => {
+                  setSelected((current) => {
+                    const next = new Set(current);
+                    for (const name of visibleUpstream) next.delete(name);
+                    for (const name of visibleMissing) next.delete(name);
+                    return next;
+                  });
+                }}
               >
                 {t("common.none") || "清空"}
               </Button>
             </div>
             <div className="text-muted-foreground flex items-center justify-between px-1 pb-1.5 text-[11px]">
-              <span>已选 {selected.size} / 可用 {visible.length} 个模型</span>
+              <span>{t("providers.fetchSelectionSummary", { selected: selected.size, total: visibleUpstream.length })}</span>
+              {missingFromUpstream.length > 0 ? (
+                <span className="text-amber-600 dark:text-amber-400">
+                  {t("providers.fetchMissingSummary", { count: missingFromUpstream.length })}
+                </span>
+              ) : null}
             </div>
             <div className="-mx-1 flex-1 space-y-1 overflow-y-auto px-1 max-h-96">
-              {visible.map((name) => (
-                <label key={name} className="hover:bg-secondary/60 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs transition">
-                  <Checkbox checked={selected.has(name)} onCheckedChange={(checked) => toggle(name, checked === true)} />
-                  <span className="min-w-0 flex-1 truncate font-mono">{name}</span>
-                </label>
-              ))}
-              {visible.length === 0 ? <p className="text-muted-foreground py-6 text-center text-xs">{t("common.empty")}</p> : null}
+              {visibleMissing.length > 0 ? (
+                <div className="mb-2 space-y-1 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2">
+                  <div className="flex items-center justify-between px-1 pb-0.5">
+                    <span className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                      {t("providers.missingFromUpstreamHeading", { count: visibleMissing.length })}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[11px] text-amber-700 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200"
+                      disabled={!visibleMissing.some((name) => selected.has(name))}
+                      onClick={() => {
+                        setSelected((current) => {
+                          const next = new Set(current);
+                          for (const name of visibleMissing) next.delete(name);
+                          return next;
+                        });
+                      }}
+                    >
+                      {t("providers.uncheckMissing")}
+                    </Button>
+                  </div>
+                  {visibleMissing.map((name) => {
+                    const checked = selected.has(name);
+                    return (
+                      <label key={name} className="hover:bg-amber-500/10 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs transition">
+                        <Checkbox checked={checked} onCheckedChange={(value) => toggle(name, value === true)} />
+                        <span className={cn("min-w-0 flex-1 truncate font-mono", !checked && "line-through opacity-60")}>{name}</span>
+                        <Badge variant="outline" className="shrink-0 border-amber-500/40 px-1.5 py-0 text-[10px] font-normal text-amber-700 dark:text-amber-300">
+                          {t("providers.modelRemovedUpstream")}
+                        </Badge>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {visibleUpstream.map((name) => {
+                const inList = existingSet.has(name);
+                return (
+                  <label key={name} className="hover:bg-secondary/60 flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs transition">
+                    <Checkbox checked={selected.has(name)} onCheckedChange={(checked) => toggle(name, checked === true)} />
+                    <span className="min-w-0 flex-1 truncate font-mono">{name}</span>
+                    {inList ? (
+                      <Badge variant="outline" className="text-muted-foreground shrink-0 px-1.5 py-0 text-[10px] font-normal">
+                        {t("providers.modelInList")}
+                      </Badge>
+                    ) : null}
+                  </label>
+                );
+              })}
+              {visibleUpstream.length === 0 && visibleMissing.length === 0 ? (
+                <p className="text-muted-foreground py-6 text-center text-xs">{t("common.empty")}</p>
+              ) : null}
             </div>
           </>
         ) : (
@@ -747,9 +889,11 @@ function FetchModelsDialog({
           <Button variant="outline" size="sm" className="h-8" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button size="sm" className="h-8" disabled={selected.size === 0} onClick={() => onAdd([...selected])}>
+          <Button size="sm" className="h-8" disabled={confirmDisabled} onClick={() => onAdd(orderedSelected, managedNames)}>
             <Plus className="size-3.5" />
-            {t("providers.addSelected", { count: selected.size })}
+            {existingList.length > 0
+              ? t("providers.applySelected", { count: selected.size })
+              : t("providers.addSelected", { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>
