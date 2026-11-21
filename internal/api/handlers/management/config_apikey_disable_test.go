@@ -1,6 +1,7 @@
 package management
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -8,18 +9,50 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
-func TestSetConfigAPIKeyExcludedAll(t *testing.T) {
-	gotDisable := setConfigAPIKeyExcludedAll([]string{"gpt-5"}, true)
-	if len(gotDisable) != 2 || gotDisable[0] != "gpt-5" || gotDisable[1] != "*" {
-		t.Fatalf("unexpected disable list: %#v", gotDisable)
+func TestToggleConfigAPIKeyDisabled_PreservesExcludedModels(t *testing.T) {
+	cfg := &config.Config{
+		CodexKey: []config.CodexKey{{
+			APIKey:         "sk-test",
+			BaseURL:        "https://example.com/v1",
+			ExcludedModels: []string{"gpt-5"},
+		}},
 	}
-	gotEnable := setConfigAPIKeyExcludedAll([]string{"gpt-5", "*"}, false)
-	if len(gotEnable) != 1 || gotEnable[0] != "gpt-5" {
-		t.Fatalf("unexpected enable list: %#v", gotEnable)
+	idGen := synthesizer.NewStableIDGenerator()
+	authID, _ := idGen.Next("codex:apikey", "sk-test", "https://example.com/v1", "", "", "")
+	auth := &coreauth.Auth{
+		ID:       authID,
+		Provider: "codex",
+		Attributes: map[string]string{
+			"api_key":  "sk-test",
+			"base_url": "https://example.com/v1",
+			"source":   "config:codex[abc]",
+		},
+	}
+
+	handled, err := toggleConfigAPIKeyDisabled(cfg, auth, true)
+	if err != nil || !handled {
+		t.Fatalf("toggle disable: handled=%v err=%v", handled, err)
+	}
+	if !cfg.CodexKey[0].Disabled {
+		t.Fatal("expected CodexKey[0].Disabled = true")
+	}
+	if !reflect.DeepEqual(cfg.CodexKey[0].ExcludedModels, []string{"gpt-5"}) {
+		t.Fatalf("excluded-models mutated: got %#v, want [gpt-5]", cfg.CodexKey[0].ExcludedModels)
+	}
+
+	handled, err = toggleConfigAPIKeyDisabled(cfg, auth, false)
+	if err != nil || !handled {
+		t.Fatalf("toggle enable: handled=%v err=%v", handled, err)
+	}
+	if cfg.CodexKey[0].Disabled {
+		t.Fatal("expected CodexKey[0].Disabled = false")
+	}
+	if !reflect.DeepEqual(cfg.CodexKey[0].ExcludedModels, []string{"gpt-5"}) {
+		t.Fatalf("excluded-models mutated on re-enable: got %#v, want [gpt-5]", cfg.CodexKey[0].ExcludedModels)
 	}
 }
 
-func TestToggleConfigAPIKeyExcludedAll_XAI(t *testing.T) {
+func TestToggleConfigAPIKeyDisabled_XAI(t *testing.T) {
 	cfg := &config.Config{
 		XAIKey: []config.XAIKey{{
 			APIKey:  "xai-test",
@@ -38,16 +71,16 @@ func TestToggleConfigAPIKeyExcludedAll_XAI(t *testing.T) {
 		},
 	}
 
-	handled, errToggle := toggleConfigAPIKeyExcludedAll(cfg, auth, true)
+	handled, errToggle := toggleConfigAPIKeyDisabled(cfg, auth, true)
 	if errToggle != nil || !handled {
 		t.Fatalf("toggle disable: handled=%v err=%v", handled, errToggle)
 	}
-	if len(cfg.XAIKey[0].ExcludedModels) != 1 || cfg.XAIKey[0].ExcludedModels[0] != "*" {
-		t.Fatalf("excluded-models = %#v, want [*]", cfg.XAIKey[0].ExcludedModels)
+	if !cfg.XAIKey[0].Disabled {
+		t.Fatal("expected XAIKey[0].Disabled = true")
 	}
 }
 
-func TestToggleConfigAPIKeyExcludedAll_Meta(t *testing.T) {
+func TestToggleConfigAPIKeyDisabled_Meta(t *testing.T) {
 	cfg := &config.Config{
 		MetaKey: []config.MetaKey{{
 			APIKey:  "meta-test",
@@ -66,52 +99,16 @@ func TestToggleConfigAPIKeyExcludedAll_Meta(t *testing.T) {
 		},
 	}
 
-	handled, errToggle := toggleConfigAPIKeyExcludedAll(cfg, auth, true)
+	handled, errToggle := toggleConfigAPIKeyDisabled(cfg, auth, true)
 	if errToggle != nil || !handled {
 		t.Fatalf("toggle disable: handled=%v err=%v", handled, errToggle)
 	}
-	if len(cfg.MetaKey[0].ExcludedModels) != 1 || cfg.MetaKey[0].ExcludedModels[0] != "*" {
-		t.Fatalf("excluded-models = %#v, want [*]", cfg.MetaKey[0].ExcludedModels)
+	if !cfg.MetaKey[0].Disabled {
+		t.Fatal("expected MetaKey[0].Disabled = true")
 	}
 }
 
-func TestToggleConfigAPIKeyExcludedAll_Codex(t *testing.T) {
-	cfg := &config.Config{
-		CodexKey: []config.CodexKey{{
-			APIKey:  "sk-test",
-			BaseURL: "https://example.com/v1",
-		}},
-	}
-	idGen := synthesizer.NewStableIDGenerator()
-	authID, _ := idGen.Next("codex:apikey", "sk-test", "https://example.com/v1", "", "", "")
-	auth := &coreauth.Auth{
-		ID:       authID,
-		Provider: "codex",
-		Attributes: map[string]string{
-			"api_key":  "sk-test",
-			"base_url": "https://example.com/v1",
-			"source":   "config:codex[abc]",
-		},
-	}
-
-	handled, err := toggleConfigAPIKeyExcludedAll(cfg, auth, true)
-	if err != nil || !handled {
-		t.Fatalf("toggle disable: handled=%v err=%v", handled, err)
-	}
-	if len(cfg.CodexKey[0].ExcludedModels) != 1 || cfg.CodexKey[0].ExcludedModels[0] != "*" {
-		t.Fatalf("expected excluded-models [*], got %#v", cfg.CodexKey[0].ExcludedModels)
-	}
-
-	handled, err = toggleConfigAPIKeyExcludedAll(cfg, auth, false)
-	if err != nil || !handled {
-		t.Fatalf("toggle enable: handled=%v err=%v", handled, err)
-	}
-	if len(cfg.CodexKey[0].ExcludedModels) != 0 {
-		t.Fatalf("expected excluded-models cleared, got %#v", cfg.CodexKey[0].ExcludedModels)
-	}
-}
-
-func TestToggleConfigAPIKeyExcludedAll_Vertex_NoBaseURL(t *testing.T) {
+func TestToggleConfigAPIKeyDisabled_Vertex_NoBaseURL(t *testing.T) {
 	cfg := &config.Config{
 		VertexCompatAPIKey: []config.VertexCompatKey{{
 			APIKey: "vertex-key-only",
@@ -129,16 +126,16 @@ func TestToggleConfigAPIKeyExcludedAll_Vertex_NoBaseURL(t *testing.T) {
 		},
 	}
 
-	handled, errToggle := toggleConfigAPIKeyExcludedAll(cfg, auth, true)
+	handled, errToggle := toggleConfigAPIKeyDisabled(cfg, auth, true)
 	if errToggle != nil || !handled {
 		t.Fatalf("toggle disable: handled=%v err=%v", handled, errToggle)
 	}
-	if len(cfg.VertexCompatAPIKey[0].ExcludedModels) != 1 || cfg.VertexCompatAPIKey[0].ExcludedModels[0] != "*" {
-		t.Fatalf("excluded-models = %#v, want [*]", cfg.VertexCompatAPIKey[0].ExcludedModels)
+	if !cfg.VertexCompatAPIKey[0].Disabled {
+		t.Fatal("expected VertexCompatAPIKey[0].Disabled = true")
 	}
 }
 
-func TestToggleConfigAPIKeyExcludedAll_EmptyKeyWithBaseURL(t *testing.T) {
+func TestToggleConfigAPIKeyDisabled_EmptyKeyWithBaseURL(t *testing.T) {
 	cfg := &config.Config{
 		ClaudeKey: []config.ClaudeKey{{
 			APIKey:  "",
@@ -172,19 +169,19 @@ func TestToggleConfigAPIKeyExcludedAll_EmptyKeyWithBaseURL(t *testing.T) {
 		},
 	}
 
-	handled, err := toggleConfigAPIKeyExcludedAll(cfg, claudeAuth, true)
+	handled, err := toggleConfigAPIKeyDisabled(cfg, claudeAuth, true)
 	if err != nil || !handled {
 		t.Fatalf("toggle claude: handled=%v err=%v", handled, err)
 	}
-	if len(cfg.ClaudeKey[0].ExcludedModels) != 1 || cfg.ClaudeKey[0].ExcludedModels[0] != "*" {
-		t.Fatalf("claude excluded-models = %#v, want [*]", cfg.ClaudeKey[0].ExcludedModels)
+	if !cfg.ClaudeKey[0].Disabled {
+		t.Fatal("expected ClaudeKey[0].Disabled = true")
 	}
 
-	handled, err = toggleConfigAPIKeyExcludedAll(cfg, geminiAuth, true)
+	handled, err = toggleConfigAPIKeyDisabled(cfg, geminiAuth, true)
 	if err != nil || !handled {
 		t.Fatalf("toggle gemini: handled=%v err=%v", handled, err)
 	}
-	if len(cfg.GeminiKey[0].ExcludedModels) != 1 || cfg.GeminiKey[0].ExcludedModels[0] != "*" {
-		t.Fatalf("gemini excluded-models = %#v, want [*]", cfg.GeminiKey[0].ExcludedModels)
+	if !cfg.GeminiKey[0].Disabled {
+		t.Fatal("expected GeminiKey[0].Disabled = true")
 	}
 }

@@ -469,6 +469,7 @@ export const providerLists = {
 const V8_SHARED_KEY_FIELDS = new Set([
   "base-url",
   "priority",
+  "disabled",
   "prefix",
   "proxy-url",
   "headers",

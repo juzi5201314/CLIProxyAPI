@@ -1499,3 +1499,53 @@ func TestConfigSynthesizer_EmptyConnectionPoolBlockOptsIn(t *testing.T) {
 		t.Fatalf("keyless OpenAI-compatible entry lost its group connection-pool block: %+v", keylessAuths)
 	}
 }
+
+func TestConfigSynthesizerSkipsDisabledAPIKeys(t *testing.T) {
+	cfg := &config.Config{
+		GeminiKey: []config.GeminiKey{
+			{APIKey: "g-disabled", Disabled: true},
+			{APIKey: "g-enabled"},
+		},
+		InteractionsKey: []config.GeminiKey{
+			{APIKey: "i-disabled", Disabled: true},
+			{APIKey: "i-enabled"},
+		},
+		ClaudeKey: []config.ClaudeKey{
+			{APIKey: "c-disabled", Disabled: true},
+			{APIKey: "c-enabled"},
+		},
+		CodexKey: []config.CodexKey{
+			{APIKey: "x-disabled", BaseURL: "https://example.invalid", Disabled: true},
+			{APIKey: "x-enabled", BaseURL: "https://example.invalid"},
+		},
+		XAIKey: []config.XAIKey{
+			{APIKey: "xai-disabled", BaseURL: "https://api.x.ai/v1", Disabled: true},
+			{APIKey: "xai-enabled", BaseURL: "https://api.x.ai/v1"},
+		},
+		MetaKey: []config.MetaKey{
+			{APIKey: "m-disabled", BaseURL: "https://api.meta.ai/v1", Disabled: true},
+			{APIKey: "m-enabled", BaseURL: "https://api.meta.ai/v1"},
+		},
+		VertexCompatAPIKey: []config.VertexCompatKey{
+			{APIKey: "v-disabled", Disabled: true},
+			{APIKey: "v-enabled"},
+		},
+	}
+
+	auths, err := NewConfigSynthesizer().Synthesize(&SynthesisContext{
+		Config:      cfg,
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(auths) != 7 {
+		t.Fatalf("auths count = %d, want 7 (only enabled entries)", len(auths))
+	}
+	for _, a := range auths {
+		if strings.HasSuffix(a.Attributes["api_key"], "-disabled") {
+			t.Fatalf("disabled entry synthesized: %+v", a)
+		}
+	}
+}

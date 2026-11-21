@@ -169,6 +169,9 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next(idKind, idParts...)
+		if entry.Disabled {
+			continue
+		}
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:%s[%s]", sourceName, token),
 			"config_index": strconv.Itoa(i),
@@ -246,6 +249,9 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next("claude:apikey", idParts...)
+		if ck.Disabled {
+			continue
+		}
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:claude[%s]", token),
 			"config_index": strconv.Itoa(i),
@@ -345,6 +351,9 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next(provider+":apikey", idParts...)
+		if entry.Disabled {
+			continue
+		}
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:%s[%s]", provider, token),
 			"config_index": strconv.Itoa(i),
@@ -574,6 +583,9 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 			idParts = append(idParts, poolID)
 		}
 		id, token := idGen.Next(idKind, idParts...)
+		if compat.Disabled {
+			continue
+		}
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:vertex-apikey[%s]", token),
 			"base_url":     base,

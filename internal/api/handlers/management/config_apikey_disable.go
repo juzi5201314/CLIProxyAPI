@@ -9,28 +9,7 @@ import (
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
 
-const configAPIKeyDisablePattern = "*"
-
-func setConfigAPIKeyExcludedAll(models []string, disable bool) []string {
-	if disable {
-		for _, item := range models {
-			if strings.TrimSpace(item) == configAPIKeyDisablePattern {
-				return config.NormalizeExcludedModels(models)
-			}
-		}
-		return config.NormalizeExcludedModels(append(append([]string(nil), models...), configAPIKeyDisablePattern))
-	}
-	filtered := make([]string, 0, len(models))
-	for _, item := range models {
-		if strings.TrimSpace(item) == configAPIKeyDisablePattern {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return config.NormalizeExcludedModels(filtered)
-}
-
-func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disable bool) (bool, error) {
+func toggleConfigAPIKeyDisabled(cfg *config.Config, auth *coreauth.Auth, disable bool) (bool, error) {
 	if cfg == nil || auth == nil || !coreauth.IsConfigAPIKeyAuth(auth) {
 		return false, nil
 	}
@@ -56,7 +35,7 @@ func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disa
 		}
 		id, _ := idGen.Next("gemini:apikey", idParts...)
 		if id == authID {
-			entry.ExcludedModels = setConfigAPIKeyExcludedAll(entry.ExcludedModels, disable)
+			entry.Disabled = disable
 			return true, nil
 		}
 	}
@@ -75,7 +54,7 @@ func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disa
 		}
 		id, _ := idGen.Next("gemini-interactions:apikey", idParts...)
 		if id == authID {
-			entry.ExcludedModels = setConfigAPIKeyExcludedAll(entry.ExcludedModels, disable)
+			entry.Disabled = disable
 			return true, nil
 		}
 	}
@@ -94,7 +73,7 @@ func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disa
 		}
 		id, _ := idGen.Next("claude:apikey", idParts...)
 		if id == authID {
-			entry.ExcludedModels = setConfigAPIKeyExcludedAll(entry.ExcludedModels, disable)
+			entry.Disabled = disable
 			return true, nil
 		}
 	}
@@ -113,7 +92,7 @@ func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disa
 		}
 		id, _ := idGen.Next("codex:apikey", idParts...)
 		if id == authID {
-			entry.ExcludedModels = setConfigAPIKeyExcludedAll(entry.ExcludedModels, disable)
+			entry.Disabled = disable
 			return true, nil
 		}
 	}
@@ -132,7 +111,7 @@ func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disa
 		}
 		id, _ := idGen.Next("xai:apikey", idParts...)
 		if id == authID {
-			entry.ExcludedModels = setConfigAPIKeyExcludedAll(entry.ExcludedModels, disable)
+			entry.Disabled = disable
 			return true, nil
 		}
 	}
@@ -151,7 +130,7 @@ func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disa
 		}
 		id, _ := idGen.Next("meta:apikey", idParts...)
 		if id == authID {
-			entry.ExcludedModels = setConfigAPIKeyExcludedAll(entry.ExcludedModels, disable)
+			entry.Disabled = disable
 			return true, nil
 		}
 	}
@@ -166,7 +145,7 @@ func toggleConfigAPIKeyExcludedAll(cfg *config.Config, auth *coreauth.Auth, disa
 		}
 		id, _ := idGen.Next("vertex:apikey", idParts...)
 		if id == authID {
-			entry.ExcludedModels = setConfigAPIKeyExcludedAll(entry.ExcludedModels, disable)
+			entry.Disabled = disable
 			return true, nil
 		}
 	}

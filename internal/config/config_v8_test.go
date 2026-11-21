@@ -1104,3 +1104,51 @@ func TestV8ExampleDocumentsSessionAffinityCompactionGuidance(t *testing.T) {
 		}
 	}
 }
+
+func TestV8APIKeyDisabledField(t *testing.T) {
+	for _, provider := range []string{"gemini", "interactions", "vertex", "codex", "claude", "xai", "meta"} {
+		t.Run(provider, func(t *testing.T) {
+			raw := []byte("api-keys:\n  " + provider + ":\n" + `    - name: group-disabled
+      base-url: https://example.invalid
+      disabled: true
+      keys:
+        - api-key: key-1
+        - api-key: key-2
+          disabled: false
+`)
+			if errValidate := ValidateV8Config(raw); errValidate != nil {
+				t.Fatalf("ValidateV8Config(%s) error: %v", provider, errValidate)
+			}
+
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if errWrite := os.WriteFile(path, raw, 0600); errWrite != nil {
+				t.Fatal(errWrite)
+			}
+			cfg, errLoad := LoadConfig(path)
+			if errLoad != nil {
+				t.Fatalf("LoadConfig(%s) error: %v", provider, errLoad)
+			}
+
+			var firstDisabled, secondDisabled bool
+			switch provider {
+			case "gemini":
+				firstDisabled, secondDisabled = cfg.GeminiKey[0].Disabled, cfg.GeminiKey[1].Disabled
+			case "interactions":
+				firstDisabled, secondDisabled = cfg.InteractionsKey[0].Disabled, cfg.InteractionsKey[1].Disabled
+			case "vertex":
+				firstDisabled, secondDisabled = cfg.VertexCompatAPIKey[0].Disabled, cfg.VertexCompatAPIKey[1].Disabled
+			case "codex":
+				firstDisabled, secondDisabled = cfg.CodexKey[0].Disabled, cfg.CodexKey[1].Disabled
+			case "claude":
+				firstDisabled, secondDisabled = cfg.ClaudeKey[0].Disabled, cfg.ClaudeKey[1].Disabled
+			case "xai":
+				firstDisabled, secondDisabled = cfg.XAIKey[0].Disabled, cfg.XAIKey[1].Disabled
+			case "meta":
+				firstDisabled, secondDisabled = cfg.MetaKey[0].Disabled, cfg.MetaKey[1].Disabled
+			}
+			if !firstDisabled || secondDisabled {
+				t.Fatalf("%s disabled states = (%v, %v), want (true, false)", provider, firstDisabled, secondDisabled)
+			}
+		})
+	}
+}

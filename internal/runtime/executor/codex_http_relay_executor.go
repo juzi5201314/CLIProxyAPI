@@ -54,7 +54,7 @@ func configureCodexHTTPRelayPool(pool *helps.CodexRelayPool[*codexHTTPRelaySessi
 	if cfg != nil {
 		view := cfg.ForAPIKey()
 		for _, entry := range cfg.CodexKey {
-			if entry.WebsocketRelay {
+			if entry.WebsocketRelay && !entry.Disabled {
 				valid[codexRelayConfigKey(view, entry)] = true
 			}
 		}

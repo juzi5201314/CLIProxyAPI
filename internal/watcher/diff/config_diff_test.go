@@ -945,3 +945,37 @@ func TestBuildConfigChangeDetails_SensitivePatternsReplace(t *testing.T) {
 		t.Fatalf("expected no diff between nil and empty SensitivePatternsReplace slices, got %v", noDiff)
 	}
 }
+
+func TestBuildConfigChangeDetails_APIKeyDisabled(t *testing.T) {
+	oldCfg := &config.Config{
+		GeminiKey:          []config.GeminiKey{{APIKey: "g1"}},
+		InteractionsKey:    []config.GeminiKey{{APIKey: "i1"}},
+		ClaudeKey:          []config.ClaudeKey{{APIKey: "c1"}},
+		CodexKey:           []config.CodexKey{{APIKey: "x1", BaseURL: "https://example.invalid"}},
+		XAIKey:             []config.XAIKey{{APIKey: "xai1", BaseURL: "https://api.x.ai/v1"}},
+		MetaKey:            []config.MetaKey{{APIKey: "m1", BaseURL: "https://api.meta.ai/v1"}},
+		VertexCompatAPIKey: []config.VertexCompatKey{{APIKey: "v1"}},
+	}
+	newCfg := &config.Config{
+		GeminiKey:          []config.GeminiKey{{APIKey: "g1", Disabled: true}},
+		InteractionsKey:    []config.GeminiKey{{APIKey: "i1", Disabled: true}},
+		ClaudeKey:          []config.ClaudeKey{{APIKey: "c1", Disabled: true}},
+		CodexKey:           []config.CodexKey{{APIKey: "x1", BaseURL: "https://example.invalid", Disabled: true}},
+		XAIKey:             []config.XAIKey{{APIKey: "xai1", BaseURL: "https://api.x.ai/v1", Disabled: true}},
+		MetaKey:            []config.MetaKey{{APIKey: "m1", BaseURL: "https://api.meta.ai/v1", Disabled: true}},
+		VertexCompatAPIKey: []config.VertexCompatKey{{APIKey: "v1", Disabled: true}},
+	}
+
+	changes := BuildConfigChangeDetails(oldCfg, newCfg)
+	for _, want := range []string{
+		"gemini[0].disabled: false -> true",
+		"interactions[0].disabled: false -> true",
+		"claude[0].disabled: false -> true",
+		"codex[0].disabled: false -> true",
+		"xai[0].disabled: false -> true",
+		"meta[0].disabled: false -> true",
+		"vertex[0].disabled: false -> true",
+	} {
+		expectContains(t, changes, want)
+	}
+}

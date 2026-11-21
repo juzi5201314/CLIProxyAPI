@@ -247,6 +247,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			if strings.TrimSpace(o.Prefix) != strings.TrimSpace(n.Prefix) {
 				changes = append(changes, fmt.Sprintf("gemini[%d].prefix: %s -> %s", i, strings.TrimSpace(o.Prefix), strings.TrimSpace(n.Prefix)))
 			}
+			if o.Disabled != n.Disabled {
+				changes = append(changes, fmt.Sprintf("gemini[%d].disabled: %t -> %t", i, o.Disabled, n.Disabled))
+			}
 			changes = appendOptionalBoolChange(changes, fmt.Sprintf("gemini[%d].disable-cooling", i), o.DisableCooling, n.DisableCooling)
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
 				changes = append(changes, fmt.Sprintf("gemini[%d].api-key: updated", i))
@@ -282,6 +285,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			changes = appendConnectionPoolChanges(changes, fmt.Sprintf("interactions[%d].connection-pool", i), o.ConnectionPool, n.ConnectionPool)
 			if strings.TrimSpace(o.Prefix) != strings.TrimSpace(n.Prefix) {
 				changes = append(changes, fmt.Sprintf("interactions[%d].prefix: %s -> %s", i, strings.TrimSpace(o.Prefix), strings.TrimSpace(n.Prefix)))
+			}
+			if o.Disabled != n.Disabled {
+				changes = append(changes, fmt.Sprintf("interactions[%d].disabled: %t -> %t", i, o.Disabled, n.Disabled))
 			}
 			changes = appendOptionalBoolChange(changes, fmt.Sprintf("interactions[%d].disable-cooling", i), o.DisableCooling, n.DisableCooling)
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
@@ -320,6 +326,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			changes = appendConnectionPoolChanges(changes, fmt.Sprintf("claude[%d].connection-pool", i), o.ConnectionPool, n.ConnectionPool)
 			if strings.TrimSpace(o.Prefix) != strings.TrimSpace(n.Prefix) {
 				changes = append(changes, fmt.Sprintf("claude[%d].prefix: %s -> %s", i, strings.TrimSpace(o.Prefix), strings.TrimSpace(n.Prefix)))
+			}
+			if o.Disabled != n.Disabled {
+				changes = append(changes, fmt.Sprintf("claude[%d].disabled: %t -> %t", i, o.Disabled, n.Disabled))
 			}
 			changes = appendOptionalBoolChange(changes, fmt.Sprintf("claude[%d].disable-cooling", i), o.DisableCooling, n.DisableCooling)
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
@@ -391,6 +400,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			if strings.TrimSpace(o.Prefix) != strings.TrimSpace(n.Prefix) {
 				changes = append(changes, fmt.Sprintf("codex[%d].prefix: %s -> %s", i, strings.TrimSpace(o.Prefix), strings.TrimSpace(n.Prefix)))
 			}
+			if o.Disabled != n.Disabled {
+				changes = append(changes, fmt.Sprintf("codex[%d].disabled: %t -> %t", i, o.Disabled, n.Disabled))
+			}
 			if o.Websockets != n.Websockets {
 				changes = append(changes, fmt.Sprintf("codex[%d].websockets: %t -> %t", i, o.Websockets, n.Websockets))
 			}
@@ -442,6 +454,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			if o.Priority != n.Priority {
 				changes = append(changes, fmt.Sprintf("xai[%d].priority: %d -> %d", i, o.Priority, n.Priority))
 			}
+			if o.Disabled != n.Disabled {
+				changes = append(changes, fmt.Sprintf("xai[%d].disabled: %t -> %t", i, o.Disabled, n.Disabled))
+			}
 			if o.Websockets != n.Websockets {
 				changes = append(changes, fmt.Sprintf("xai[%d].websockets: %t -> %t", i, o.Websockets, n.Websockets))
 			}
@@ -485,6 +500,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			}
 			if o.Priority != n.Priority {
 				changes = append(changes, fmt.Sprintf("meta[%d].priority: %d -> %d", i, o.Priority, n.Priority))
+			}
+			if o.Disabled != n.Disabled {
+				changes = append(changes, fmt.Sprintf("meta[%d].disabled: %t -> %t", i, o.Disabled, n.Disabled))
 			}
 			changes = appendOptionalBoolChange(changes, fmt.Sprintf("meta[%d].disable-cooling", i), o.DisableCooling, n.DisableCooling)
 			changes = appendOptionalIntChange(changes, fmt.Sprintf("meta[%d].request-retry", i), o.RequestRetry, n.RequestRetry)
@@ -575,6 +593,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			changes = appendConnectionPoolChanges(changes, fmt.Sprintf("vertex[%d].connection-pool", i), o.ConnectionPool, n.ConnectionPool)
 			if strings.TrimSpace(o.Prefix) != strings.TrimSpace(n.Prefix) {
 				changes = append(changes, fmt.Sprintf("vertex[%d].prefix: %s -> %s", i, strings.TrimSpace(o.Prefix), strings.TrimSpace(n.Prefix)))
+			}
+			if o.Disabled != n.Disabled {
+				changes = append(changes, fmt.Sprintf("vertex[%d].disabled: %t -> %t", i, o.Disabled, n.Disabled))
 			}
 			changes = appendOptionalBoolChange(changes, fmt.Sprintf("vertex[%d].disable-cooling", i), o.DisableCooling, n.DisableCooling)
 			changes = appendOptionalBoolChange(changes, fmt.Sprintf("vertex[%d].openapi", i), o.OpenAPI, n.OpenAPI)

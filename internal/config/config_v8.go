@@ -390,7 +390,7 @@ func flattenV8(node *yaml.Node) (*yaml.Node, error) {
 }
 
 var sharedKeyFields = map[string]bool{
-	"priority": true, "prefix": true, "proxy-url": true, "headers": true,
+	"priority": true, "disabled": true, "prefix": true, "proxy-url": true, "headers": true,
 	"models": true, "excluded-models": true, "disable-cooling": true,
 	"request-retry": true, "max-concurrency": true, "request-scoped-errors": true,
 	"service-tier": true,

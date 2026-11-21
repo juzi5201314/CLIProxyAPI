@@ -661,6 +661,7 @@ function ExtraFieldsEditor({ kind, draft, onApply }: { kind: KindMeta; draft: En
   const { t } = useTranslation();
   const known = new Set((KEY_EDITOR_FIELDS[kind.id] ?? []).map((field) => field.key));
   known.add("auth-index");
+  known.add("disabled");
   known.add("models");
   known.add("excluded-models");
   known.add("headers");
