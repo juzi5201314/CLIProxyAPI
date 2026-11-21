@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MoeForge/moego/ojson"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
@@ -327,4 +328,67 @@ func buildCodexResponsesWebsocketURL(httpURL string) (string, error) {
 		return "", fmt.Errorf("codex websockets executor: responses websocket URL host is empty")
 	}
 	return parsed.String(), nil
+}
+
+// PrepareCodexWebsocketProbe builds the target WebSocket URL, headers, and proxy-aware
+// dialer for probing a Codex upstream's Responses WebSocket support.
+func PrepareCodexWebsocketProbe(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, model, sessionID string) (wsURL string, headers http.Header, dialer *websocket.Dialer, compressionEnabled bool, err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	apiKey, baseURL := codexCreds(auth)
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return "", nil, nil, false, fmt.Errorf("codex websockets probe: base_url is empty")
+	}
+	rawTarget := strings.TrimRight(baseURL, "/") + "/responses"
+	parsed, errParse := url.Parse(rawTarget)
+	if errParse != nil {
+		return "", nil, nil, false, errParse
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http":
+		parsed.Scheme = "ws"
+	case "https":
+		parsed.Scheme = "wss"
+	case "ws", "wss":
+	default:
+		return "", nil, nil, false, fmt.Errorf("codex websockets probe: unsupported URL scheme %q", parsed.Scheme)
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return "", nil, nil, false, fmt.Errorf("codex websockets probe: URL host is empty")
+	}
+	wsURL = parsed.String()
+
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
+
+	headers = http.Header{}
+	setHeaderCasePreserved(headers, "session_id", sessionID)
+	headers.Set("Conversation_id", sessionID)
+	headers = applyCodexWebsocketHeaders(ctx, headers, auth, apiKey, cfg, false)
+	applyModelHeaderOverrides(headers, strings.TrimSpace(model))
+
+	if auth != nil && len(auth.Attributes) > 0 {
+		for attrKey, attrVal := range auth.Attributes {
+			if !strings.HasPrefix(attrKey, "header:") {
+				continue
+			}
+			headerName := strings.TrimSpace(strings.TrimPrefix(attrKey, "header:"))
+			if !strings.EqualFold(headerName, "Host") {
+				continue
+			}
+			val := strings.TrimSpace(attrVal)
+			if val != "" && !strings.HasPrefix(val, "$") {
+				headers.Set("Host", val)
+			}
+		}
+	}
+
+	dialer = newProxyAwareWebsocketDialer(ctx, cfg, auth)
+	compressionEnabled = cfg == nil || cfg.Codex.WebsocketCompressionEnabled()
+	return wsURL, headers, dialer, compressionEnabled, nil
 }

@@ -20,11 +20,20 @@ type codexClientModelsPayload struct {
 }
 
 type codexClientModelsStore struct {
-	mu                sync.RWMutex
-	data              []byte
-	revision          uint64
-	responsesLiteMap  map[string]bool
-	thinkingLevelsMap map[string][]string
+	mu                       sync.RWMutex
+	data                     []byte
+	revision                 uint64
+	responsesLiteMap         map[string]bool
+	thinkingLevelsMap        map[string][]string
+	baseInstructionsMap      map[string]string
+	defaultCodexInstructions string
+}
+
+type codexClientCatalogIndex struct {
+	responsesLiteMap         map[string]bool
+	thinkingLevelsMap        map[string][]string
+	baseInstructionsMap      map[string]string
+	defaultCodexInstructions string
 }
 
 var codexClientCatalogStore = &codexClientModelsStore{}
@@ -84,8 +93,27 @@ func CodexClientModelThinkingLevels(slug string) []string {
 	return append([]string(nil), levels...)
 }
 
+const fallbackCodexBaseInstructions = "You are Codex, a coding agent. You and the user share one workspace."
+
+// CodexClientModelBaseInstructions returns the base_instructions for slug in the
+// active Codex client model catalog, falling back to the default Codex instructions.
+func CodexClientModelBaseInstructions(slug string) string {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	codexClientCatalogStore.mu.RLock()
+	defer codexClientCatalogStore.mu.RUnlock()
+	if slug != "" {
+		if instructions := strings.TrimSpace(codexClientCatalogStore.baseInstructionsMap[slug]); instructions != "" {
+			return instructions
+		}
+	}
+	if def := strings.TrimSpace(codexClientCatalogStore.defaultCodexInstructions); def != "" {
+		return def
+	}
+	return fallbackCodexBaseInstructions
+}
+
 func loadCodexClientModelsFromBytes(data []byte, source string) (bool, error) {
-	responsesLiteMap, thinkingLevelsMap, err := parseAndValidateCodexClientModelsJSON(data)
+	index, err := parseAndValidateCodexClientModelsJSON(data)
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", source, err)
 	}
@@ -97,8 +125,10 @@ func loadCodexClientModelsFromBytes(data []byte, source string) (bool, error) {
 		return false, nil
 	}
 	codexClientCatalogStore.data = cloned
-	codexClientCatalogStore.responsesLiteMap = responsesLiteMap
-	codexClientCatalogStore.thinkingLevelsMap = thinkingLevelsMap
+	codexClientCatalogStore.responsesLiteMap = index.responsesLiteMap
+	codexClientCatalogStore.thinkingLevelsMap = index.thinkingLevelsMap
+	codexClientCatalogStore.baseInstructionsMap = index.baseInstructionsMap
+	codexClientCatalogStore.defaultCodexInstructions = index.defaultCodexInstructions
 	codexClientCatalogStore.revision++
 	return true, nil
 }
@@ -106,38 +136,54 @@ func loadCodexClientModelsFromBytes(data []byte, source string) (bool, error) {
 // ValidateCodexClientModelsJSON validates the fields required to serve a
 // complete Codex client model catalog.
 func ValidateCodexClientModelsJSON(data []byte) error {
-	_, _, err := parseAndValidateCodexClientModelsJSON(data)
+	_, err := parseAndValidateCodexClientModelsJSON(data)
 	return err
 }
 
-func parseAndValidateCodexClientModelsJSON(data []byte) (map[string]bool, map[string][]string, error) {
+func parseAndValidateCodexClientModelsJSON(data []byte) (codexClientCatalogIndex, error) {
 	var payload codexClientModelsPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, nil, fmt.Errorf("decode Codex client model catalog: %w", err)
+		return codexClientCatalogIndex{}, fmt.Errorf("decode Codex client model catalog: %w", err)
 	}
 	if len(payload.Models) == 0 {
-		return nil, nil, fmt.Errorf("Codex client model catalog has no models")
+		return codexClientCatalogIndex{}, fmt.Errorf("Codex client model catalog has no models")
 	}
 
 	seen := make(map[string]struct{}, len(payload.Models))
-	responsesLiteMap := make(map[string]bool, len(payload.Models))
-	thinkingLevelsMap := make(map[string][]string, len(payload.Models))
+	index := codexClientCatalogIndex{
+		responsesLiteMap:    make(map[string]bool, len(payload.Models)),
+		thinkingLevelsMap:   make(map[string][]string, len(payload.Models)),
+		baseInstructionsMap: make(map[string]string, len(payload.Models)),
+	}
+	firstInstructions := ""
 	for i, model := range payload.Models {
 		slug, err := requiredCodexClientModelString(model, "slug")
 		if err != nil {
-			return nil, nil, fmt.Errorf("Codex client model catalog models[%d]: %w", i, err)
+			return codexClientCatalogIndex{}, fmt.Errorf("Codex client model catalog models[%d]: %w", i, err)
 		}
 		if _, exists := seen[slug]; exists {
-			return nil, nil, fmt.Errorf("Codex client model catalog contains duplicate slug %q", slug)
+			return codexClientCatalogIndex{}, fmt.Errorf("Codex client model catalog contains duplicate slug %q", slug)
 		}
 		seen[slug] = struct{}{}
 
 		if err = validateCodexClientModel(model); err != nil {
-			return nil, nil, fmt.Errorf("Codex client model catalog model %q: %w", slug, err)
+			return codexClientCatalogIndex{}, fmt.Errorf("Codex client model catalog model %q: %w", slug, err)
 		}
 		lowerSlug := strings.ToLower(slug)
+		if baseInst, ok := model["base_instructions"].(string); ok {
+			trimmedInst := strings.TrimSpace(baseInst)
+			if trimmedInst != "" {
+				index.baseInstructionsMap[lowerSlug] = trimmedInst
+				if firstInstructions == "" {
+					firstInstructions = trimmedInst
+				}
+				if index.defaultCodexInstructions == "" && strings.HasPrefix(trimmedInst, "You are Codex") {
+					index.defaultCodexInstructions = trimmedInst
+				}
+			}
+		}
 		if lite, ok := model["use_responses_lite"].(bool); ok && lite {
-			responsesLiteMap[lowerSlug] = true
+			index.responsesLiteMap[lowerSlug] = true
 		}
 		if rawLevels, ok := model["supported_reasoning_levels"].([]any); ok {
 			levels := make([]string, 0, len(rawLevels))
@@ -149,11 +195,14 @@ func parseAndValidateCodexClientModelsJSON(data []byte) (map[string]bool, map[st
 				}
 			}
 			if len(levels) > 0 {
-				thinkingLevelsMap[lowerSlug] = levels
+				index.thinkingLevelsMap[lowerSlug] = levels
 			}
 		}
 	}
-	return responsesLiteMap, thinkingLevelsMap, nil
+	if index.defaultCodexInstructions == "" {
+		index.defaultCodexInstructions = firstInstructions
+	}
+	return index, nil
 }
 
 func validateCodexClientModel(model map[string]any) error {

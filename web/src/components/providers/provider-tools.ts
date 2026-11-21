@@ -10,7 +10,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { config } from "@/api/management";
+import { config, type CodexWebsocketProbeRequest, type CodexWebsocketProbeResponse } from "@/api/management";
 import { errMessage } from "@/api/types";
 
 export type Entry = Record<string, unknown>;
@@ -117,6 +117,27 @@ export function authHeaders(auth: AuthScheme, apiKey: string): Record<string, st
 export function modelsURL(target: UpstreamTarget): string {
   if (target.auth === "x-goog-api-key" && target.baseURL.includes("/publishers/")) return target.baseURL;
   return joinURL(target.baseURL, target.modelsPath);
+}
+
+export type CodexWebsocketProbeResult = CodexWebsocketProbeResponse;
+
+/** Probe whether a Codex upstream supports Responses API over WebSocket. */
+export async function probeCodexWebsocket(req: CodexWebsocketProbeRequest): Promise<CodexWebsocketProbeResponse> {
+  try {
+    return await config.probeCodexWebsocket(req);
+  } catch (error) {
+    const msg = errMessage(error);
+    return {
+      supported: false,
+      status: "network_error",
+      stage: "handshake",
+      endpoint: "",
+      model: req.model ?? "",
+      latency_ms: 0,
+      message: msg,
+      raw_error: msg,
+    };
+  }
 }
 
 /** Probe an upstream with GET <models endpoint> using the given credential. */

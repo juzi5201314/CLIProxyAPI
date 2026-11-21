@@ -157,6 +157,41 @@ export interface ConfigGetResponse<T = Record<string, unknown>> {
   etag: string;
 }
 
+export interface CodexWebsocketProbeRequest {
+  base_url: string;
+  api_key: string;
+  proxy_url?: string;
+  headers?: Record<string, string>;
+  model?: string;
+  disable_codex_cloaking?: boolean;
+}
+
+export type CodexWebsocketProbeStatus =
+  | "supported"
+  | "unsupported"
+  | "auth_error"
+  | "model_error"
+  | "rate_limited"
+  | "upstream_error"
+  | "timeout"
+  | "network_error";
+
+export interface CodexWebsocketProbeResponse {
+  supported: boolean;
+  status: CodexWebsocketProbeStatus;
+  stage: string;
+  probe_mode?: "prewarm" | "fallback_chat";
+  endpoint: string;
+  model: string;
+  http_status?: number;
+  close_code?: number;
+  error_code?: string;
+  event_type?: string;
+  latency_ms: number;
+  message?: string;
+  raw_error?: string;
+}
+
 export const config = {
   /** GET /config returns the v8 document itself plus a strong ETag. */
   async get<T = Record<string, unknown>>(): Promise<ConfigGetResponse<T>> {
@@ -181,6 +216,11 @@ export const config = {
   async apiCall(body: Record<string, unknown>): Promise<{ status_code: number; header: Record<string, string>; body: string }> {
     const { data } = await client.post("/requests/api-call", body);
     return data as { status_code: number; header: Record<string, string>; body: string };
+  },
+  /** Probe whether a Codex upstream supports Responses API over WebSocket. */
+  async probeCodexWebsocket(body: CodexWebsocketProbeRequest): Promise<CodexWebsocketProbeResponse> {
+    const { data } = await client.post("/requests/codex-websocket-probe", body);
+    return data as CodexWebsocketProbeResponse;
   },
 };
 

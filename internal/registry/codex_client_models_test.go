@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/MoeForge/moego/json"
@@ -209,4 +210,15 @@ func testCodexClientCatalog(t *testing.T, models ...map[string]any) []byte {
 		t.Fatalf("marshal test Codex client catalog: %v", err)
 	}
 	return data
+}
+
+func TestCodexClientModelBaseInstructions(t *testing.T) {
+	known := CodexClientModelBaseInstructions("gpt-6.2-sol")
+	if !strings.HasPrefix(known, "You are Codex") {
+		t.Fatalf("CodexClientModelBaseInstructions(gpt-6.2-sol) = %q, want prefix 'You are Codex'", known)
+	}
+	fallback := CodexClientModelBaseInstructions("unknown-custom-model")
+	if !strings.HasPrefix(fallback, "You are Codex") {
+		t.Fatalf("CodexClientModelBaseInstructions(unknown-custom-model) = %q, want Codex fallback prefix", fallback)
+	}
 }

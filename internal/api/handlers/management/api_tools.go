@@ -2,26 +2,44 @@ package management
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MoeForge/moego/json"
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	xaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/xai"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/proxyutil"
 	log "github.com/sirupsen/logrus"
 )
 
-const defaultAPICallTimeout = 60 * time.Second
+const (
+	defaultAPICallTimeout                = 60 * time.Second
+	defaultCodexWebsocketProbeTimeout    = 30 * time.Second
+	codexWebsocketProbeMaxPreEventFrames = 8
+	codexWebsocketProbeMaxStreamFrames   = 512
+	codexWebsocketProbeMaxBodyBytes      = 8192
+	codexWebsocketProbeModePrewarm       = "prewarm"
+	codexWebsocketProbeModeFallbackChat  = "fallback_chat"
+)
 
 const (
 	antigravityOAuthClientID     = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
@@ -1017,4 +1035,792 @@ func buildProxyTransport(proxyStr string) *http.Transport {
 		return nil
 	}
 	return transport
+}
+
+type codexWebsocketProbeRequest struct {
+	BaseURL              string            `json:"base_url"`
+	APIKey               string            `json:"api_key"`
+	ProxyURL             string            `json:"proxy_url,omitempty"`
+	Headers              map[string]string `json:"headers,omitempty"`
+	Model                string            `json:"model,omitempty"`
+	DisableCodexCloaking *bool             `json:"disable_codex_cloaking,omitempty"`
+}
+
+type codexWebsocketProbeResponse struct {
+	Supported  bool   `json:"supported"`
+	Status     string `json:"status"`
+	Stage      string `json:"stage"`
+	ProbeMode  string `json:"probe_mode,omitempty"`
+	Endpoint   string `json:"endpoint"`
+	Model      string `json:"model"`
+	HTTPStatus int    `json:"http_status,omitempty"`
+	CloseCode  int    `json:"close_code,omitempty"`
+	ErrorCode  string `json:"error_code,omitempty"`
+	EventType  string `json:"event_type,omitempty"`
+	LatencyMS  int64  `json:"latency_ms"`
+	Message    string `json:"message,omitempty"`
+	RawError   string `json:"raw_error,omitempty"`
+}
+
+var codexProbeDisguisedPrompts = []string{
+	"What is the difference between git fetch and git pull? Reply in one short sentence.",
+	"What does HTTP status code 304 mean? Reply in one short sentence.",
+	"What is the difference between TCP and UDP? Reply in one short sentence.",
+	"What does the Go defer keyword do? Reply in one short sentence.",
+	"What does chmod 644 mean on Linux? Reply in one short sentence.",
+	"What is a race condition in concurrent programming? Reply in one short sentence.",
+	"What does the SQL INNER JOIN clause return? Reply in one short sentence.",
+	"What is the purpose of a DNS CNAME record? Reply in one short sentence.",
+}
+
+func pickCodexProbePrompt() string {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(codexProbeDisguisedPrompts))))
+	if err != nil {
+		return codexProbeDisguisedPrompts[0]
+	}
+	return codexProbeDisguisedPrompts[n.Int64()]
+}
+
+func buildCodexWebsocketPrewarmPayload(model, instructions, sessionID string) []byte {
+	doc := ojson.NewDocString(`{"type":"response.create","model":"","instructions":"","input":[],"generate":false,"store":false,"stream":true,"parallel_tool_calls":true,"include":["reasoning.encrypted_content"],"prompt_cache_key":""}`)
+	_ = doc.Set("model", model)
+	_ = doc.Set("instructions", instructions)
+	_ = doc.Set("prompt_cache_key", sessionID)
+	return doc.Bytes()
+}
+
+func buildCodexWebsocketFallbackChatPayload(model, instructions, sessionID, prompt string) []byte {
+	doc := ojson.NewDocString(`{"type":"response.create","model":"","instructions":"","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":""}]}],"store":false,"stream":true,"parallel_tool_calls":true,"include":["reasoning.encrypted_content"],"prompt_cache_key":""}`)
+	_ = doc.Set("model", model)
+	_ = doc.Set("instructions", instructions)
+	_ = doc.Set("input.0.content.0.text", prompt)
+	_ = doc.Set("prompt_cache_key", sessionID)
+	return doc.Bytes()
+}
+
+// ProbeCodexWebsocket tests whether a Codex upstream supports Responses API over WebSocket.
+// It uses a native Codex CLI prewarm turn (generate=false) first, and falls back to a
+// disguised normal Codex CLI coding question if the upstream rejects prewarm semantics.
+// Endpoint: POST /v8/management/requests/codex-websocket-probe
+func (h *Handler) ProbeCodexWebsocket(c *gin.Context) {
+	var body codexWebsocketProbeRequest
+	if errBindJSON := c.ShouldBindJSON(&body); errBindJSON != nil {
+		c.JSON(clienterror.HTTPStatusFromErrorOr(errBindJSON, http.StatusBadRequest), gin.H{"error": "invalid body"})
+		return
+	}
+
+	baseURL := strings.TrimSpace(body.BaseURL)
+	if baseURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing base_url"})
+		return
+	}
+	parsedURL, errParseURL := url.Parse(baseURL)
+	if errParseURL != nil || parsedURL.Host == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base_url"})
+		return
+	}
+	switch strings.ToLower(parsedURL.Scheme) {
+	case "http", "https", "ws", "wss":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid base_url"})
+		return
+	}
+
+	apiKey := strings.TrimSpace(body.APIKey)
+	if apiKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing api_key"})
+		return
+	}
+
+	requestProxyURL := strings.TrimSpace(body.ProxyURL)
+	if requestProxyURL != "" {
+		if _, errParseProxy := proxyutil.Parse(requestProxyURL); errParseProxy != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid proxy_url"})
+			return
+		}
+	}
+
+	model := strings.TrimSpace(body.Model)
+	if model == "" {
+		for _, m := range registry.GetStaticModelDefinitionsByChannel("codex") {
+			if m != nil && strings.TrimSpace(m.ID) != "" {
+				model = strings.TrimSpace(m.ID)
+				break
+			}
+		}
+		if model == "" {
+			model = "gpt-5.4"
+		}
+	}
+
+	attrs := map[string]string{
+		"api_key":  apiKey,
+		"base_url": baseURL,
+	}
+	if body.DisableCodexCloaking != nil {
+		attrs[coreauth.AttributeCodexDisableCloaking] = strconv.FormatBool(*body.DisableCodexCloaking)
+	}
+	for k, v := range body.Headers {
+		hk := strings.TrimSpace(k)
+		hv := strings.TrimSpace(v)
+		if hk == "" || hv == "" {
+			continue
+		}
+		attrs["header:"+hk] = hv
+	}
+	syntheticAuth := &coreauth.Auth{
+		Provider:   "codex",
+		ProxyURL:   requestProxyURL,
+		Attributes: attrs,
+	}
+
+	var cfg *config.Config
+	if h != nil {
+		h.mu.Lock()
+		cfg = h.cfg
+		h.mu.Unlock()
+	}
+
+	instructions := registry.CodexClientModelBaseInstructions(model)
+	probeCtx, cancel := context.WithTimeout(c.Request.Context(), defaultCodexWebsocketProbeTimeout)
+	defer cancel()
+	start := time.Now()
+
+	res, shouldFallback, errPrep := runCodexWebsocketProbeAttempt(probeCtx, cfg, syntheticAuth, model, instructions, codexWebsocketProbeModePrewarm)
+	if errPrep != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errPrep.Error()})
+		return
+	}
+	if shouldFallback && probeCtx.Err() == nil {
+		fallbackRes, _, errFallbackPrep := runCodexWebsocketProbeAttempt(probeCtx, cfg, syntheticAuth, model, instructions, codexWebsocketProbeModeFallbackChat)
+		if errFallbackPrep != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errFallbackPrep.Error()})
+			return
+		}
+		res = fallbackRes
+	}
+
+	res.Model = model
+	res.LatencyMS = time.Since(start).Milliseconds()
+	c.JSON(http.StatusOK, res)
+}
+
+func runCodexWebsocketProbeAttempt(probeCtx context.Context, cfg *config.Config, syntheticAuth *coreauth.Auth, model, instructions, mode string) (codexWebsocketProbeResponse, bool, error) {
+	sessionID := uuid.NewString()
+	wsURL, wsHeaders, dialer, compressionEnabled, errPrep := executor.PrepareCodexWebsocketProbe(probeCtx, cfg, syntheticAuth, model, sessionID)
+	if errPrep != nil {
+		return codexWebsocketProbeResponse{}, false, errPrep
+	}
+
+	conn, resp, errDial := helps.DialCodexRelayWebsocket(probeCtx, dialer, wsURL, wsHeaders)
+	if errDial != nil {
+		var respBody []byte
+		if resp != nil && resp.Body != nil {
+			limited := io.LimitReader(resp.Body, codexWebsocketProbeMaxBodyBytes)
+			respBody, _ = io.ReadAll(limited)
+			if errClose := resp.Body.Close(); errClose != nil {
+				log.Errorf("codex websocket probe response body close error: %v", errClose)
+			}
+		}
+		res := classifyCodexWebsocketHandshakeError(probeCtx, resp, respBody, errDial)
+		res.Endpoint = wsURL
+		res.ProbeMode = mode
+		return res, false, nil
+	}
+
+	if resp != nil && resp.Body != nil {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.Errorf("codex websocket probe handshake body close error: %v", errClose)
+		}
+	}
+
+	var closeOnce sync.Once
+	closeConn := func() {
+		closeOnce.Do(func() {
+			if errClose := conn.Close(); errClose != nil && !errors.Is(errClose, net.ErrClosed) {
+				log.Debugf("codex websocket probe close error: %v", errClose)
+			}
+		})
+	}
+	stopClose := context.AfterFunc(probeCtx, closeConn)
+	defer func() {
+		stopClose()
+		closeConn()
+	}()
+
+	conn.EnableWriteCompression(compressionEnabled)
+
+	var payload []byte
+	if mode == codexWebsocketProbeModeFallbackChat {
+		payload = buildCodexWebsocketFallbackChatPayload(model, instructions, sessionID, pickCodexProbePrompt())
+	} else {
+		payload = buildCodexWebsocketPrewarmPayload(model, instructions, sessionID)
+	}
+
+	if errWrite := conn.WriteMessage(websocket.TextMessage, payload); errWrite != nil {
+		_, _, errRead := conn.ReadMessage()
+		if errRead != nil && mode == codexWebsocketProbeModePrewarm && isPrewarmIncompatibleCloseError(errRead) {
+			return codexWebsocketProbeResponse{Endpoint: wsURL, ProbeMode: mode}, true, nil
+		}
+		var closeErr *websocket.CloseError
+		var res codexWebsocketProbeResponse
+		if errRead != nil && errors.As(errRead, &closeErr) {
+			res = classifyCodexWebsocketReadError(probeCtx, errRead)
+		} else if isProbeTimeout(probeCtx, errWrite) {
+			res = codexWebsocketProbeResponse{
+				Supported: false,
+				Status:    "timeout",
+				Stage:     "write",
+				Message:   "websocket probe timed out while sending request",
+				RawError:  truncateProbeText(errWrite.Error()),
+			}
+		} else {
+			res = codexWebsocketProbeResponse{
+				Supported: false,
+				Status:    "unsupported",
+				Stage:     "write",
+				Message:   truncateProbeText(errWrite.Error()),
+				RawError:  truncateProbeText(errWrite.Error()),
+			}
+		}
+		res.Endpoint = wsURL
+		res.ProbeMode = mode
+		if res.HTTPStatus == 0 {
+			res.HTTPStatus = http.StatusSwitchingProtocols
+		}
+		return res, false, nil
+	}
+
+	sawResponseEvent := false
+	firstEventType := ""
+	preEventFrames := 0
+
+	for i := 0; i < codexWebsocketProbeMaxStreamFrames; i++ {
+		msgType, msg, errRead := conn.ReadMessage()
+		if errRead != nil {
+			if sawResponseEvent {
+				return codexWebsocketProbeResponse{
+					Supported:  true,
+					Status:     "supported",
+					Stage:      "response",
+					ProbeMode:  mode,
+					Endpoint:   wsURL,
+					HTTPStatus: http.StatusSwitchingProtocols,
+					EventType:  firstEventType,
+				}, false, nil
+			}
+			if mode == codexWebsocketProbeModePrewarm && isPrewarmIncompatibleCloseError(errRead) {
+				return codexWebsocketProbeResponse{Endpoint: wsURL, ProbeMode: mode}, true, nil
+			}
+			res := classifyCodexWebsocketReadError(probeCtx, errRead)
+			res.Endpoint = wsURL
+			res.ProbeMode = mode
+			if res.HTTPStatus == 0 {
+				res.HTTPStatus = http.StatusSwitchingProtocols
+			}
+			return res, false, nil
+		}
+
+		if msgType != websocket.TextMessage || !ojson.ValidBytes(msg) {
+			if sawResponseEvent {
+				return codexWebsocketProbeResponse{
+					Supported:  true,
+					Status:     "supported",
+					Stage:      "response",
+					ProbeMode:  mode,
+					Endpoint:   wsURL,
+					HTTPStatus: http.StatusSwitchingProtocols,
+					EventType:  firstEventType,
+				}, false, nil
+			}
+			detail := "unexpected binary websocket frame"
+			if msgType == websocket.TextMessage {
+				detail = truncateProbeText(string(msg))
+			}
+			return codexWebsocketProbeResponse{
+				Supported:  false,
+				Status:     "unsupported",
+				Stage:      "response",
+				ProbeMode:  mode,
+				Endpoint:   wsURL,
+				HTTPStatus: http.StatusSwitchingProtocols,
+				Message:    detail,
+				RawError:   detail,
+			}, false, nil
+		}
+
+		eventType := helps.CodexResponseEventType(msg)
+		if eventType == "error" || eventType == "response.failed" {
+			if !sawResponseEvent && mode == codexWebsocketProbeModePrewarm && shouldFallbackFromCodexPrewarm(msg, eventType) {
+				_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				closeConn()
+				return codexWebsocketProbeResponse{Endpoint: wsURL, ProbeMode: mode}, true, nil
+			}
+			res := classifyCodexWebsocketEventError(msg, eventType)
+			res.Endpoint = wsURL
+			res.ProbeMode = mode
+			if res.HTTPStatus == 0 {
+				res.HTTPStatus = http.StatusSwitchingProtocols
+			}
+			return res, false, nil
+		}
+
+		if eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete" {
+			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			closeConn()
+			return codexWebsocketProbeResponse{
+				Supported:  true,
+				Status:     "supported",
+				Stage:      "response",
+				ProbeMode:  mode,
+				Endpoint:   wsURL,
+				HTTPStatus: http.StatusSwitchingProtocols,
+				EventType:  eventType,
+			}, false, nil
+		}
+
+		if strings.HasPrefix(eventType, "response.") {
+			if !sawResponseEvent {
+				sawResponseEvent = true
+				firstEventType = eventType
+			}
+			continue
+		}
+
+		if !sawResponseEvent {
+			preEventFrames++
+			if preEventFrames >= codexWebsocketProbeMaxPreEventFrames {
+				return codexWebsocketProbeResponse{
+					Supported:  false,
+					Status:     "unsupported",
+					Stage:      "response",
+					ProbeMode:  mode,
+					Endpoint:   wsURL,
+					HTTPStatus: http.StatusSwitchingProtocols,
+					Message:    "no Responses API event received",
+				}, false, nil
+			}
+		}
+	}
+
+	if sawResponseEvent {
+		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		closeConn()
+		return codexWebsocketProbeResponse{
+			Supported:  true,
+			Status:     "supported",
+			Stage:      "response",
+			ProbeMode:  mode,
+			Endpoint:   wsURL,
+			HTTPStatus: http.StatusSwitchingProtocols,
+			EventType:  firstEventType,
+		}, false, nil
+	}
+
+	return codexWebsocketProbeResponse{
+		Supported:  false,
+		Status:     "unsupported",
+		Stage:      "response",
+		ProbeMode:  mode,
+		Endpoint:   wsURL,
+		HTTPStatus: http.StatusSwitchingProtocols,
+		Message:    "no Responses API event received",
+	}, false, nil
+}
+
+func shouldFallbackFromCodexPrewarm(payload []byte, eventType string) bool {
+	classified := classifyCodexWebsocketEventError(payload, eventType)
+	switch classified.Status {
+	case "unsupported", "auth_error", "model_error", "rate_limited":
+		return false
+	}
+	if classified.HTTPStatus != 0 && classified.HTTPStatus != http.StatusBadRequest && classified.HTTPStatus != http.StatusUnprocessableEntity {
+		return false
+	}
+
+	var errType, errParam string
+	for _, path := range []string{"error.type", "body.error.type", "response.error.type", "type"} {
+		if v := strings.TrimSpace(ojson.GetBytesNoCopy(payload, path).String()); v != "" && v != "error" && v != "response.failed" {
+			errType = strings.ToLower(v)
+			break
+		}
+	}
+	for _, path := range []string{"error.param", "body.error.param", "response.error.param", "param"} {
+		if v := strings.TrimSpace(ojson.GetBytesNoCopy(payload, path).String()); v != "" {
+			errParam = strings.ToLower(v)
+			break
+		}
+	}
+
+	switch strings.ToLower(classified.ErrorCode) {
+	case "unknown_parameter", "unsupported_parameter", "bad_request":
+		return true
+	}
+	switch errType {
+	case "invalid_request_error", "bad_request":
+		return true
+	}
+
+	lower := strings.ToLower(classified.Message + " " + errParam + " " + string(payload))
+	for _, phrase := range []string{
+		"generate",
+		"empty input",
+		"input must",
+		"input is required",
+		"messages cannot be empty",
+		"at least 1",
+		"extra_forbidden",
+		"unknown parameter",
+		"unsupported parameter",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPrewarmIncompatibleCloseError(err error) bool {
+	var closeErr *websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(closeErr.Text))
+	if lower == "" {
+		return false
+	}
+	if looksLikeAuthError(lower, "") || looksLikeRateLimitError(lower, "") || looksLikeModelError(lower, "") || looksLikeWebsocketUnsupported(lower) {
+		return false
+	}
+	for _, phrase := range []string{"generate", "empty input", "input is required"} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyCodexWebsocketHandshakeError(ctx context.Context, resp *http.Response, body []byte, errDial error) codexWebsocketProbeResponse {
+	res := codexWebsocketProbeResponse{
+		Supported: false,
+		Stage:     "handshake",
+	}
+	rawParts := make([]string, 0, 2)
+	if errDial != nil {
+		rawParts = append(rawParts, strings.TrimSpace(errDial.Error()))
+	}
+	bodyText := strings.TrimSpace(string(body))
+	if bodyText != "" {
+		rawParts = append(rawParts, bodyText)
+	}
+	combined := strings.Join(rawParts, ": ")
+	res.RawError = truncateProbeText(combined)
+
+	extractedMsg, extractedCode := extractCodexProbeJSONError(body)
+	if extractedCode != "" {
+		res.ErrorCode = extractedCode
+	}
+	if extractedMsg != "" {
+		res.Message = truncateProbeText(extractedMsg)
+	} else if bodyText != "" {
+		res.Message = truncateProbeText(bodyText)
+	} else if errDial != nil {
+		res.Message = truncateProbeText(errDial.Error())
+	}
+
+	if isProbeTimeout(ctx, errDial) {
+		res.Status = "timeout"
+		if resp != nil {
+			res.HTTPStatus = resp.StatusCode
+		}
+		return res
+	}
+	if resp == nil {
+		res.Status = "network_error"
+		return res
+	}
+
+	res.HTTPStatus = resp.StatusCode
+	bodyLower := strings.ToLower(bodyText + " " + extractedMsg + " " + extractedCode)
+	lower := strings.ToLower(combined + " " + extractedMsg + " " + extractedCode)
+	errCodeLower := strings.ToLower(extractedCode)
+
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		res.Status = "auth_error"
+	case resp.StatusCode == http.StatusForbidden:
+		if looksLikeWebsocketUnsupported(bodyLower) {
+			res.Status = "unsupported"
+		} else {
+			res.Status = "auth_error"
+		}
+	case resp.StatusCode == http.StatusTooManyRequests:
+		res.Status = "rate_limited"
+	case resp.StatusCode == http.StatusNotFound,
+		resp.StatusCode == http.StatusMethodNotAllowed,
+		resp.StatusCode == http.StatusUpgradeRequired,
+		resp.StatusCode == http.StatusNotImplemented,
+		resp.StatusCode < 400:
+		res.Status = "unsupported"
+	case resp.StatusCode == http.StatusBadRequest:
+		if looksLikeAuthError(lower, errCodeLower) {
+			res.Status = "auth_error"
+		} else {
+			res.Status = "unsupported"
+		}
+	case resp.StatusCode >= 500:
+		if looksLikeWebsocketUnsupported(bodyLower) {
+			res.Status = "unsupported"
+		} else {
+			res.Status = "upstream_error"
+		}
+	default:
+		res.Status = "unsupported"
+	}
+	return res
+}
+
+func classifyCodexWebsocketReadError(ctx context.Context, errRead error) codexWebsocketProbeResponse {
+	res := codexWebsocketProbeResponse{
+		Supported: false,
+		Stage:     "response",
+	}
+	if errRead != nil {
+		res.RawError = truncateProbeText(errRead.Error())
+		res.Message = truncateProbeText(errRead.Error())
+	}
+	if isProbeTimeout(ctx, errRead) {
+		res.Status = "timeout"
+		return res
+	}
+
+	var closeErr *websocket.CloseError
+	if errors.As(errRead, &closeErr) {
+		res.CloseCode = closeErr.Code
+		closeText := strings.TrimSpace(closeErr.Text)
+		if closeText != "" {
+			res.Message = truncateProbeText(closeText)
+		}
+		lower := strings.ToLower(errRead.Error() + " " + closeText)
+		switch {
+		case looksLikeAuthError(lower, ""):
+			res.Status = "auth_error"
+		case looksLikeRateLimitError(lower, ""):
+			res.Status = "rate_limited"
+		case looksLikeModelError(lower, ""):
+			res.Status = "model_error"
+		default:
+			res.Status = "unsupported"
+		}
+		return res
+	}
+
+	res.Status = "unsupported"
+	return res
+}
+
+func classifyCodexWebsocketEventError(payload []byte, eventType string) codexWebsocketProbeResponse {
+	res := codexWebsocketProbeResponse{
+		Supported: false,
+		Stage:     "response",
+		EventType: eventType,
+	}
+
+	var httpStatus int
+	for _, path := range []string{
+		"status", "status_code",
+		"body.status", "body.status_code",
+		"error.status", "error.status_code",
+		"response.error.status", "response.error.status_code",
+	} {
+		if v := int(ojson.GetBytesNoCopy(payload, path).Int()); v > 0 {
+			httpStatus = v
+			break
+		}
+	}
+	if httpStatus > 0 {
+		res.HTTPStatus = httpStatus
+	}
+
+	errMsg, errCode := extractCodexProbeJSONError(payload)
+	if errCode != "" {
+		res.ErrorCode = errCode
+	}
+	if errMsg == "" {
+		errMsg = truncateProbeText(string(payload))
+	} else {
+		errMsg = truncateProbeText(errMsg)
+	}
+	res.Message = errMsg
+	res.RawError = truncateProbeText(string(payload))
+
+	lower := strings.ToLower(errMsg + " " + errCode + " " + string(payload))
+	errCodeLower := strings.ToLower(errCode)
+
+	switch {
+	case looksLikeWebsocketUnsupported(lower) || httpStatus == http.StatusMethodNotAllowed || httpStatus == http.StatusUpgradeRequired || httpStatus == http.StatusNotImplemented:
+		res.Status = "unsupported"
+	case httpStatus == http.StatusUnauthorized || httpStatus == http.StatusForbidden || looksLikeAuthError(lower, errCodeLower):
+		res.Status = "auth_error"
+	case httpStatus == http.StatusTooManyRequests || looksLikeRateLimitError(lower, errCodeLower):
+		res.Status = "rate_limited"
+	case looksLikeModelError(lower, errCodeLower):
+		res.Status = "model_error"
+	default:
+		res.Status = "upstream_error"
+	}
+	return res
+}
+
+func extractCodexProbeJSONError(payload []byte) (msg string, code string) {
+	if len(payload) == 0 || !ojson.ValidBytes(payload) {
+		return "", ""
+	}
+	for _, path := range []string{"error.code", "body.error.code", "response.error.code", "code"} {
+		if v := strings.TrimSpace(ojson.GetBytesNoCopy(payload, path).String()); v != "" {
+			code = v
+			break
+		}
+	}
+	for _, path := range []string{"error.message", "body.error.message", "response.error.message", "message"} {
+		if v := strings.TrimSpace(ojson.GetBytesNoCopy(payload, path).String()); v != "" {
+			msg = v
+			break
+		}
+	}
+	return msg, code
+}
+
+func looksLikeWebsocketUnsupported(lower string) bool {
+	for _, phrase := range []string{
+		"no available account",
+		"no available channel",
+		"no available provider",
+		"no available credential",
+		"no available upstream",
+		"upgrade required",
+		"upgrade not supported",
+		"upgrade failed",
+		"method not allowed",
+		"not implemented",
+		"unknown event type",
+		"unsupported event type",
+		"invalid event type",
+		"unsupported protocol",
+		"unsupported transport",
+		"responses_websockets",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	if strings.Contains(lower, "websocket") || strings.Contains(lower, "web socket") {
+		for _, hint := range []string{
+			"not support",
+			"unsupported",
+			"disabled",
+			"not allowed",
+			"not enabled",
+			"not available",
+			"not implement",
+			"forbidden",
+			"rejected",
+			"unavailable",
+			"only",
+		} {
+			if strings.Contains(lower, hint) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func looksLikeAuthError(lower, errCode string) bool {
+	switch errCode {
+	case "invalid_api_key", "authentication_error", "unauthorized", "permission_denied", "auth_unavailable", "invalid_token":
+		return true
+	}
+	for _, phrase := range []string{
+		"unauthorized",
+		"invalid api key",
+		"invalid_api_key",
+		"incorrect api key",
+		"authentication",
+		"invalid token",
+		"expired token",
+		"permission denied",
+		"access denied",
+		"auth_unavailable",
+		"missing authorization",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeRateLimitError(lower, errCode string) bool {
+	switch errCode {
+	case "rate_limit_exceeded", "insufficient_quota", "websocket_connection_limit_reached", "server_is_overloaded", "usage_limit_reached":
+		return true
+	}
+	for _, phrase := range []string{
+		"rate limit",
+		"too many requests",
+		"insufficient_quota",
+		"quota exceeded",
+		"connection limit",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeModelError(lower, errCode string) bool {
+	switch errCode {
+	case "model_not_found", "invalid_model", "unsupported_model", "unknown_model":
+		return true
+	}
+	if strings.Contains(lower, "model") {
+		for _, phrase := range []string{
+			"not found",
+			"does not exist",
+			"do not have access",
+			"unsupported",
+			"unknown",
+			"invalid",
+			"not available",
+			"not allowed",
+			"not supported",
+		} {
+			if strings.Contains(lower, phrase) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isProbeTimeout(ctx context.Context, err error) bool {
+	if ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func truncateProbeText(s string) string {
+	s = strings.TrimSpace(s)
+	const maxLen = 300
+	if len(s) <= maxLen {
+		return s
+	}
+	return strings.TrimSpace(s[:maxLen]) + "..."
 }

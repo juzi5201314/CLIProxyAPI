@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FlaskConical, Loader2, Plus, X } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleX, FlaskConical, Loader2, Plus, Radio, X } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +32,7 @@ import {
   normalizeModelsForSave,
   type ModelEntry,
 } from "./model-editor";
-import { probeUpstream, targetFor, type Entry, type KindMeta, type ProbeResult } from "./provider-tools";
+import { probeCodexWebsocket, probeUpstream, targetFor, type CodexWebsocketProbeResult, type Entry, type KindMeta, type ProbeResult } from "./provider-tools";
 
 interface ScalarField {
   key: string;
@@ -141,6 +142,10 @@ export function KeyEntryEditorSheet({
   const [draft, setDraft] = useState<Entry>(() => structuredClone(entry));
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [probing, setProbing] = useState(false);
+  const [wsModel, setWsModel] = useState("");
+  const [wsProbe, setWsProbe] = useState<CodexWebsocketProbeResult | null>(null);
+  const [wsProbing, setWsProbing] = useState(false);
+  const wsModelsListId = useId();
   const patch = (key: string, value: unknown) =>
     setDraft((current) => {
       if (value === undefined) {
@@ -177,8 +182,14 @@ export function KeyEntryEditorSheet({
   const fields = KEY_EDITOR_FIELDS[kind.id] ?? [NAME_FIELD, KEY_BASE, BASE_URL, PRIORITY, WEIGHT, PREFIX, PROXY];
   const behavior = KIND_BEHAVIOR[kind.id] ?? [COOLING_ROW, RETRY_ROW];
   const apiKey = String(draft["api-key"] ?? "");
-  const baseURL = String(draft["base-url"] ?? "") || kind.defaultBase;
+  const rawBaseURL = String(draft["base-url"] ?? "").trim();
+  const baseURL = rawBaseURL || kind.defaultBase;
   const models = (draft.models as ModelEntry[] | undefined) ?? [];
+  const configuredModels = useMemo(
+    () => [...new Set(models.map((m) => String(m.name ?? "").trim()).filter(Boolean))],
+    [models],
+  );
+  const effectiveWsModel = wsModel.trim() || configuredModels[0] || "";
 
   const runProbe = async () => {
     if (!apiKey) {
@@ -190,6 +201,37 @@ export function KeyEntryEditorSheet({
       setProbe(await probeUpstream(targetFor(kind, String(draft["base-url"] ?? ""), apiKey, String(draft["proxy-url"] ?? "") || undefined)));
     } finally {
       setProbing(false);
+    }
+  };
+
+  const runWsProbe = async () => {
+    if (!apiKey.trim() || !rawBaseURL) {
+      toast.warning(t("providers.probeNeedsBaseAndKey"));
+      return;
+    }
+    const rawHeaders = draft.headers as Record<string, unknown> | undefined;
+    const headers: Record<string, string> = {};
+    if (rawHeaders && typeof rawHeaders === "object") {
+      for (const [k, v] of Object.entries(rawHeaders)) {
+        const hk = k.trim();
+        const hv = String(v ?? "").trim();
+        if (hk && hv) headers[hk] = hv;
+      }
+    }
+    const disableCloaking = typeof draft["disable-codex-cloaking"] === "boolean" ? draft["disable-codex-cloaking"] : undefined;
+    setWsProbing(true);
+    try {
+      const result = await probeCodexWebsocket({
+        base_url: rawBaseURL,
+        api_key: apiKey.trim(),
+        proxy_url: String(draft["proxy-url"] ?? "").trim() || undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        model: effectiveWsModel || undefined,
+        disable_codex_cloaking: disableCloaking,
+      });
+      setWsProbe(result);
+    } finally {
+      setWsProbing(false);
     }
   };
 
@@ -358,6 +400,25 @@ export function KeyEntryEditorSheet({
                 </p>
               ) : null}
             </div>
+            {kind.id === "codex" ? (
+              <CodexWebsocketProbePanel
+                wsModel={wsModel}
+                onWsModelChange={setWsModel}
+                configuredModels={configuredModels}
+                listId={wsModelsListId}
+                probing={wsProbing}
+                disabled={wsProbing || !apiKey.trim() || !rawBaseURL}
+                result={wsProbe}
+                websocketsEnabled={Boolean(draft.websockets)}
+                websocketRelayEnabled={Boolean(draft["websocket-relay"])}
+                onProbe={runWsProbe}
+                onEnableWebsockets={() => patch("websockets", true)}
+                onDisableWebsockets={() => {
+                  patch("websockets", false);
+                  patch("websocket-relay", false);
+                }}
+              />
+            ) : null}
           </EditorSection>
 
           {KIND_WITH_SCOPED_ERRORS.has(kind.id) ? (
@@ -653,5 +714,149 @@ function ExtraFieldsEditor({ kind, draft, onApply }: { kind: KindMeta; draft: En
         </div>
       </div>
     </details>
+  );
+}
+
+const WS_PROBE_STATUS_META: Record<
+  CodexWebsocketProbeResult["status"],
+  { tone: "emerald" | "amber" | "rose"; labelKey: string; detailKey: string }
+> = {
+  supported: { tone: "emerald", labelKey: "providers.wsProbeStatusSupported", detailKey: "providers.wsProbeDetailSupported" },
+  unsupported: { tone: "rose", labelKey: "providers.wsProbeStatusUnsupported", detailKey: "providers.wsProbeDetailUnsupported" },
+  auth_error: { tone: "rose", labelKey: "providers.wsProbeStatusAuthError", detailKey: "providers.wsProbeDetailAuthError" },
+  model_error: { tone: "amber", labelKey: "providers.wsProbeStatusModelError", detailKey: "providers.wsProbeDetailModelError" },
+  rate_limited: { tone: "amber", labelKey: "providers.wsProbeStatusRateLimited", detailKey: "providers.wsProbeDetailRateLimited" },
+  upstream_error: { tone: "rose", labelKey: "providers.wsProbeStatusUpstreamError", detailKey: "providers.wsProbeDetailUpstreamError" },
+  timeout: { tone: "amber", labelKey: "providers.wsProbeStatusTimeout", detailKey: "providers.wsProbeDetailTimeout" },
+  network_error: { tone: "rose", labelKey: "providers.wsProbeStatusNetworkError", detailKey: "providers.wsProbeDetailNetworkError" },
+};
+
+function CodexWebsocketProbePanel({
+  wsModel,
+  onWsModelChange,
+  configuredModels,
+  listId,
+  probing,
+  disabled,
+  result,
+  websocketsEnabled,
+  websocketRelayEnabled,
+  onProbe,
+  onEnableWebsockets,
+  onDisableWebsockets,
+}: {
+  wsModel: string;
+  onWsModelChange: (value: string) => void;
+  configuredModels: string[];
+  listId: string;
+  probing: boolean;
+  disabled: boolean;
+  result: CodexWebsocketProbeResult | null;
+  websocketsEnabled: boolean;
+  websocketRelayEnabled: boolean;
+  onProbe: () => void;
+  onEnableWebsockets: () => void;
+  onDisableWebsockets: () => void;
+}) {
+  const { t } = useTranslation();
+  const meta = result ? WS_PROBE_STATUS_META[result.status] ?? WS_PROBE_STATUS_META.upstream_error : null;
+
+  const badgeClass =
+    meta?.tone === "emerald"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+      : meta?.tone === "amber"
+        ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+        : "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400";
+
+  const boxClass =
+    meta?.tone === "emerald"
+      ? "border-emerald-500/25 bg-emerald-500/5"
+      : meta?.tone === "amber"
+        ? "border-amber-500/25 bg-amber-500/5"
+        : "border-rose-500/25 bg-rose-500/5";
+
+  return (
+    <div className="mt-3 space-y-2.5 border-t border-border/50 pt-3">
+      <div className="space-y-0.5">
+        <p className="text-xs font-medium">{t("providers.wsProbeTitle")}</p>
+        <p className="text-muted-foreground text-[11px] leading-snug">{t("providers.wsProbeHint")}</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          className="h-8 w-52 font-mono text-xs"
+          list={configuredModels.length > 0 ? listId : undefined}
+          value={wsModel}
+          placeholder={configuredModels[0] || t("providers.wsProbeModelPlaceholder")}
+          onChange={(event) => onWsModelChange(event.target.value)}
+        />
+        {configuredModels.length > 0 ? (
+          <datalist id={listId}>
+            {configuredModels.map((modelName) => (
+              <option key={modelName} value={modelName} />
+            ))}
+          </datalist>
+        ) : null}
+        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onProbe} disabled={disabled}>
+          {probing ? <Loader2 className="size-3.5 animate-spin" /> : <Radio className="size-3.5" />}
+          {probing ? t("providers.wsProbeProbing") : t("providers.wsProbeButton")}
+        </Button>
+      </div>
+
+      {result && meta ? (
+        <div className={`space-y-2 rounded-xl border px-3 py-2.5 text-xs ${boxClass}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className={`gap-1 text-[11px] ${badgeClass}`}>
+                {meta.tone === "emerald" ? (
+                  <CircleCheck className="size-3 shrink-0" />
+                ) : meta.tone === "amber" ? (
+                  <AlertTriangle className="size-3 shrink-0" />
+                ) : (
+                  <CircleX className="size-3 shrink-0" />
+                )}
+                {t(meta.labelKey)}
+              </Badge>
+              {result.close_code ? (
+                <span className="text-muted-foreground font-mono text-[11px]">WS Close {result.close_code}</span>
+              ) : result.http_status ? (
+                <span className="text-muted-foreground font-mono text-[11px]">HTTP {result.http_status}</span>
+              ) : null}
+              {result.probe_mode ? (
+                <span className="text-muted-foreground text-[11px]">
+                  {result.probe_mode === "fallback_chat" ? t("providers.wsProbeModeFallbackChat") : t("providers.wsProbeModePrewarm")}
+                </span>
+              ) : null}
+              {result.event_type ? (
+                <span className="text-muted-foreground font-mono text-[11px]">{result.event_type}</span>
+              ) : null}
+              {result.model ? (
+                <span className="text-muted-foreground font-mono text-[11px]">{result.model}</span>
+              ) : null}
+              <span className="text-muted-foreground font-mono text-[11px]">{result.latency_ms}ms</span>
+            </div>
+
+            {result.supported && !websocketsEnabled ? (
+              <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={onEnableWebsockets}>
+                {t("providers.wsProbeEnableAction")}
+              </Button>
+            ) : null}
+            {result.status === "unsupported" && (websocketsEnabled || websocketRelayEnabled) ? (
+              <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={onDisableWebsockets}>
+                {t("providers.wsProbeDisableAction")}
+              </Button>
+            ) : null}
+          </div>
+
+          <p className="text-muted-foreground text-[11px] leading-snug">{t(meta.detailKey)}</p>
+
+          {!result.supported && (result.raw_error || result.message) ? (
+            <p className="bg-background/70 text-foreground/90 rounded-lg border border-border/50 px-2.5 py-1.5 font-mono text-[11px] break-all">
+              {result.raw_error || result.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

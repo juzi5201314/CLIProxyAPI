@@ -91,6 +91,7 @@ func TestManagementV8IndependentContract(t *testing.T) {
 	for _, route := range []string{
 		"GET /v0/management/debug", "PUT /v0/management/request-retry", "GET /v0/management/auth-files",
 		"GET /v8/management/observability/logs", "GET /v8/management/observability/usage/queue",
+		"POST /v8/management/requests/codex-websocket-probe",
 		"GET /v8/management/credentials", "POST /v8/management/credentials", "POST /v8/management/credentials/verify",
 		"GET /v8/management/oauth/auth-url", "POST /v8/management/oauth/auth-url", "POST /v8/management/oauth/import", "POST /v8/management/oauth/callback",
 		"POST /v8/management/routing/cooldown/reset",
