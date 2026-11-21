@@ -47,9 +47,10 @@ AGENTS.override.md
 .gemini/*
 .serena/*
 .agent/*
-.agents
 .pi
 .agents/*
+!.agents/skills/
+!.agents/skills/**
 .opencode/*
 .idea/*
 .beads/*
