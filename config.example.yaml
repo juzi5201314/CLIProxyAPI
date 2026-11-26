@@ -448,6 +448,10 @@ upstream:
       user-agent-mode: builtin
       # Generates both the built-in UA and fallback Version header.
       client-version: "0.172.0"
+      # fixed: always use client-version (default).
+      # latest: fetch the newest openai/codex release from GitHub's public API every 6h,
+      # cache it on disk, and use client-version only until the first successful fetch.
+      client-version-source: fixed
       # auto: preserve the existing Version, filling a missing value when cloaking is enabled.
       # builtin: always use client-version; passthrough: omit when downstream omits it.
       # override: always use the non-empty version value below.

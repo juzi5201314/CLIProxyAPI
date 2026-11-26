@@ -35,12 +35,12 @@ func TestConfigV8CodexClientIdentity(t *testing.T) {
 		}
 		return response.Body.String()
 	}
-	request(http.MethodPut, "", `{"user-agent-mode":"fallback","client-version":"0.173.0","version-mode":"override","version":"fixed-version"}`, http.StatusOK)
+	request(http.MethodPut, "", `{"user-agent-mode":"fallback","client-version":"0.173.0","client-version-source":"latest","version-mode":"override","version":"fixed-version"}`, http.StatusOK)
 	if got := request(http.MethodGet, "/version", "", http.StatusOK); got != `"fixed-version"` {
 		t.Fatalf("Version override was not exposed: %s", got)
 	}
 	loaded, errLoad := config.LoadConfig(file)
-	if errLoad != nil || loaded.Codex.ClientIdentity.UserAgentMode != "fallback" || loaded.ForAPIKey().Codex.ClientIdentity.Version != "fixed-version" {
+	if errLoad != nil || loaded.Codex.ClientIdentity.UserAgentMode != "fallback" || loaded.Codex.ClientIdentity.ClientVersionSource != "latest" || loaded.ForAPIKey().Codex.ClientIdentity.Version != "fixed-version" {
 		t.Fatalf("client identity did not round-trip: %+v, %v", loaded, errLoad)
 	}
 	before, errRead := os.ReadFile(file)
@@ -48,6 +48,7 @@ func TestConfigV8CodexClientIdentity(t *testing.T) {
 		t.Fatal(errRead)
 	}
 	request(http.MethodPut, "/user-agent-mode", `"invalid"`, http.StatusUnprocessableEntity)
+	request(http.MethodPut, "/client-version-source", `"automatic"`, http.StatusUnprocessableEntity)
 	request(http.MethodPut, "/version", `"bad\r\nInjected: yes"`, http.StatusUnprocessableEntity)
 	if after, errRead := os.ReadFile(file); errRead != nil || string(after) != string(before) {
 		t.Fatal("invalid client identity changed the stored configuration")

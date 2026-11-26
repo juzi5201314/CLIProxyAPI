@@ -12,6 +12,10 @@ const UA_HINTS: Record<string, string> = {
   passthrough: "原样转发下游 UA；下游未提供时，上游也不发送 UA。",
   fallback: "下游提供 UA 时原样转发，缺失时发送内置 Codex 身份。",
 };
+const VERSION_SOURCE_HINTS: Record<string, string> = {
+  fixed: "始终使用下方固定版本；这是默认和原有行为。",
+  latest: "每 6 小时通过 GitHub 公开 API 获取 openai/codex 最新版本并缓存；固定版本作为首次刷新前的回退。",
+};
 const VERSION_HINTS: Record<string, string> = {
   auto: "保留已有 Version，缺失时使用内置版本；兼容现有配置。",
   builtin: "始终使用内置 Codex 版本，保持与内置 UA 一致。",
@@ -24,17 +28,19 @@ export function CodexClientIdentity({ codex, onChange }: { codex: Doc; onChange:
   const legacyDisabled = Boolean(codex["disable-codex-cloaking"]);
   const uaMode = String(identity["user-agent-mode"] || (legacyDisabled ? "fallback" : "builtin"));
   const versionMode = String(identity["version-mode"] || "auto");
+  const versionSource = String(identity["client-version-source"] || "fixed");
   const version = String(identity["client-version"] || DEFAULT_VERSION).trim() || DEFAULT_VERSION;
+  const builtInVersion = versionSource === "latest" ? `GitHub 最新版本（未刷新时回退 ${version}）` : version;
   const update = (changes: Doc) => onChange({ ...codex, "client-identity": { "user-agent-mode": uaMode, ...identity, ...changes } });
   const versionSummary = versionMode === "builtin"
-    ? `Version 使用 ${version}`
+    ? `Version 使用 ${builtInVersion}`
     : versionMode === "passthrough"
       ? "Version 原样透传，缺失时不发送"
       : versionMode === "override"
         ? `Version 固定为 ${String(identity.version || "待填写")}`
         : legacyDisabled
           ? "Version 保留已有值"
-          : `Version 保留已有值，缺失时使用 ${version}`;
+          : `Version 保留已有值，缺失时使用 ${builtInVersion}`;
 
   return (
     <section aria-labelledby="codex-identity-title" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/50">
@@ -57,9 +63,20 @@ export function CodexClientIdentity({ codex, onChange }: { codex: Doc; onChange:
           <FieldDescription>{UA_HINTS[uaMode]}</FieldDescription>
         </Field>
         <Field>
-          <FieldLabel htmlFor="codex-client-version">内置 Codex 版本</FieldLabel>
+          <FieldLabel htmlFor="codex-client-version-source">内置版本来源</FieldLabel>
+          <Select value={versionSource} onValueChange={(value) => update({ "client-version-source": value })}>
+            <SelectTrigger id="codex-client-version-source" className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fixed">固定版本</SelectItem>
+              <SelectItem value="latest">自动获取最新版本</SelectItem>
+            </SelectContent>
+          </Select>
+          <FieldDescription>{VERSION_SOURCE_HINTS[versionSource]}</FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="codex-client-version">{versionSource === "latest" ? "回退 Codex 版本" : "内置 Codex 版本"}</FieldLabel>
           <Input id="codex-client-version" value={String(identity["client-version"] ?? "")} placeholder={DEFAULT_VERSION} onChange={(event) => update({ "client-version": event.target.value })} />
-          <FieldDescription>用于生成内置 UA 和缺省 Version。留空使用 {DEFAULT_VERSION}。</FieldDescription>
+          <FieldDescription>{versionSource === "latest" ? `自动版本不可用或未刷新时使用。留空使用 ${DEFAULT_VERSION}。` : `用于生成内置 UA 和缺省 Version。留空使用 ${DEFAULT_VERSION}。`}</FieldDescription>
         </Field>
       </div>
 
