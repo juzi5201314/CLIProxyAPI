@@ -80,8 +80,36 @@ func matchesStreamFilter(q Query, e *Entry) bool {
 	} else if q.Model != "" && q.Model != e.Model {
 		return false
 	}
-	if q.Provider != "" && q.Provider != e.Provider && q.Provider != e.ProviderName {
-		return false
+	if len(q.Providers) > 0 {
+		matched := false
+		for _, p := range q.Providers {
+			if MatchesProviderFilterKey(p, e) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	} else if q.Provider != "" {
+		if IsStructuredProviderKey(q.Provider) {
+			if !MatchesProviderFilterKey(q.Provider, e) {
+				return false
+			}
+		} else {
+			matched := MatchesProviderSearch(q.Provider, e)
+			if !matched {
+				for _, key := range q.ProviderMatchKeys {
+					if MatchesProviderFilterKey(key, e) {
+						matched = true
+						break
+					}
+				}
+			}
+			if !matched {
+				return false
+			}
+		}
 	}
 	if q.APIKey != "" && q.APIKey != e.APIKey {
 		return false

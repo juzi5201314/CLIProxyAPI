@@ -21,7 +21,8 @@ import { TimeRangeSelect } from "@/components/shared/time-range-select";
 import { requestDB, fileLogs, type RecordFilter } from "@/api/management";
 import { errMessage, errStatus, type RequestRecord } from "@/api/types";
 import { useLiveRecords } from "@/hooks/use-live-records";
-import { computeCacheHitRate, computeTPS, dayjs, downloadText, extractHost, formatDuration, formatInt, formatLatencySeconds, formatNumber, formatTPS, formatTime, formatUSD, getLatencyColorClass, getTTFTColorClass, maskKey, resolveTotalInputTokens, toCSV } from "@/lib/format";
+import { computeCacheHitRate, computeTPS, dayjs, downloadText, formatDuration, formatInt, formatLatencySeconds, formatNumber, formatTPS, formatTime, formatUSD, getLatencyColorClass, getTTFTColorClass, maskKey, resolveTotalInputTokens, toCSV } from "@/lib/format";
+import { buildProviderTooltip, formatAuthTypeBadge, formatProviderKeyFallback, getAuthTypeBadgeClass, resolveProviderLabel, splitProviderLabel } from "@/lib/provider-display";
 import { cn } from "@/lib/utils";
 import { usePrefsStore, resolveRange, type TimeRange } from "@/stores/prefs";
 
@@ -114,31 +115,33 @@ function ModelChainDisplay({ record }: { record: RequestRecord }) {
   );
 }
 
-function resolveProviderQualifier(record: { provider_name?: string; base_url?: string }): string {
-  const customName = record.provider_name?.trim();
-  if (customName) return customName;
-  return extractHost(record.base_url);
-}
-
 function ProviderDisplay({ record }: { record: RequestRecord }) {
-  const customName = record.provider_name?.trim();
-  const qualifier = resolveProviderQualifier(record);
-  const provider = record.provider?.trim();
-
-  if (!provider && !qualifier) {
+  const label = resolveProviderLabel(record);
+  if (!label) {
     return <span className="text-muted-foreground">—</span>;
   }
 
-  const titleParts = [provider || "—"];
-  if (customName) titleParts.push(`(${customName})`);
-  if (record.base_url) titleParts.push(customName ? `· ${record.base_url}` : `(${record.base_url})`);
-  const fullTitle = titleParts.join(" ");
+  const { prefix, qualifier } = splitProviderLabel(label);
+  const badge = formatAuthTypeBadge(record.auth_type);
+  const fullTitle = buildProviderTooltip(record);
 
   return (
-    <span className="font-mono text-xs truncate block max-w-full" title={fullTitle}>
-      <span className="text-foreground">{provider || "—"}</span>
-      {qualifier ? <span className="text-muted-foreground/80 font-normal">({qualifier})</span> : null}
-    </span>
+    <div className="flex min-w-0 items-center gap-1" title={fullTitle}>
+      <span className="font-mono text-xs truncate min-w-0">
+        <span className="text-foreground">{prefix || "—"}</span>
+        {qualifier ? <span className="text-muted-foreground/80 font-normal">({qualifier})</span> : null}
+      </span>
+      {badge ? (
+        <span
+          className={cn(
+            "shrink-0 rounded border px-1 py-0 text-[9px] font-medium leading-3.5",
+            getAuthTypeBadgeClass(record.auth_type),
+          )}
+        >
+          {badge}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -276,8 +279,7 @@ export function RequestLogsPage() {
 
   const exportCSV = () => {
     const rows = liveState.records.map((record) => {
-      const qualifier = resolveProviderQualifier(record);
-      const provider = record.provider ? (qualifier ? `${record.provider}(${qualifier})` : record.provider) : "";
+      const provider = resolveProviderLabel(record);
       const reqEffort = record.requested_reasoning_effort?.trim();
       const actEffort = record.reasoning_effort?.trim();
       const thinkingLevel = reqEffort && actEffort && reqEffort !== actEffort
@@ -344,7 +346,12 @@ export function RequestLogsPage() {
             range={range}
             onChange={(value) => setFilters((f) => ({ ...f, model: value }))}
           />
-          <FilterInput placeholder={t("requestLogs.filters.provider")} value={filters.provider} onChange={(value) => setFilters((f) => ({ ...f, provider: value }))} className="w-40 font-mono" />
+          <ProviderFilterCombobox
+            placeholder={t("requestLogs.filters.provider")}
+            value={filters.provider}
+            range={range}
+            onChange={(value) => setFilters((f) => ({ ...f, provider: value }))}
+          />
           <FilterInput placeholder={t("requestLogs.filters.apiKey")} value={filters.apiKey} onChange={(value) => setFilters((f) => ({ ...f, apiKey: value }))} className="w-44 font-mono" />
           <Button
             variant={advancedOpen || advancedActiveCount > 0 ? "secondary" : "outline"}
@@ -428,7 +435,7 @@ export function RequestLogsPage() {
                   <TableHead className="w-32">{t("requestLogs.table.time")}</TableHead>
                   <TableHead className="w-16">{t("requestLogs.table.status")}</TableHead>
                   <TableHead className="w-auto">{t("requestLogs.table.model")}</TableHead>
-                  <TableHead className="w-44">{t("requestLogs.table.provider")}</TableHead>
+                  <TableHead className="w-56">{t("requestLogs.table.provider")}</TableHead>
                   <TableHead className="w-24">{t("requestLogs.table.tier")}</TableHead>
                   <TableHead className="w-32">{t("requestLogs.table.thinkingLevel")}</TableHead>
                   <TableHead className="w-52 text-right">{t("requestLogs.table.tokens")}</TableHead>
@@ -679,7 +686,146 @@ function ModelFilterCombobox({ placeholder, value, range, onChange }: { placehol
       </PopoverContent>
     </Popover>
   );
-}function RecordDetailSheet({ record, onClose, onTrace }: { record: RequestRecord | null; onClose: () => void; onTrace: (traceId: string) => void }) {
+}
+
+/** Provider filter that doubles as an instance picker: focusing lists distinct
+ *  provider instances seen in the current time range while free-typed input
+ *  still filters server-side across provider type, name, email, host, and auth ID. */
+function ProviderFilterCombobox({ placeholder, value, range, onChange }: { placeholder: string; value: string; range: TimeRange; onChange: (value: string) => void }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(value ? formatProviderKeyFallback(value) : "");
+  const settledValue = useRef(value);
+  const displayByValue = useRef(new Map<string, string>());
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    if (value === settledValue.current) return;
+    settledValue.current = value;
+    setText(value ? (displayByValue.current.get(value) ?? formatProviderKeyFallback(value)) : "");
+  }, [value]);
+
+  useEffect(() => {
+    const currentDisplay = settledValue.current
+      ? (displayByValue.current.get(settledValue.current) ?? settledValue.current)
+      : "";
+    if (text === currentDisplay) return;
+    const timer = setTimeout(() => {
+      settledValue.current = text;
+      onChangeRef.current(text);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [text]);
+
+  const recent = useQuery({
+    queryKey: ["rdb", "provider-options", range],
+    queryFn: () => {
+      const resolved = resolveRange(range);
+      return requestDB.breakdown("provider", { from: resolved.from, to: range.preset === "custom" ? resolved.to : undefined }, 100);
+    },
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const selectedLabel = settledValue.current ? (displayByValue.current.get(settledValue.current) ?? "") : "";
+  const term = text.trim() && text !== selectedLabel ? text.trim().toLowerCase() : "";
+  const options = (recent.data ?? []).filter((row) => {
+    if (!term) return true;
+    const label = resolveProviderLabel(row);
+    const badge = formatAuthTypeBadge(row.auth_type);
+    return (
+      label.toLowerCase().includes(term) ||
+      row.key.toLowerCase().includes(term) ||
+      (row.provider ?? "").toLowerCase().includes(term) ||
+      (row.provider_name ?? "").toLowerCase().includes(term) ||
+      (row.base_url ?? "").toLowerCase().includes(term) ||
+      (row.auth_id ?? "").toLowerCase().includes(term) ||
+      (row.auth_type ?? "").toLowerCase().includes(term) ||
+      badge.toLowerCase().includes(term)
+    );
+  });
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <div className="relative w-52">
+          <Input
+            placeholder={placeholder}
+            className={cn("h-8 w-full font-mono text-xs", text && "pr-6")}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onFocus={() => setOpen(true)}
+            onClick={() => setOpen(true)}
+          />
+          {text ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setText("");
+                settledValue.current = "";
+                onChange("");
+              }}
+              className="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+            >
+              <X className="size-3" />
+            </button>
+          ) : null}
+        </div>
+      </PopoverAnchor>
+      <PopoverContent className="w-80 p-0" align="start" onOpenAutoFocus={(event) => event.preventDefault()}>
+        <Command shouldFilter={false}>
+          <CommandList>
+            {recent.isLoading ? (
+              <p className="text-muted-foreground py-6 text-center text-xs">{t("common.loading")}</p>
+            ) : options.length === 0 ? (
+              <p className="text-muted-foreground py-6 text-center text-xs">{t("requestLogs.filters.noRecentProviders", "当前范围内暂无供应商记录")}</p>
+            ) : (
+              options.map((row) => {
+                const label = resolveProviderLabel(row);
+                const badge = formatAuthTypeBadge(row.auth_type);
+                return (
+                  <CommandItem
+                    key={row.key}
+                    value={row.key}
+                    className="text-xs"
+                    onSelect={() => {
+                      displayByValue.current.set(row.key, label);
+                      settledValue.current = row.key;
+                      setText(label);
+                      onChange(row.key);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono" title={buildProviderTooltip(row)}>
+                      {label}
+                    </span>
+                    {badge ? (
+                      <span
+                        className={cn(
+                          "ml-1.5 shrink-0 rounded border px-1 py-0 text-[9px] font-medium leading-4",
+                          getAuthTypeBadgeClass(row.auth_type),
+                        )}
+                      >
+                        {badge}
+                      </span>
+                    ) : null}
+                    <span className="text-muted-foreground ml-2 shrink-0 text-[10px] tabular-nums">{formatNumber(row.requests)}</span>
+                  </CommandItem>
+                );
+              })
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function RecordDetailSheet({ record, onClose, onTrace }: { record: RequestRecord | null; onClose: () => void; onTrace: (traceId: string) => void }) {
   const { t } = useTranslation();
   const open = Boolean(record);
   const detail = useQuery({
@@ -737,10 +883,8 @@ function ModelFilterCombobox({ placeholder, value, range, onChange }: { placehol
                     [t("requestLogs.detail.requestedModel", "请求模型"), data.alias?.trim() || data.model?.trim() || "—"],
                     [t("requestLogs.detail.upstreamModel", "实际模型"), data.model?.trim() || data.alias?.trim() || "—"],
                     [t("requestLogs.detail.responseModel", "响应模型"), data.response_model?.trim() || "—"],
-                    [t("common.provider"), (() => {
-                      const qualifier = resolveProviderQualifier(data);
-                      return data.provider ? (qualifier ? `${data.provider}(${qualifier})` : data.provider) : "—";
-                    })()],
+                    [t("common.provider"), resolveProviderLabel(data) || "—"],
+                    [t("requestLogs.detail.authType", "认证方式"), formatAuthTypeBadge(data.auth_type) || data.auth_type || "—"],
                     [t("requestLogs.detail.auth"), data.auth_id || data.auth_index ? `${data.auth_id || ""} ${data.auth_index ? `(#${data.auth_index})` : ""}` : "—"],
                     [t("common.apiKey"), data.api_key ? maskKey(data.api_key) : "—"],
                     [t("requestLogs.detail.baseUrl"), data.base_url || "—"],

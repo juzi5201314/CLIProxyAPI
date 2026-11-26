@@ -66,6 +66,14 @@ import { errStatus, type BreakdownRow } from "@/api/types";
 import { usePrefsStore, type TimeRange } from "@/stores/prefs";
 import type { RecordFilter } from "@/api/management";
 import { ModelPricingDialog } from "@/components/model-pricing-dialog";
+import {
+  buildProviderTooltip,
+  formatAuthTypeBadge,
+  formatProviderKeyFallback,
+  getAuthTypeBadgeClass,
+  resolveProviderLabel,
+  splitProviderLabel,
+} from "@/lib/provider-display";
 
 const DASHBOARD_CARD_SURFACE = "card-surface";
 
@@ -100,7 +108,7 @@ export function DashboardPage() {
   // Query options for comboboxes (unfiltered within the same time range)
   const baseRangeFilter = useMemo<RecordFilter>(() => ({}), []);
   const availableModelsQuery = useBreakdownQuery("model", range, baseRangeFilter, 0, 100);
-  const availableProvidersQuery = useBreakdownQuery("provider", range, baseRangeFilter, 0, 50);
+  const availableProvidersQuery = useBreakdownQuery("provider", range, baseRangeFilter, 0, 100);
 
   const modelOptions = useMemo<ComboboxOption[]>(() => {
     return (availableModelsQuery.data ?? []).map((row) => ({
@@ -111,11 +119,30 @@ export function DashboardPage() {
   }, [availableModelsQuery.data]);
 
   const providerOptions = useMemo<ComboboxOption[]>(() => {
-    return (availableProvidersQuery.data ?? []).map((row) => ({
-      label: row.key,
-      value: row.key,
-      count: row.requests,
-    }));
+    return (availableProvidersQuery.data ?? []).map((row) => {
+      const label = resolveProviderLabel(row);
+      const badge = formatAuthTypeBadge(row.auth_type);
+      const searchText = [
+        label,
+        row.provider,
+        row.provider_name,
+        row.base_url,
+        row.auth_id,
+        row.auth_type,
+        badge,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return {
+        label,
+        value: row.key,
+        count: row.requests,
+        badge: badge || undefined,
+        badgeClassName: badge ? getAuthTypeBadgeClass(row.auth_type) : undefined,
+        searchText,
+        title: buildProviderTooltip(row),
+      };
+    });
   }, [availableProvidersQuery.data]);
 
   // Sliced filter based on user selections
@@ -129,7 +156,18 @@ export function DashboardPage() {
   const stats = useStatsQuery(range, currentFilter, refreshMs);
   const timeseries = useTimeseriesQuery(range, currentFilter, refreshMs);
   const models = useBreakdownQuery("model", range, currentFilter, refreshMs, 100);
-  const providers = useBreakdownQuery("provider", range, currentFilter, refreshMs, 50);
+  const providers = useBreakdownQuery("provider", range, currentFilter, refreshMs, 100);
+
+  const providerLabelByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of availableProvidersQuery.data ?? []) {
+      map.set(row.key, resolveProviderLabel(row));
+    }
+    for (const row of providers.data ?? []) {
+      map.set(row.key, resolveProviderLabel(row));
+    }
+    return map;
+  }, [availableProvidersQuery.data, providers.data]);
 
   const clearAllFilters = () => {
     setSelectedModels([]);
@@ -273,19 +311,23 @@ export function DashboardPage() {
                 />
               </Badge>
             ))}
-            {selectedProviders.map((p) => (
-              <Badge
-                key={p}
-                variant="secondary"
-                className="gap-1 border-border bg-secondary text-[11px] font-mono text-foreground"
-              >
-                {p}
-                <X
-                  className="size-3 cursor-pointer opacity-70 hover:opacity-100"
-                  onClick={() => setSelectedProviders(selectedProviders.filter((item) => item !== p))}
-                />
-              </Badge>
-            ))}
+            {selectedProviders.map((p) => {
+              const displayLabel = providerLabelByKey.get(p) ?? formatProviderKeyFallback(p);
+              return (
+                <Badge
+                  key={p}
+                  variant="secondary"
+                  className="gap-1 border-border bg-secondary text-[11px] font-mono text-foreground"
+                  title={displayLabel}
+                >
+                  <span className="max-w-52 truncate">{displayLabel}</span>
+                  <X
+                    className="size-3 shrink-0 cursor-pointer opacity-70 hover:opacity-100"
+                    onClick={() => setSelectedProviders(selectedProviders.filter((item) => item !== p))}
+                  />
+                </Badge>
+              );
+            })}
           </div>
         ) : null}
       </div>
@@ -591,7 +633,23 @@ function ComprehensiveBreakdownTable({
     let list = [...(rawRows ?? [])];
     if (searchTerm.trim()) {
       const q = searchTerm.trim().toLowerCase();
-      list = list.filter((r) => r.key.toLowerCase().includes(q));
+      list = list.filter((r) => {
+        if (r.key.toLowerCase().includes(q)) return true;
+        if (activeTab === "provider") {
+          const label = resolveProviderLabel(r);
+          const badge = formatAuthTypeBadge(r.auth_type);
+          return (
+            label.toLowerCase().includes(q) ||
+            (r.provider ?? "").toLowerCase().includes(q) ||
+            (r.provider_name ?? "").toLowerCase().includes(q) ||
+            (r.base_url ?? "").toLowerCase().includes(q) ||
+            (r.auth_id ?? "").toLowerCase().includes(q) ||
+            (r.auth_type ?? "").toLowerCase().includes(q) ||
+            badge.toLowerCase().includes(q)
+          );
+        }
+        return false;
+      });
     }
 
     list.sort((a, b) => {
@@ -619,7 +677,7 @@ function ComprehensiveBreakdownTable({
     });
 
     return list;
-  }, [rawRows, searchTerm, sortKey, sortAsc]);
+  }, [rawRows, searchTerm, sortKey, sortAsc, activeTab]);
 
   const maxRequests = Math.max(...(rawRows ?? []).map((r) => r.requests), 1);
 
@@ -649,7 +707,7 @@ function ComprehensiveBreakdownTable({
     ];
 
     const rows = filteredAndSortedRows.map((r) => [
-      r.key,
+      activeTab === "provider" ? resolveProviderLabel(r) : r.key,
       (r.estimated_cost_usd ?? 0).toFixed(4),
       r.requests,
       r.failed,
@@ -840,9 +898,33 @@ function ComprehensiveBreakdownTable({
                             style={{ width: `${(row.requests / maxRequests) * 100}%` }}
                           />
                         </div>
-                        <span className="truncate font-mono text-[11px] font-medium" title={row.key}>
-                          {row.key}
-                        </span>
+                        {activeTab === "provider" ? (() => {
+                          const label = resolveProviderLabel(row);
+                          const { prefix, qualifier } = splitProviderLabel(label);
+                          const badge = formatAuthTypeBadge(row.auth_type);
+                          const tooltip = buildProviderTooltip(row);
+                          return (
+                            <div className="flex items-center gap-1.5 min-w-0" title={tooltip}>
+                              <span className="truncate font-mono text-[11px] font-medium">
+                                <span className="text-foreground">{prefix || "—"}</span>
+                                {qualifier ? (
+                                  <span className="text-muted-foreground/85 font-normal">({qualifier})</span>
+                                ) : null}
+                              </span>
+                              {badge ? (
+                                <span
+                                  className={`shrink-0 rounded border px-1 py-0 text-[9px] font-medium leading-4 ${getAuthTypeBadgeClass(row.auth_type)}`}
+                                >
+                                  {badge}
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })() : (
+                          <span className="truncate font-mono text-[11px] font-medium" title={row.key}>
+                            {row.key}
+                          </span>
+                        )}
                       </div>
                     </td>
 

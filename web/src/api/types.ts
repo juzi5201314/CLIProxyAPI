@@ -18,6 +18,8 @@ export interface RequestRecord {
   is_native_key: boolean;
   provider?: string;
   provider_name?: string;
+  provider_key?: string;
+  provider_label?: string;
   executor_type?: string;
   upstream_websocket?: boolean;
   auth_id?: string;
@@ -172,6 +174,13 @@ export interface TimeseriesResponse {
 
 export interface BreakdownRow {
   key: string;
+  label?: string;
+  provider?: string;
+  provider_name?: string;
+  auth_id?: string;
+  auth_index?: string;
+  auth_type?: string;
+  base_url?: string;
   requests: number;
   failed: number;
   input_tokens: number;
@@ -184,7 +193,7 @@ export interface BreakdownRow {
   tps_avg: number;
 }
 
-export type BreakdownDimension = "model" | "provider" | "api_key" | "auth_id" | "session_id";
+export type BreakdownDimension = "model" | "provider" | "provider_type" | "api_key" | "auth_id" | "session_id";
 
 export interface ServerInfo {
   version: string;

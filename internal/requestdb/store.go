@@ -77,22 +77,26 @@ type Entry struct {
 // Query selects stored entries. Zero time bounds and empty filters match everything.
 // BeforeID enables keyset pagination ("load older"): rows with id < BeforeID only.
 type Query struct {
-	FromMS     int64
-	ToMS       int64
-	Model      string
-	Models     []string
-	APIKey     string
-	APIKeys    []string
-	Provider   string
-	Providers  []string
-	SessionID  string
-	RequestID  string
-	TraceID    string
-	Failed     *bool
-	StatusCode int
-	BeforeID   int64
-	Limit      int
-	Offset     int
+	FromMS    int64
+	ToMS      int64
+	Model     string
+	Models    []string
+	APIKey    string
+	APIKeys   []string
+	Provider  string
+	Providers []string
+	// ProviderMatchKeys holds extra exact provider instance keys matched by live
+	// config resolution for a free-text Provider filter (e.g. searching a newly
+	// assigned provider name against historical rows that predate provider_name).
+	ProviderMatchKeys []string
+	SessionID         string
+	RequestID         string
+	TraceID           string
+	Failed            *bool
+	StatusCode        int
+	BeforeID          int64
+	Limit             int
+	Offset            int
 }
 
 // Store wraps the SQLite handle. Writes are funneled through a single writer
@@ -595,16 +599,36 @@ func buildWhere(q Query) (string, []any) {
 		args = append(args, likeSubstring(q.APIKey))
 	}
 	if len(q.Providers) > 0 {
-		placeholders := make([]string, len(q.Providers))
-		for i, p := range q.Providers {
-			placeholders[i] = "?"
-			args = append(args, p)
+		subClauses := make([]string, 0, len(q.Providers))
+		for _, p := range q.Providers {
+			clause, pArgs := providerFilterSQL(p)
+			subClauses = append(subClauses, clause)
+			args = append(args, pArgs...)
 		}
-		clauses = append(clauses, "provider IN ("+strings.Join(placeholders, ",")+")")
+		clauses = append(clauses, "("+strings.Join(subClauses, " OR ")+")")
 	} else if q.Provider != "" {
-		pattern := likeSubstring(q.Provider)
-		clauses = append(clauses, "(provider LIKE ? ESCAPE '\\' OR provider_name LIKE ? ESCAPE '\\')")
-		args = append(args, pattern, pattern)
+		if IsStructuredProviderKey(q.Provider) {
+			clause, pArgs := providerFilterSQL(q.Provider)
+			clauses = append(clauses, clause)
+			args = append(args, pArgs...)
+		} else {
+			pattern := likeSubstring(q.Provider)
+			subClauses := []string{
+				"provider LIKE ? ESCAPE '\\'",
+				"provider_name LIKE ? ESCAPE '\\'",
+				"auth_id LIKE ? ESCAPE '\\'",
+				"auth_type LIKE ? ESCAPE '\\'",
+				"base_url LIKE ? ESCAPE '\\'",
+				"(LOWER(auth_type) = 'oauth' AND source != '' AND source != api_key AND source LIKE ? ESCAPE '\\')",
+			}
+			args = append(args, pattern, pattern, pattern, pattern, pattern, pattern)
+			for _, key := range q.ProviderMatchKeys {
+				clause, pArgs := providerFilterSQL(key)
+				subClauses = append(subClauses, clause)
+				args = append(args, pArgs...)
+			}
+			clauses = append(clauses, "("+strings.Join(subClauses, " OR ")+")")
+		}
 	}
 	if q.SessionID != "" {
 		clauses = append(clauses, "session_id LIKE ? ESCAPE '\\'")

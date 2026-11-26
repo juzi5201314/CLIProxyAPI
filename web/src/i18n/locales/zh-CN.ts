@@ -392,6 +392,7 @@ const zhCN = {
       statusCode: "状态码",
       onlyFailures: "仅看失败",
       noRecentModels: "近 24 小时没有请求过的模型",
+      noRecentProviders: "当前范围内暂无供应商记录",
     },
     live: {
       connected: "实时",
@@ -431,6 +432,7 @@ const zhCN = {
       userAgent: "User-Agent",
       session: "会话",
       baseUrl: "上游地址",
+      authType: "认证方式",
       auth: "凭据",
       tier: "服务层级",
       requestedTier: "下游请求层级",

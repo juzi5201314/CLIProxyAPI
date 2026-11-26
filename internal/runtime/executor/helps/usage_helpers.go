@@ -123,6 +123,9 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 		if auth.Attributes != nil {
 			baseURL = strings.TrimSpace(auth.Attributes["base_url"])
 			providerName = strings.TrimSpace(auth.Attributes["provider_name"])
+			if providerName == "" {
+				providerName = strings.TrimSpace(auth.Attributes["compat_name"])
+			}
 		}
 		if baseURL == "" && auth.Metadata != nil {
 			if v, ok := auth.Metadata["base_url"].(string); ok {

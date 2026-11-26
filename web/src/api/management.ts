@@ -45,32 +45,33 @@ export interface RecordFilter {
   page_size?: number;
 }
 
-function filterParams(filter: RecordFilter): Record<string, string> {
-  const params: Record<string, string> = {};
+function filterParams(filter: RecordFilter): URLSearchParams {
+  const params = new URLSearchParams();
   if (filter.models && filter.models.length > 0) {
-    params.models = filter.models.join(",");
+    for (const m of filter.models) params.append("models[]", m);
   } else if (filter.model) {
-    params.model = filter.model;
+    params.set("model", filter.model);
   }
   if (filter.providers && filter.providers.length > 0) {
-    params.providers = filter.providers.join(",");
+    for (const p of filter.providers) params.append("providers[]", p);
   } else if (filter.provider) {
-    params.provider = filter.provider;
+    params.set("provider", filter.provider);
   }
   if (filter.api_keys && filter.api_keys.length > 0) {
-    params.api_keys = filter.api_keys.join(",");
+    for (const k of filter.api_keys) params.append("api_keys[]", k);
   } else if (filter.api_key) {
-    params.api_key = filter.api_key;
+    params.set("api_key", filter.api_key);
   }
-  if (filter.session_id) params.session_id = filter.session_id;
-  if (filter.request_id) params.request_id = filter.request_id;
-  if (filter.trace_id) params.trace_id = filter.trace_id;
-  if (filter.failed !== undefined) params.failed = String(filter.failed);
-  if (filter.status_code) params.status_code = String(filter.status_code);
-  if (filter.from) params.from = String(filter.from);
-  if (filter.to) params.to = String(filter.to);
-  if (filter.page) params.page = String(filter.page);
-  if (filter.page_size) params.page_size = String(filter.page_size);
+  if (filter.session_id) params.set("session_id", filter.session_id);
+  if (filter.request_id) params.set("request_id", filter.request_id);
+  if (filter.trace_id) params.set("trace_id", filter.trace_id);
+  if (filter.failed !== undefined) params.set("failed", String(filter.failed));
+  if (filter.status_code) params.set("status_code", String(filter.status_code));
+  if (filter.from) params.set("from", String(filter.from));
+  if (filter.to) params.set("to", String(filter.to));
+  if (filter.before_id) params.set("before_id", String(filter.before_id));
+  if (filter.page) params.set("page", String(filter.page));
+  if (filter.page_size) params.set("page_size", String(filter.page_size));
   return params;
 }
 
@@ -89,14 +90,14 @@ export const requestDB = {
   },
   async timeseries(filter: RecordFilter, intervalSeconds?: number): Promise<TimeseriesResponse> {
     const params = filterParams(filter);
-    if (intervalSeconds) params.interval = String(intervalSeconds);
+    if (intervalSeconds) params.set("interval", String(intervalSeconds));
     const { data } = await client.get("/observability/request-db/timeseries", { params });
     return data as TimeseriesResponse;
   },
   async breakdown(dimension: BreakdownDimension, filter: RecordFilter, limit = 10): Promise<BreakdownRow[]> {
     const params = filterParams(filter);
-    params.dimension = dimension;
-    params.limit = String(limit);
+    params.set("dimension", dimension);
+    params.set("limit", String(limit));
     const { data } = await client.get("/observability/request-db/breakdown", { params });
     return (data as { rows: BreakdownRow[] }).rows;
   },
@@ -118,12 +119,10 @@ export const requestDB = {
     return data as { message: string; model: string; custom_prices: Record<string, ModelPrice> };
   },
   streamPath(filter: RecordFilter): string {
-    const params = new URLSearchParams();
-    const mapped = filterParams(filter);
-    for (const [key, value] of Object.entries(mapped)) {
-      if (["page", "page_size", "before_id"].includes(key)) continue;
-      params.set(key, value);
-    }
+    const params = filterParams(filter);
+    params.delete("page");
+    params.delete("page_size");
+    params.delete("before_id");
     const query = params.toString();
     return `/observability/request-db/stream${query ? `?${query}` : ""}`;
   },

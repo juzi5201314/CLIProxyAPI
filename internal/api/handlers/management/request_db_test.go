@@ -231,3 +231,126 @@ func TestRequestDBRecordResolvesConfiguredProviderName(t *testing.T) {
 		t.Fatalf("byBaseURL.ProviderName = %q, want %q", byBaseURL.ProviderName, "千刀")
 	}
 }
+
+func TestProviderResolverDisambiguationAndExpansion(t *testing.T) {
+	manager := coreauth.NewManager(nil, nil, nil)
+	auths := []*coreauth.Auth{
+		{
+			ID:       "codex-alice@gmail.com.json",
+			Provider: "codex",
+			Metadata: map[string]any{"email": "alice@gmail.com", "access_token": "tok-a"},
+		},
+		{
+			ID:       "codex-bob@gmail.com.json",
+			Provider: "codex",
+			Metadata: map[string]any{"email": "bob@gmail.com", "access_token": "tok-b"},
+		},
+		{
+			ID:       "codex:apikey:named111",
+			Provider: "codex",
+			Attributes: map[string]string{
+				"provider_name": "千刀",
+				"base_url":      "https://relay.shared.com/v1",
+				"api_key":       "sk-named-1111",
+			},
+		},
+		{
+			ID:       "codex:apikey:unnamed222",
+			Provider: "codex",
+			Attributes: map[string]string{
+				"base_url": "https://relay.shared.com/v1",
+				"api_key":  "sk-unnm-2222",
+			},
+		},
+		{
+			ID:       "codex:apikey:unnamed333",
+			Provider: "codex",
+			Attributes: map[string]string{
+				"base_url": "https://relay.shared.com/v1",
+				"api_key":  "sk-unnm-3333",
+			},
+		},
+		{
+			ID:       "openai-compatibility:openrouter:or111",
+			Provider: "openai-compatible-openrouter",
+			Attributes: map[string]string{
+				"compat_name": "OpenRouter",
+				"base_url":    "https://openrouter.ai/api/v1",
+				"api_key":     "sk-or-9999",
+			},
+		},
+	}
+	for _, a := range auths {
+		if _, err := manager.Register(context.Background(), a); err != nil {
+			t.Fatalf("manager.Register(%s): %v", a.ID, err)
+		}
+	}
+
+	handler := &Handler{authManager: manager}
+	res := handler.buildProviderResolver()
+
+	// 1. Named key gets its configured name; unnamed keys on the SAME base_url must NOT steal "千刀"
+	//    and must be disambiguated from each other by masked key even when resolved individually.
+	named := res.resolveEntry(&requestdb.Entry{
+		Provider: "codex", AuthID: "codex:apikey:named111", AuthType: "apikey", BaseURL: "https://relay.shared.com/v1",
+	})
+	if named.ProviderName != "千刀" || named.Label != "codex(千刀)" {
+		t.Fatalf("named = %+v, want ProviderName=千刀 Label=codex(千刀)", named)
+	}
+
+	unnamedA := res.resolveEntry(&requestdb.Entry{
+		Provider: "codex", AuthID: "codex:apikey:unnamed222", AuthType: "apikey", BaseURL: "https://relay.shared.com/v1",
+	})
+	unnamedB := res.resolveEntry(&requestdb.Entry{
+		Provider: "codex", AuthID: "codex:apikey:unnamed333", AuthType: "apikey", BaseURL: "https://relay.shared.com/v1",
+	})
+	if unnamedA.ProviderName != "" || unnamedB.ProviderName != "" {
+		t.Fatalf("unnamed keys must not steal sibling name on shared base_url: %+v / %+v", unnamedA, unnamedB)
+	}
+	if unnamedA.Label != "codex(relay.shared.com · sk-u…2222)" || unnamedB.Label != "codex(relay.shared.com · sk-u…3333)" {
+		t.Fatalf("unnamed labels = %q / %q", unnamedA.Label, unnamedB.Label)
+	}
+
+	// 2. OAuth accounts resolve distinct labels with email and oauth auth_type.
+	oauthA := res.resolveEntry(&requestdb.Entry{
+		Provider: "codex", AuthID: "codex-alice@gmail.com.json",
+	})
+	oauthB := res.resolveEntry(&requestdb.Entry{
+		Provider: "codex", AuthID: "codex-bob@gmail.com.json",
+	})
+	if oauthA.Label != "codex(alice@gmail.com)" || oauthA.AuthType != "oauth" || oauthB.Label != "codex(bob@gmail.com)" {
+		t.Fatalf("oauth labels = %+v / %+v", oauthA, oauthB)
+	}
+
+	// 3. Breakdown enrichment resolves live configured names and compat_name for historical rows.
+	rows := []requestdb.BreakdownRow{
+		{Key: "id:codex|codex:apikey:named111", Provider: "codex", AuthID: "codex:apikey:named111", BaseURL: "https://relay.shared.com/v1"},
+		{Key: "id:openai-compatible-openrouter|openai-compatibility:openrouter:or111", Provider: "openai-compatible-openrouter", AuthID: "openai-compatibility:openrouter:or111"},
+	}
+	res.enrichBreakdownRows(rows)
+	if rows[0].Label != "codex(千刀)" || rows[0].ProviderName != "千刀" || rows[0].AuthType != "apikey" {
+		t.Fatalf("rows[0] = %+v, want codex(千刀)", rows[0])
+	}
+	if rows[1].Label != "openai-compatible(OpenRouter)" || rows[1].ProviderName != "OpenRouter" {
+		t.Fatalf("rows[1] = %+v, want openai-compatible(OpenRouter)", rows[1])
+	}
+
+	// 4. Free-text provider search expands to matching live provider keys (including renamed historical rows).
+	q := requestdb.Query{Provider: "千刀"}
+	res.expandQuery(&q)
+	if len(q.ProviderMatchKeys) != 1 || q.ProviderMatchKeys[0] != "id:codex|codex:apikey:named111" {
+		t.Fatalf("expandQuery(千刀) = %v, want [id:codex|codex:apikey:named111]", q.ProviderMatchKeys)
+	}
+
+	// 5. parseRequestDBQuery parses repeated providers[] and before_id consistently with stats/stream filters.
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/records?providers[]=id:codex|codex-alice@gmail.com.json&providers[]=id:codex|codex:apikey:named111&before_id=42", nil)
+	parsed, _, _, errParse := parseRequestDBQuery(c)
+	if errParse != nil {
+		t.Fatalf("parseRequestDBQuery: %v", errParse)
+	}
+	if len(parsed.Providers) != 2 || parsed.BeforeID != 42 {
+		t.Fatalf("parsed = %+v, want 2 providers and before_id=42", parsed)
+	}
+}

@@ -90,7 +90,17 @@ type TimeseriesPoint struct {
 
 // BreakdownRow is one group of the group-by aggregation.
 type BreakdownRow struct {
-	Key              string  `json:"key"`
+	Key          string `json:"key"`
+	Label        string `json:"label,omitempty"`
+	Provider     string `json:"provider,omitempty"`
+	ProviderName string `json:"provider_name,omitempty"`
+	AuthID       string `json:"auth_id,omitempty"`
+	AuthIndex    string `json:"auth_index,omitempty"`
+	AuthType     string `json:"auth_type,omitempty"`
+	BaseURL      string `json:"base_url,omitempty"`
+	// RawSource is populated internally for provider breakdown disambiguation
+	// (OAuth email/project or masked upstream key derivation) and never serialized to JSON.
+	RawSource        string  `json:"-"`
 	Requests         int64   `json:"requests"`
 	Failed           int64   `json:"failed"`
 	InputTokens      int64   `json:"input_tokens"`
@@ -105,14 +115,16 @@ type BreakdownRow struct {
 
 // breakdownColumns whitelists the group-by dimensions to interpolated SQL
 // expressions. status_code is only meaningful on failures (success rows are
-// stored as 200).
+// stored as 200). "provider" is handled specially by breakdownProvider to group
+// distinct upstream provider instances rather than collapsing by type alone.
 var breakdownColumns = map[string]string{
-	"model":       "model",
-	"provider":    "provider",
-	"api_key":     "api_key",
-	"auth_id":     "auth_id",
-	"session_id":  "session_id",
-	"status_code": "CAST(status_code AS TEXT)",
+	"model":         "model",
+	"provider":      providerGroupSQLExpr,
+	"provider_type": "provider",
+	"api_key":       "api_key",
+	"auth_id":       "auth_id",
+	"session_id":    "session_id",
+	"status_code":   "CAST(status_code AS TEXT)",
 }
 
 // Stats returns the aggregate summary for the filtered range. Pagination and
@@ -127,7 +139,7 @@ func (s *Store) Stats(ctx context.Context, q Query) (*Stats, error) {
 		COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(reasoning_tokens),0),
 		COALESCE(SUM(cached_tokens),0), COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_creation_tokens),0),
 		COALESCE(SUM(total_tokens),0),
-		COUNT(DISTINCT NULLIF(model,'')), COUNT(DISTINCT NULLIF(provider,'')),
+		COUNT(DISTINCT NULLIF(model,'')), COUNT(DISTINCT NULLIF(` + providerGroupSQLExpr + `,'')),
 		COUNT(DISTINCT NULLIF(api_key,'')), COUNT(DISTINCT NULLIF(session_id,'')),
 		COALESCE(MIN(requested_at),0), COALESCE(MAX(requested_at),0),
 		COALESCE(AVG(latency_ms),0),
@@ -379,6 +391,9 @@ func (s *Store) Breakdown(ctx context.Context, q Query, dimension string, limit 
 	if limit > 100 {
 		limit = 100
 	}
+	if dimension == "provider" {
+		return s.breakdownProvider(ctx, q, limit)
+	}
 	where, args := buildWhere(q)
 	stmt := `SELECT ` + column + `, COUNT(*), COALESCE(SUM(failed),0),
 		COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(total_tokens),0),
@@ -387,12 +402,17 @@ func (s *Store) Breakdown(ctx context.Context, q Query, dimension string, limit 
 		COALESCE(SUM(CASE WHEN failed=0 THEN output_tokens ELSE 0 END),0),
 		COALESCE(SUM(CASE WHEN failed=0 THEN latency_ms ELSE 0 END),0)
 		FROM request_logs` + where + ` GROUP BY ` + column + ` ORDER BY COUNT(*) DESC LIMIT ?`
-	allArgs := append(args, limit)
+	allArgs := append(append([]any{}, args...), limit)
 	rows, err := s.db.QueryContext(ctx, stmt, allArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("requestdb: aggregate breakdown: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+
+	var costMap map[string]float64
+	if dimension != "model" {
+		costMap = s.breakdownCostByGroup(ctx, where, args, column)
+	}
 
 	out := make([]BreakdownRow, 0, limit)
 	for rows.Next() {
@@ -409,6 +429,8 @@ func (s *Store) Breakdown(ctx context.Context, q Query, dimension string, limit 
 		}
 		if dimension == "model" {
 			r.EstimatedCostUSD = pricing.CalculateCost(r.Key, r.InputTokens, r.OutputTokens, r.CacheReadTokens)
+		} else if costMap != nil {
+			r.EstimatedCostUSD = costMap[r.Key]
 		}
 		out = append(out, r)
 	}
@@ -416,6 +438,96 @@ func (s *Store) Breakdown(ctx context.Context, q Query, dimension string, limit 
 		return nil, fmt.Errorf("requestdb: iterate breakdown rows: %w", errRows)
 	}
 	return out, nil
+}
+
+func (s *Store) breakdownProvider(ctx context.Context, q Query, limit int) ([]BreakdownRow, error) {
+	where, args := buildWhere(q)
+	stmt := `SELECT ` + providerGroupSQLExpr + ` AS grp,
+		provider,
+		auth_id,
+		COALESCE(MAX(NULLIF(auth_index,'')), ''),
+		COALESCE(MAX(NULLIF(auth_type,'')), ''),
+		SUBSTR(COALESCE(MAX(CASE WHEN provider_name != '' THEN printf('%020d', id) || provider_name ELSE '' END), ''), 21),
+		SUBSTR(COALESCE(MAX(CASE WHEN base_url != '' THEN printf('%020d', id) || base_url ELSE '' END), ''), 21),
+		SUBSTR(COALESCE(MAX(CASE WHEN source != '' AND source != api_key THEN printf('%020d', id) || source ELSE '' END), ''), 21),
+		COUNT(*), COALESCE(SUM(failed),0),
+		COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(total_tokens),0),
+		COALESCE(SUM(reasoning_tokens),0), COALESCE(SUM(cache_read_tokens),0),
+		COALESCE(AVG(latency_ms),0),
+		COALESCE(SUM(CASE WHEN failed=0 THEN output_tokens ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN failed=0 THEN latency_ms ELSE 0 END),0)
+		FROM request_logs` + where + ` GROUP BY grp ORDER BY COUNT(*) DESC LIMIT ?`
+	allArgs := append(append([]any{}, args...), limit)
+	rows, err := s.db.QueryContext(ctx, stmt, allArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("requestdb: aggregate provider breakdown: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	costMap := s.breakdownCostByGroup(ctx, where, args, providerGroupSQLExpr)
+
+	out := make([]BreakdownRow, 0, limit)
+	identities := make([]ProviderIdentity, 0, limit)
+	for rows.Next() {
+		var grp string
+		var r BreakdownRow
+		var outputSum, latencySum float64
+		if errScan := rows.Scan(&grp,
+			&r.Provider, &r.AuthID, &r.AuthIndex, &r.AuthType,
+			&r.ProviderName, &r.BaseURL, &r.RawSource,
+			&r.Requests, &r.Failed,
+			&r.InputTokens, &r.OutputTokens, &r.TotalTokens,
+			&r.ReasoningTokens, &r.CacheReadTokens,
+			&r.LatencyAvgMS, &outputSum, &latencySum); errScan != nil {
+			return nil, fmt.Errorf("requestdb: scan provider breakdown row: %w", errScan)
+		}
+		if latencySum > 0 {
+			r.TPSAvg = outputSum / (latencySum / 1000)
+		}
+		identity := ProviderIdentity{
+			Provider:     r.Provider,
+			ProviderName: r.ProviderName,
+			AuthID:       r.AuthID,
+			AuthIndex:    r.AuthIndex,
+			AuthType:     NormalizeAuthType(r.AuthType),
+			BaseURL:      r.BaseURL,
+			Source:       r.RawSource,
+		}
+		r.Key = ProviderInstanceKey(identity)
+		r.AuthType = InferAuthType(identity)
+		r.EstimatedCostUSD = costMap[grp]
+		identities = append(identities, identity)
+		out = append(out, r)
+	}
+	if errRows := rows.Err(); errRows != nil {
+		return nil, fmt.Errorf("requestdb: iterate provider breakdown rows: %w", errRows)
+	}
+
+	labels := BuildProviderLabelMap(identities)
+	for i := range out {
+		out[i].Label = labels[out[i].Key]
+	}
+	return out, nil
+}
+
+func (s *Store) breakdownCostByGroup(ctx context.Context, where string, args []any, groupExpr string) map[string]float64 {
+	costStmt := `SELECT ` + groupExpr + ` AS grp, COALESCE(model,''),
+		COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(cache_read_tokens),0)
+		FROM request_logs` + where + ` GROUP BY grp, model`
+	costMap := make(map[string]float64)
+	costRows, errCost := s.db.QueryContext(ctx, costStmt, args...)
+	if errCost != nil {
+		return costMap
+	}
+	defer func() { _ = costRows.Close() }()
+	for costRows.Next() {
+		var grp, m string
+		var inTok, outTok, cacheReadTok int64
+		if errScan := costRows.Scan(&grp, &m, &inTok, &outTok, &cacheReadTok); errScan == nil {
+			costMap[grp] += pricing.CalculateCost(m, inTok, outTok, cacheReadTok)
+		}
+	}
+	return costMap
 }
 
 // TailBacklog returns the newest limit entries matching q, oldest first.

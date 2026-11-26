@@ -112,6 +112,7 @@ func (h *Handler) GetRequestDBStats(c *gin.Context) {
 		c.JSON(400, gin.H{"error": errParse.Error()})
 		return
 	}
+	h.buildProviderResolver().expandQuery(&query)
 	stats, errQuery := requestdb.GetStats(c.Request.Context(), query)
 	if errQuery != nil {
 		c.JSON(requestDBErrorStatus(errQuery), gin.H{"error": errQuery.Error()})
@@ -130,6 +131,7 @@ func (h *Handler) GetRequestDBTimeseries(c *gin.Context) {
 		c.JSON(400, gin.H{"error": errParse.Error()})
 		return
 	}
+	h.buildProviderResolver().expandQuery(&query)
 	if query.FromMS <= 0 && query.ToMS <= 0 {
 		query.ToMS = time.Now().UnixMilli()
 		query.FromMS = query.ToMS - defaultTimeseriesRangeMS.Milliseconds()
@@ -189,7 +191,7 @@ func (h *Handler) GetRequestDBBreakdown(c *gin.Context) {
 	}
 	dimension := strings.TrimSpace(c.Query("dimension"))
 	if dimension == "" {
-		c.JSON(400, gin.H{"error": "dimension is required (model, provider, api_key, auth_id, session_id)"})
+		c.JSON(400, gin.H{"error": "dimension is required (model, provider, provider_type, api_key, auth_id, session_id)"})
 		return
 	}
 	limit := 10
@@ -201,10 +203,15 @@ func (h *Handler) GetRequestDBBreakdown(c *gin.Context) {
 		}
 		limit = parsed
 	}
+	resolver := h.buildProviderResolver()
+	resolver.expandQuery(&query)
 	rows, errQuery := requestdb.GetBreakdown(c.Request.Context(), query, dimension, limit)
 	if errQuery != nil {
 		c.JSON(requestDBErrorStatus(errQuery), gin.H{"error": errQuery.Error()})
 		return
+	}
+	if dimension == "provider" {
+		resolver.enrichBreakdownRows(rows)
 	}
 	c.JSON(200, gin.H{"dimension": dimension, "rows": rows})
 }
@@ -220,6 +227,8 @@ func (h *Handler) GetRequestDBStream(c *gin.Context) {
 		c.JSON(400, gin.H{"error": errParse.Error()})
 		return
 	}
+	resolver := h.buildProviderResolver()
+	resolver.expandQuery(&filter)
 	sub := requestdb.SubscribeStream(filter)
 	defer requestdb.UnsubscribeStream(sub)
 
@@ -235,10 +244,10 @@ func (h *Handler) GetRequestDBStream(c *gin.Context) {
 	// subscription is active already, so the client deduplicates by record id.
 	backlog, errBacklog := requestdb.TailBacklog(c.Request.Context(), filter, defaultStreamBacklog)
 	if errBacklog == nil && len(backlog) > 0 {
-		resolveProviderName := h.buildProviderNameResolver()
+		resolved := resolver.resolveEntries(backlog)
 		records := make([]requestDBRecordResponse, 0, len(backlog))
 		for i := range backlog {
-			records = append(records, newRequestDBRecordResponse(&backlog[i], false, resolveProviderName))
+			records = append(records, newRequestDBRecordResponseWithProvider(&backlog[i], false, resolved[i]))
 		}
 		if !writeSSEEvent(writer, "backlog", gin.H{"records": records}) {
 			return
@@ -261,7 +270,8 @@ func (h *Handler) GetRequestDBStream(c *gin.Context) {
 				// Dropped as a slow consumer; the client reconnects.
 				return
 			}
-			if !writeSSEEvent(writer, "request", newRequestDBRecordResponse(entry, false, h.buildProviderNameResolver())) {
+			liveResolved := h.buildProviderResolver().resolveEntry(entry)
+			if !writeSSEEvent(writer, "request", newRequestDBRecordResponseWithProvider(entry, false, liveResolved)) {
 				return
 			}
 		}

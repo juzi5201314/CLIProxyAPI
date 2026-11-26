@@ -392,6 +392,7 @@ const en = {
       statusCode: "Status code",
       onlyFailures: "Only failures",
       noRecentModels: "No models requested in the last 24h",
+      noRecentProviders: "No providers recorded in this range",
     },
     live: {
       connected: "Live",
@@ -431,6 +432,7 @@ const en = {
       userAgent: "User agent",
       session: "Session",
       baseUrl: "Upstream",
+      authType: "Auth mode",
       auth: "Credential",
       tier: "Service tier",
       requestedTier: "Requested service tier",

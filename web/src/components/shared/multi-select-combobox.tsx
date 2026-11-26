@@ -12,6 +12,10 @@ export interface ComboboxOption {
   label: string;
   value: string;
   count?: number;
+  badge?: string;
+  badgeClassName?: string;
+  searchText?: string;
+  title?: string;
 }
 
 interface MultiSelectComboboxProps {
@@ -43,7 +47,8 @@ export function MultiSelectCombobox({
     return options.filter(
       (opt) =>
         opt.label.toLowerCase().includes(term) ||
-        opt.value.toLowerCase().includes(term)
+        opt.value.toLowerCase().includes(term) ||
+        (opt.searchText ? opt.searchText.toLowerCase().includes(term) : false)
     );
   }, [options, search]);
 
@@ -92,7 +97,7 @@ export function MultiSelectCombobox({
           <ChevronsUpDown className="ml-1.5 size-3 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2 shadow-lg rounded-2xl" align="start">
+      <PopoverContent className="w-80 p-2 shadow-lg rounded-2xl" align="start">
         <div className="mb-2 flex items-center gap-1.5">
           <Input
             placeholder={searchPlaceholder ?? `${t("common.search")}...`}
@@ -149,7 +154,7 @@ export function MultiSelectCombobox({
                         : "hover:bg-muted text-foreground"
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div
                         className={`flex size-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
                           isSelected
@@ -159,9 +164,18 @@ export function MultiSelectCombobox({
                       >
                         {isSelected ? <Check className="size-2.5 stroke-[3]" /> : null}
                       </div>
-                      <span className="truncate font-mono text-[11px]" title={opt.value}>
+                      <span className="truncate font-mono text-[11px]" title={opt.title ?? opt.label}>
                         {opt.label}
                       </span>
+                      {opt.badge ? (
+                        <span
+                          className={`shrink-0 rounded border px-1 py-0 text-[9px] font-medium leading-4 ${
+                            opt.badgeClassName ?? "border-border bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {opt.badge}
+                        </span>
+                      ) : null}
                     </div>
                     {opt.count !== undefined ? (
                       <span className="ml-2 shrink-0 text-[10px] text-muted-foreground tabular-nums">
