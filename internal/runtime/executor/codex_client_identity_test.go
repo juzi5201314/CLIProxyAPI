@@ -137,7 +137,11 @@ func TestCodexClientIdentityOnWire(t *testing.T) {
 							t.Error(errUpgrade)
 							return
 						}
-						defer func() { _ = conn.Close() }()
+						defer func() {
+							if errClose := conn.Close(); errClose != nil {
+								t.Logf("close upstream websocket: %v", errClose)
+							}
+						}()
 						if _, _, errRead := conn.ReadMessage(); errRead != nil {
 							t.Error(errRead)
 							return
