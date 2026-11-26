@@ -120,7 +120,7 @@ func (e *CodexExecutor) executeOpenAIImage(ctx context.Context, auth *cliproxyau
 	reporter.SetTranslatedReasoningEffort(body, "codex")
 	prepareHeaders := func(request *http.Request) {
 		applyCodexHeaders(request, auth, apiKey, true, e.cfg, opts.Headers)
-		applyModelHeaderOverrides(request.Header, mainModel)
+		applyModelHeaderOverrides(ctx, request.Header, mainModel, e.cfg, auth, opts.Headers)
 		alignCodexContentEncoding(request)
 	}
 	prepareHeaders(httpReq)
@@ -230,7 +230,7 @@ func (e *CodexExecutor) executeOpenAIImageStream(ctx context.Context, auth *clip
 	reporter.SetTranslatedReasoningEffort(body, "codex")
 	prepareHeaders := func(request *http.Request) {
 		applyCodexHeaders(request, auth, apiKey, true, e.cfg, opts.Headers)
-		applyModelHeaderOverrides(request.Header, mainModel)
+		applyModelHeaderOverrides(ctx, request.Header, mainModel, e.cfg, auth, opts.Headers)
 		alignCodexContentEncoding(request)
 	}
 	prepareHeaders(httpReq)
@@ -376,7 +376,7 @@ func (e *CodexExecutor) executeDirectOpenAIImage(ctx context.Context, auth *clip
 	httpReq.Header.Del("Content-Encoding")
 	prepareHeaders := func(request *http.Request) {
 		applyCodexDirectImageHeaders(request, auth, apiKey, false, e.cfg, opts.Headers)
-		applyModelHeaderOverrides(request.Header, model)
+		applyModelHeaderOverrides(ctx, request.Header, model, e.cfg, auth, opts.Headers)
 		if contentType != "" {
 			request.Header.Set("Content-Type", contentType)
 		}
@@ -449,7 +449,7 @@ func (e *CodexExecutor) executeDirectOpenAIImageStream(ctx context.Context, auth
 	httpReq.Header.Del("Content-Encoding")
 	prepareHeaders := func(request *http.Request) {
 		applyCodexDirectImageHeaders(request, auth, apiKey, true, e.cfg, opts.Headers)
-		applyModelHeaderOverrides(request.Header, model)
+		applyModelHeaderOverrides(ctx, request.Header, model, e.cfg, auth, opts.Headers)
 		if contentType != "" {
 			request.Header.Set("Content-Type", contentType)
 		}

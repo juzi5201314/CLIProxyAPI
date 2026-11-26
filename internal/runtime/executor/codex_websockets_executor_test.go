@@ -1825,7 +1825,7 @@ func TestApplyModelHeaderOverridesFromModelConfig(t *testing.T) {
 	}
 
 	applyCodexHeaders(req, auth, "oauth-token", true, cfg)
-	applyModelHeaderOverrides(req.Header, "gpt-5.6-luna")
+	applyModelHeaderOverrides(context.Background(), req.Header, "gpt-5.6-luna", nil, nil)
 
 	if got := req.Header.Get("User-Agent"); got != wantUA {
 		t.Fatalf("User-Agent = %q, want %q", got, wantUA)
@@ -1834,7 +1834,7 @@ func TestApplyModelHeaderOverridesFromModelConfig(t *testing.T) {
 		t.Fatal("expected Session_id to be set for Mac OS User-Agent override")
 	}
 
-	applyModelHeaderOverrides(req.Header, "gpt-5.4")
+	applyModelHeaderOverrides(context.Background(), req.Header, "gpt-5.4", nil, nil)
 	if got := req.Header.Get("User-Agent"); got != wantUA {
 		t.Fatalf("User-Agent after no-op override = %q, want %q", got, wantUA)
 	}
@@ -1860,7 +1860,7 @@ func TestApplyModelHeaderOverridesMultipleHeaders(t *testing.T) {
 	headers.Set("Originator", "old-origin")
 	headers.Set("X-Test-Header", "old-value")
 
-	applyModelHeaderOverrides(headers, "test-override-headers-model")
+	applyModelHeaderOverrides(context.Background(), headers, "test-override-headers-model", nil, nil)
 
 	if got := headers.Get("User-Agent"); got != "custom-ua/1.0" {
 		t.Fatalf("User-Agent = %q, want custom-ua/1.0", got)

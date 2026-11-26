@@ -198,6 +198,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
 	req := (&http.Request{Header: headers}).WithContext(ctx)
 	util.ApplyCustomHeadersFromAttrs(req, attrs, ginHeaders)
 	applyCodexCloakingHeaders(ctx, headers, cfg, auth)
+	applyCodexClientHeaderPolicy(ctx, headers, cfg, auth, ginHeaders)
 	if cfg != nil && !isCodexCloakingDisabled(cfg, auth) {
 		misc.EnsureHeader(headers, nil, "X-Client-Request-Id", headers.Get("Thread-Id"))
 	}

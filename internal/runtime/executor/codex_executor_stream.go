@@ -143,7 +143,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	prepareHeaders := func(request *http.Request) {
 		applyCodexHeaders(request, auth, apiKey, true, e.cfg, opts.Headers)
 		applyCodexRoutingHint(ctx, request.Header, auth, upstreamModel, upstreamBody, opts.Headers)
-		applyModelHeaderOverrides(request.Header, upstreamModel)
+		applyModelHeaderOverrides(ctx, request.Header, upstreamModel, e.cfg, auth, opts.Headers)
 		alignCodexContentEncoding(request)
 	}
 	prepareHeaders(httpReq)

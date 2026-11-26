@@ -325,6 +325,8 @@ func (c ResponseCompressionConfig) EffectiveMinBytes() int {
 
 // CodexConfig configures provider-wide Codex request behavior.
 type CodexConfig struct {
+	// ClientIdentity controls final upstream User-Agent and Version headers.
+	ClientIdentity CodexClientIdentityConfig `yaml:"client-identity,omitempty" json:"client-identity,omitempty"`
 	// WebsocketRelay configures the shared idle connection cache for API-key relays.
 	WebsocketRelay CodexWebsocketRelayConfig `yaml:"websocket-relay,omitempty" json:"websocket-relay,omitempty"`
 	// WebsocketCompression controls upstream and downstream permessage-deflate; unset means enabled.

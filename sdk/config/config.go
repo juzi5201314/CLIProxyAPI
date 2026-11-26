@@ -15,6 +15,7 @@ type ModelCatalogs = internalconfig.ModelCatalogs
 type ClientConfig = internalconfig.ClientConfig
 type ClaudeClientConfig = internalconfig.ClaudeClientConfig
 type CodexClientConfig = internalconfig.CodexClientConfig
+type CodexClientIdentityConfig = internalconfig.CodexClientIdentityConfig
 type CodexWebSearchResultCacheConfig = internalconfig.CodexWebSearchResultCacheConfig
 type StreamingConfig = internalconfig.StreamingConfig
 type ClaudeCodeConfig = internalconfig.ClaudeCodeConfig
@@ -50,6 +51,7 @@ type TLS = internalconfig.TLSConfig
 
 const (
 	DefaultPanelGitHubRepository = internalconfig.DefaultPanelGitHubRepository
+	DefaultCodexClientVersion    = internalconfig.DefaultCodexClientVersion
 )
 
 func LoadConfig(configFile string) (*Config, error) { return internalconfig.LoadConfig(configFile) }
