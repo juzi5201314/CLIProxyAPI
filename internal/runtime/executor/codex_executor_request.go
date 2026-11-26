@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	codexClientVersion         = "0.154.0"
+	codexClientVersion         = config.DefaultCodexClientVersion
 	codexUserAgent             = "codex-tui/" + codexClientVersion + " (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; " + codexClientVersion + ")"
 	codexOriginator            = "codex-tui"
 	codexDefaultImageToolModel = "gpt-image-2"
@@ -369,8 +369,9 @@ func applyCodexHeaders(r *http.Request, auth *cliproxyauth.Auth, token string, s
 	applyCodexHeadersWithSIWC(r, auth, codexUseSIWCForRequest(r.Context(), auth, ginHeaders), token, stream, cfg, ginHeaders)
 }
 
-// applyModelHeaderOverrides forces models.json config.override_header onto upstream headers.
-func applyModelHeaderOverrides(headers http.Header, modelName string) {
+// applyModelHeaderOverrides applies catalog headers before the final client identity policy.
+func applyModelHeaderOverrides(ctx context.Context, headers http.Header, modelName string, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders ...http.Header) {
+	defer applyCodexClientHeaderPolicy(ctx, headers, cfg, auth, clientHeaders...)
 	if headers == nil {
 		return
 	}
@@ -584,6 +585,7 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
 	}
 	util.ApplyCustomHeadersFromAttrs(r, attrs, ginHeaders)
 	applyCodexCloakingHeaders(r.Context(), r.Header, cfg, auth)
+	applyCodexClientHeaderPolicy(r.Context(), r.Header, cfg, auth, ginHeaders)
 }
 
 const codexRoutingHintHeader = "X-Codex-Routing-Hint"
@@ -658,13 +660,32 @@ func isCodexCloakingDisabled(cfg *config.Config, auth *cliproxyauth.Auth) bool {
 	return false
 }
 
+func applyCodexClientHeaderPolicy(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth, clientHeaders ...http.Header) {
+	if cfg == nil {
+		return
+	}
+	var downstream http.Header
+	if len(clientHeaders) > 0 {
+		downstream = clientHeaders[0]
+	}
+	if downstream == nil && ctx != nil {
+		if ginCtx, ok := ctx.Value("gin").(*gin.Context); ok && ginCtx != nil && ginCtx.Request != nil {
+			downstream = ginCtx.Request.Header
+		}
+	}
+	if codexUseSIWCForRequest(ctx, auth, downstream) {
+		return
+	}
+	helps.ApplyCodexHeaderPolicy(headers, downstream, cfg.Codex.ClientIdentity, isCodexCloakingDisabled(cfg, auth))
+}
+
 func applyCodexCloakingHeaders(ctx context.Context, headers http.Header, cfg *config.Config, auth *cliproxyauth.Auth) {
 	if headers == nil || cfg == nil || isCodexCloakingDisabled(cfg, auth) {
 		return
 	}
-	headers.Set("User-Agent", codexUserAgent)
+	headers.Set("User-Agent", cfg.Codex.ClientIdentity.UserAgent())
 	headers.Set("Originator", codexOriginator)
-	helps.ApplyCodexClientIdentityHeaders(ctx, headers, codexClientVersion)
+	helps.ApplyCodexClientIdentityHeaders(ctx, headers, cfg.Codex.ClientIdentity.EffectiveClientVersion())
 }
 
 func normalizeCodexInstructions(body []byte, nativeRequest ...bool) []byte {

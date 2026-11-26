@@ -45,6 +45,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/page-header";
+import { CodexClientIdentity } from "@/components/config/codex-client-identity";
 import { config } from "@/api/management";
 import { errMessage } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -110,6 +111,7 @@ const HANDLED_PATHS: Record<string, string[]> = {
     "codex.stream-bootstrap-buffering",
     "codex.model-level-cooling",
     "codex.disable-codex-cloaking",
+    "codex.client-identity",
     "claude.tool-search",
     "claude.model-level-cooling",
     "claude.disable-claude-cloak-mode",
@@ -975,12 +977,7 @@ function UpstreamForm({ current, update }: { current: Doc; update: (changes: Par
             checked={Boolean(codex["model-level-cooling"])}
             onCheckedChange={(checked) => update({ codex: { ...codex, "model-level-cooling": checked } })}
           />
-          <SwitchRow
-            label="禁用 Codex 伪装头 (Disable Codex Cloaking)"
-            hint="停用强制附加的官方 Codex User-Agent 和 Originator 请求头。"
-            checked={Boolean(codex["disable-codex-cloaking"])}
-            onCheckedChange={(checked) => update({ codex: { ...codex, "disable-codex-cloaking": checked } })}
-          />
+          <CodexClientIdentity codex={codex} onChange={(next) => update({ codex: next })} />
           <FieldGroup className="pt-3">
             <Field>
               <FieldLabel htmlFor="codex-relay-ttl">WebSocket 转发空闲保留时间</FieldLabel>

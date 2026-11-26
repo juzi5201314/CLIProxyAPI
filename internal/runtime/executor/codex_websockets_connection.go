@@ -370,7 +370,7 @@ func PrepareCodexWebsocketProbe(ctx context.Context, cfg *config.Config, auth *c
 	setHeaderCasePreserved(headers, "session_id", sessionID)
 	headers.Set("Conversation_id", sessionID)
 	headers = applyCodexWebsocketHeaders(ctx, headers, auth, apiKey, cfg, false)
-	applyModelHeaderOverrides(headers, strings.TrimSpace(model))
+	applyModelHeaderOverrides(ctx, headers, strings.TrimSpace(model), cfg, auth)
 
 	if auth != nil && len(auth.Attributes) > 0 {
 		for attrKey, attrVal := range auth.Attributes {

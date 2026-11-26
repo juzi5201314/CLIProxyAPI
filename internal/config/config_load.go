@@ -250,6 +250,9 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	if _, errValidate := cfg.Codex.WebsocketRelay.Policy(); errValidate != nil {
 		return nil, errValidate
 	}
+	if errValidate := cfg.Codex.ClientIdentity.Validate(); errValidate != nil {
+		return nil, errValidate
+	}
 	if errValidate := cfg.Codex.LiveMediaRelay.Validate(); errValidate != nil {
 		return nil, errValidate
 	}

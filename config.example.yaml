@@ -438,6 +438,25 @@ client:
 # Shared upstream behavior applies to OAuth and API-key credentials.
 upstream:
   codex:
+    # Final upstream client identity policy for HTTP/SSE and WebSocket requests.
+    # SIWC uses its separate client identity. These rules run after model header overrides.
+    client-identity:
+      # builtin: always send the built-in UA (default).
+      # passthrough: forward the downstream UA exactly; omit it when absent.
+      # fallback: forward the downstream UA, falling back to the built-in UA.
+      # When omitted, the legacy disable-codex-cloaking opt-out is preserved.
+      user-agent-mode: builtin
+      # Generates both the built-in UA and fallback Version header.
+      client-version: "0.172.0"
+      # fixed: always use client-version (default).
+      # latest: fetch the newest openai/codex release from GitHub's public API every 6h,
+      # cache it on disk, and use client-version only until the first successful fetch.
+      client-version-source: fixed
+      # auto: preserve the existing Version, filling a missing value when cloaking is enabled.
+      # builtin: always use client-version; passthrough: omit when downstream omits it.
+      # override: always use the non-empty version value below.
+      version-mode: auto
+      # version: "0.172.0"
     # Shared idle cache for third-party keys with websocket-relay enabled.
     # Retention starts when a request finishes; heartbeats do not extend it.
     # Either zero disables reuse, while HTTP/SSE requests still use upstream WS.

@@ -212,6 +212,7 @@ func (s *Service) applyConfigRuntime(ctx context.Context, commit configCommit, s
 		return false
 	}
 
+	s.configureCodexLatestVersionUpdater(ctx, cfg)
 	if !s.applyManagerConfig(ctx, commit) {
 		return false
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/codexversion"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -59,6 +60,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 	usage.StartDefault(ctx)
 	cfg := s.currentConfig()
+	s.configureCodexLatestVersionUpdater(ctx, cfg)
 	homeEnabled := cfg != nil && cfg.Home.Enabled
 	if homeEnabled {
 		s.cfgMu.Lock()
@@ -444,4 +446,26 @@ func (s *Service) startModelCatalogUpdaters(ctx context.Context) {
 		proxyURL = cfg.ProxyURL
 	}
 	executor.StartXAIVersionUpdater(ctx, proxyURL)
+}
+
+// configureCodexLatestVersionUpdater binds the optional latest-release updater
+// to the service lifetime while leaving fixed-version configurations untouched.
+func (s *Service) configureCodexLatestVersionUpdater(ctx context.Context, cfg *config.Config) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s != nil {
+		s.cfgMu.RLock()
+		if lifecycleCtx := s.antigravityContext; lifecycleCtx != nil && lifecycleCtx.Err() == nil {
+			ctx = lifecycleCtx
+		}
+		s.cfgMu.RUnlock()
+	}
+	enabled := false
+	proxyURL := ""
+	if cfg != nil {
+		enabled = cfg.Codex.ClientIdentity.UsesLatestClientVersion()
+		proxyURL = cfg.ProxyURL
+	}
+	codexversion.ConfigureLatestVersionUpdater(ctx, proxyURL, enabled)
 }

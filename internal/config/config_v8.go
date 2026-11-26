@@ -34,6 +34,7 @@ var v8ClientPaths = []configPath{
 // Canonical upstream fields win by presence; historical OAuth fields precede globals.
 var v8SharedPaths = []configPath{
 	{"oauth.providers.codex.disable-codex-cloaking", "upstream.codex.disable-codex-cloaking"},
+	{"oauth.providers.codex.client-identity", "upstream.codex.client-identity"},
 	{"oauth.providers.codex.stream-bootstrap-buffering", "upstream.codex.stream-bootstrap-buffering"},
 	{"oauth.providers.codex.stream-bootstrap-timeout", "upstream.codex.stream-bootstrap-timeout"},
 	{"oauth.providers.codex.orphan-delegation-compatibility", "upstream.codex.orphan-delegation-compatibility"},
@@ -92,6 +93,7 @@ func buildV8Paths() []configPath {
 		{"oauth-request-scoped-errors", "oauth.request-scoped-errors"}, {"oauth-settings", "oauth.settings"}, {"ws-auth", "oauth.providers.aistudio.ws-auth"},
 		{"codex.websocket-relay", "upstream.codex.websocket-relay"},
 		{"codex.disable-codex-cloaking", "upstream.codex.disable-codex-cloaking"},
+		{"codex.client-identity", "upstream.codex.client-identity"},
 		{"codex.stream-bootstrap-buffering", "upstream.codex.stream-bootstrap-buffering"},
 		{"codex.stream-bootstrap-timeout", "upstream.codex.stream-bootstrap-timeout"},
 		{"codex.orphan-delegation-compatibility", "upstream.codex.orphan-delegation-compatibility"},
