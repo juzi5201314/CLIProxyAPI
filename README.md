@@ -1,6 +1,6 @@
 # CLIProxyAPI
 
-Fork 自 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)，当前版本 `v8.0.79-s2`。在官方版基础上改了一些自用顺手的功能。
+Fork 自 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)，当前版本 `v8.0.79-s3`。在官方版基础上改了一些自用顺手的功能。
 
 **Linux 安装 / 升级**
 ```bash
