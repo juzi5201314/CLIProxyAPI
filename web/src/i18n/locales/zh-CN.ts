@@ -560,6 +560,7 @@ const zhCN = {
     runtimeHint: "网关服务与本地能力状态",
     pluginSupport: "插件支持",
     pluginSupportHint: "动态插件与执行器",
+    unsupported: "不支持",
     requestDb: "请求数据库",
     requestDbHint: "请求元数据与用量统计",
     clearLocalData: "清除本地登录数据",

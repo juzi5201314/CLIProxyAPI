@@ -560,6 +560,7 @@ const en = {
     runtimeHint: "Gateway service and local capability status",
     pluginSupport: "Plugin support",
     pluginSupportHint: "Dynamic plugins and executors",
+    unsupported: "Unsupported",
     requestDb: "Request database",
     requestDbHint: "Request metadata and usage stats",
     clearLocalData: "Clear local sign-in data",

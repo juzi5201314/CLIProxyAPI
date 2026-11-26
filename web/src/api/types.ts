@@ -200,6 +200,7 @@ export interface ServerInfo {
   commit: string;
   build_date: string;
   plugin_support: string;
+  plugins_enabled?: boolean;
   uptime_seconds: number;
   request_db: { enabled: boolean };
 }

@@ -93,6 +93,14 @@ export function SystemPage() {
       ? isVersionUpToDate(info.data.version, latest.data)
       : null;
 
+  const pluginSupported = info.data
+    ? info.data.plugin_support === "1" || info.data.plugin_support === "true"
+    : undefined;
+  const pluginEnabled =
+    pluginSupported === undefined
+      ? undefined
+      : pluginSupported && (info.data?.plugins_enabled ?? true);
+
   return (
     <>
       <PageHeader title={t("nav.systemItem")} subtitle={t("system.subtitle")} />
@@ -124,7 +132,8 @@ export function SystemPage() {
               icon={Puzzle}
               label={t("system.pluginSupport")}
               hint={t("system.pluginSupportHint")}
-              enabled={info.data ? info.data.plugin_support === "true" : undefined}
+              enabled={pluginEnabled}
+              statusLabel={pluginSupported === false ? t("system.unsupported") : undefined}
               loading={info.isLoading}
             />
             <CapabilityRow
@@ -296,12 +305,14 @@ function CapabilityRow({
   label,
   hint,
   enabled,
+  statusLabel,
   loading,
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
   hint: string;
   enabled?: boolean;
+  statusLabel?: string;
   loading: boolean;
 }) {
   const { t } = useTranslation();
@@ -330,7 +341,7 @@ function CapabilityRow({
               : "text-muted-foreground",
           )}
         >
-          {enabled ? t("common.enabled") : t("common.disabled")}
+          {statusLabel ?? (enabled ? t("common.enabled") : t("common.disabled"))}
         </Badge>
       )}
     </div>
