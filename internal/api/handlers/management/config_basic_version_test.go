@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+func TestLatestReleaseURLTargetsForkRepository(t *testing.T) {
+	const want = "https://api.github.com/repos/juzi5201314/CLIProxyAPI/releases/latest"
+	if latestReleaseURL != want {
+		t.Fatalf("latestReleaseURL = %q, want %q", latestReleaseURL, want)
+	}
+}
+
 func TestSetLatestReleaseRequestHeaders(t *testing.T) {
 	tests := []struct {
 		name              string

@@ -50,6 +50,29 @@ type InfoCardProps = {
   overflowVisible?: boolean;
 };
 
+function parseForkVersion(raw: string): [number, number, number, number] | null {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-s(\d*))?$/i.exec(raw.trim());
+  if (!match) return null;
+  return [
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+    match[4] ? Number(match[4]) : 0,
+  ];
+}
+
+function isVersionUpToDate(current: string, latest: string): boolean {
+  const cur = parseForkVersion(current);
+  const lat = parseForkVersion(latest);
+  if (cur && lat) {
+    if (cur[0] !== lat[0]) return cur[0] > lat[0];
+    if (cur[1] !== lat[1]) return cur[1] > lat[1];
+    if (cur[2] !== lat[2]) return cur[2] > lat[2];
+    return cur[3] >= lat[3];
+  }
+  return current.trim().replace(/^v/i, "") === latest.trim().replace(/^v/i, "");
+}
+
 export function SystemPage() {
   const { t } = useTranslation();
   const info = useQuery({ queryKey: ["server-info"], queryFn: server.info });
@@ -67,7 +90,7 @@ export function SystemPage() {
 
   const upToDate =
     latest.data && info.data?.version
-      ? latest.data.replace(/^v/, "").startsWith(info.data.version.replace(/-s$/, ""))
+      ? isVersionUpToDate(info.data.version, latest.data)
       : null;
 
   return (
