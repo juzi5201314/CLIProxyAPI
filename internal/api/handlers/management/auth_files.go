@@ -20,6 +20,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialconcurrency"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialweight"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
@@ -521,6 +522,9 @@ func (h *Handler) listAuthFilesFromDisk(c *gin.Context, pagination authFilesPagi
 			if requestRetry, okRetry := authFileRequestRetryFromJSON(data); okRetry {
 				fileData["request_retry"] = requestRetry
 			}
+			if c.GetBool(ConfigV8ContextKey) {
+				populateV8AuthFileFieldsFromJSON(fileData, data)
+			}
 		}
 
 		files = append(files, fileData)
@@ -894,6 +898,34 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 		}
 	}
 	if quota.v8 {
+		// Per-credential settings surfaced on the maintained v8 contract while keeping v0 frozen.
+		if prefix := strings.TrimSpace(auth.Prefix); prefix != "" {
+			entry["prefix"] = prefix
+		}
+		if proxyURL := strings.TrimSpace(auth.ProxyURL); proxyURL != "" {
+			entry["proxy_url"] = proxyURL
+		}
+		if serviceTier := auth.ServiceTierOverride(); serviceTier != "" {
+			entry[coreauth.AttributeServiceTier] = serviceTier
+		}
+		if disableCooling, ok := auth.DisableCoolingOverride(); ok {
+			entry["disable_cooling"] = disableCooling
+		}
+		if disableCloaking, ok := auth.CodexDisableCloakingOverride(); ok {
+			entry["disable_codex_cloaking"] = disableCloaking
+		}
+		if fp := authFingerprintProfileValue(auth); fp != "" {
+			entry["fingerprint_profile"] = fp
+		}
+		if headers := authCustomHeadersValue(auth); len(headers) > 0 {
+			entry["headers"] = headers
+		}
+		if excluded := authExcludedModelsValue(auth); len(excluded) > 0 {
+			entry["excluded_models"] = excluded
+		}
+		if scopedErrors := authRequestScopedErrorsValue(auth); len(scopedErrors) > 0 {
+			entry["request_scoped_errors"] = scopedErrors
+		}
 		// OAuth login entry the credential was signed in through; multi-entry plugins store it
 		// next to the provider, and the deprecated v0 route keeps its frozen response shape.
 		if oauthProvider := authOAuthProvider(auth); oauthProvider != "" {
@@ -976,6 +1008,149 @@ func authFileRequestRetryFromJSON(data []byte) (int, bool) {
 		return 0, false
 	}
 	return (&coreauth.Auth{Metadata: metadata}).RequestRetryOverride()
+}
+
+func populateV8AuthFileFieldsFromJSON(fileData gin.H, data []byte) {
+	var metadata map[string]any
+	if errUnmarshal := json.Unmarshal(data, &metadata); errUnmarshal != nil || len(metadata) == 0 {
+		return
+	}
+	coreauth.NormalizeCredentialMetadata(metadata)
+	auth := &coreauth.Auth{Metadata: metadata}
+	if rawPrefix, ok := metadata["prefix"].(string); ok {
+		if trimmed := strings.Trim(strings.TrimSpace(rawPrefix), "/"); trimmed != "" && !strings.Contains(trimmed, "/") {
+			fileData["prefix"] = trimmed
+		}
+	}
+	if rawProxy, ok := metadata["proxy_url"].(string); ok {
+		if trimmed := strings.TrimSpace(rawProxy); trimmed != "" {
+			fileData["proxy_url"] = trimmed
+		}
+	}
+	if serviceTier := auth.ServiceTierOverride(); serviceTier != "" {
+		fileData[coreauth.AttributeServiceTier] = serviceTier
+	}
+	if disableCooling, ok := auth.DisableCoolingOverride(); ok {
+		fileData["disable_cooling"] = disableCooling
+	}
+	if disableCloaking, ok := auth.CodexDisableCloakingOverride(); ok {
+		fileData["disable_codex_cloaking"] = disableCloaking
+	}
+	if fp := authFingerprintProfileValue(auth); fp != "" {
+		fileData["fingerprint_profile"] = fp
+	}
+	if headers := authCustomHeadersValue(auth); len(headers) > 0 {
+		fileData["headers"] = headers
+	}
+	if excluded := authExcludedModelsValue(auth); len(excluded) > 0 {
+		fileData["excluded_models"] = excluded
+	}
+	if scopedErrors := authRequestScopedErrorsValue(auth); len(scopedErrors) > 0 {
+		fileData["request_scoped_errors"] = scopedErrors
+	}
+}
+
+func authFingerprintProfileValue(auth *coreauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if raw := strings.ToLower(strings.TrimSpace(authAttribute(auth, "fingerprint_profile"))); raw != "" && raw != "default" {
+		return raw
+	}
+	if auth.Metadata == nil {
+		return ""
+	}
+	for _, key := range []string{"fingerprint_profile", "fingerprint-profile"} {
+		if raw, ok := auth.Metadata[key].(string); ok {
+			if profile := strings.ToLower(strings.TrimSpace(raw)); profile != "" && profile != "default" {
+				return profile
+			}
+		}
+	}
+	return ""
+}
+
+func authCustomHeadersValue(auth *coreauth.Auth) map[string]string {
+	if auth == nil {
+		return nil
+	}
+	if headers := coreauth.ExtractCustomHeadersFromMetadata(auth.Metadata); len(headers) > 0 {
+		return headers
+	}
+	if len(auth.Attributes) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for key, val := range auth.Attributes {
+		if !strings.HasPrefix(key, "header:") {
+			continue
+		}
+		name := strings.TrimSpace(strings.TrimPrefix(key, "header:"))
+		trimmedVal := strings.TrimSpace(val)
+		if name != "" && trimmedVal != "" {
+			out[name] = trimmedVal
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func authExcludedModelsValue(auth *coreauth.Auth) []string {
+	if auth == nil {
+		return nil
+	}
+	if excluded, _ := synthesizer.ExtractExcludedModelsFromMetadata(auth.Metadata); len(excluded) > 0 {
+		return excluded
+	}
+	raw := strings.TrimSpace(authAttribute(auth, "excluded_models"))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func authRequestScopedErrorsValue(auth *coreauth.Auth) []config.RequestScopedErrorRule {
+	if auth == nil || len(auth.Metadata) == 0 {
+		return nil
+	}
+	raw, ok := auth.Metadata["request_scoped_errors"]
+	if !ok || raw == nil {
+		raw, ok = auth.Metadata["request-scoped-errors"]
+	}
+	if !ok || raw == nil {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []config.RequestScopedErrorRule:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make([]config.RequestScopedErrorRule, len(typed))
+		copy(out, typed)
+		return out
+	default:
+		data, errMarshal := json.Marshal(typed)
+		if errMarshal != nil {
+			return nil
+		}
+		var rules []config.RequestScopedErrorRule
+		if errUnmarshal := json.Unmarshal(data, &rules); errUnmarshal != nil || len(rules) == 0 {
+			return nil
+		}
+		return rules
+	}
 }
 
 // quotaObservationPayload exposes only passive provider observations. Cooldown

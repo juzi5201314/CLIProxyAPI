@@ -1513,3 +1513,174 @@ func mustGetAuthByID(t *testing.T, manager *coreauth.Manager, id string) *coreau
 	}
 	return got
 }
+
+func TestPatchAuthFileFields_ServiceTierAndProviderSettingsRoundTrip(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+	gin.SetMode(gin.TestMode)
+
+	authDir := t.TempDir()
+	fileName := "codex-oauth.json"
+	filePath := filepath.Join(authDir, fileName)
+	store := fileauth.NewFileTokenStore()
+	store.SetBaseDir(authDir)
+	manager := coreauth.NewManager(store, nil, nil)
+
+	record := &coreauth.Auth{
+		ID:       fileName,
+		FileName: fileName,
+		Provider: "codex",
+		Attributes: map[string]string{
+			coreauth.AttributePath:          filePath,
+			coreauth.AttributeSource:        filePath,
+			coreauth.AttributeSourceBackend: coreauth.AuthSourceFile,
+		},
+		Metadata: map[string]any{
+			"type":         "codex",
+			"email":        "user@example.com",
+			"access_token": "tok-1",
+		},
+	}
+	if _, errRegister := manager.Register(context.Background(), record); errRegister != nil {
+		t.Fatalf("Register() error = %v", errRegister)
+	}
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+
+	patchJSON := `{
+		"name":"codex-oauth.json",
+		"service-tier":"FAST",
+		"disable-cooling":true,
+		"disable-codex-cloaking":true,
+		"websockets":true,
+		"prefix":" /team-a/ ",
+		"proxy_url":"socks5://127.0.0.1:1080",
+		"headers":{"X-Custom":"hello"},
+		"excluded_models":["gpt-5-mini"],
+		"request_scoped_errors":[{"status":400,"match":["quota"],"action":"stop-and-cooldown"}]
+	}`
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPatch, "/v8/management/credentials/fields", strings.NewReader(patchJSON))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+	h.PatchAuthFileFields(ctx)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	updated := mustGetAuthByID(t, manager, fileName)
+	if got := updated.Attributes[coreauth.AttributeServiceTier]; got != "fast" {
+		t.Fatalf("Attributes[service_tier] = %q, want %q", got, "fast")
+	}
+	if got := updated.Attributes[coreauth.AttributeCodexDisableCloaking]; got != "true" {
+		t.Fatalf("Attributes[codex_disable_cloaking] = %q, want %q", got, "true")
+	}
+	if got := updated.Attributes["websockets"]; got != "true" {
+		t.Fatalf("Attributes[websockets] = %q, want %q", got, "true")
+	}
+	if updated.Prefix != "team-a" {
+		t.Fatalf("Prefix = %q, want %q", updated.Prefix, "team-a")
+	}
+	if updated.ProxyURL != "socks5://127.0.0.1:1080" {
+		t.Fatalf("ProxyURL = %q, want %q", updated.ProxyURL, "socks5://127.0.0.1:1080")
+	}
+
+	// Verify v8 GET surfaces all per-credential settings while v0 stays frozen.
+	v8Entry := h.buildAuthFileEntry(updated, authFileQuotaContext{v8: true})
+	if v8Entry["service_tier"] != "fast" {
+		t.Fatalf("v8 service_tier = %#v, want %q", v8Entry["service_tier"], "fast")
+	}
+	if v8Entry["disable_cooling"] != true {
+		t.Fatalf("v8 disable_cooling = %#v, want true", v8Entry["disable_cooling"])
+	}
+	if v8Entry["disable_codex_cloaking"] != true {
+		t.Fatalf("v8 disable_codex_cloaking = %#v, want true", v8Entry["disable_codex_cloaking"])
+	}
+	if v8Entry["prefix"] != "team-a" || v8Entry["proxy_url"] != "socks5://127.0.0.1:1080" {
+		t.Fatalf("v8 prefix/proxy_url = %#v / %#v", v8Entry["prefix"], v8Entry["proxy_url"])
+	}
+	headersMap, _ := v8Entry["headers"].(map[string]string)
+	if headersMap["X-Custom"] != "hello" {
+		t.Fatalf("v8 headers = %#v, want X-Custom=hello", v8Entry["headers"])
+	}
+	excludedSlice, _ := v8Entry["excluded_models"].([]string)
+	if len(excludedSlice) != 1 || excludedSlice[0] != "gpt-5-mini" {
+		t.Fatalf("v8 excluded_models = %#v, want [gpt-5-mini]", v8Entry["excluded_models"])
+	}
+	scopedSlice, _ := v8Entry["request_scoped_errors"].([]config.RequestScopedErrorRule)
+	if len(scopedSlice) != 1 || scopedSlice[0].Status != 400 || scopedSlice[0].Action != "stop-and-cooldown" {
+		t.Fatalf("v8 request_scoped_errors = %#v", v8Entry["request_scoped_errors"])
+	}
+
+	v0Entry := h.buildAuthFileEntry(updated, authFileQuotaContext{v8: false})
+	for _, v8Only := range []string{"service_tier", "disable_cooling", "disable_codex_cloaking", "prefix", "proxy_url", "headers", "excluded_models", "request_scoped_errors"} {
+		if _, exists := v0Entry[v8Only]; exists {
+			t.Fatalf("v0 entry unexpectedly exposed %q: %#v", v8Only, v0Entry[v8Only])
+		}
+	}
+
+	// Clearing via auto / null removes both runtime attributes and persisted JSON fields.
+	clearJSON := `{
+		"name":"codex-oauth.json",
+		"service_tier":"auto",
+		"disable_cooling":null,
+		"disable_codex_cloaking":null,
+		"prefix":null,
+		"proxy_url":null,
+		"headers":{"X-Custom":""},
+		"excluded_models":null,
+		"request_scoped_errors":null
+	}`
+	recClear := httptest.NewRecorder()
+	ctxClear, _ := gin.CreateTestContext(recClear)
+	reqClear := httptest.NewRequest(http.MethodPatch, "/v8/management/credentials/fields", strings.NewReader(clearJSON))
+	reqClear.Header.Set("Content-Type", "application/json")
+	ctxClear.Request = reqClear
+	h.PatchAuthFileFields(ctxClear)
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("clear PATCH status = %d, body = %s", recClear.Code, recClear.Body.String())
+	}
+
+	cleared := mustGetAuthByID(t, manager, fileName)
+	if _, exists := cleared.Attributes[coreauth.AttributeServiceTier]; exists {
+		t.Fatalf("expected service_tier attribute cleared, got %q", cleared.Attributes[coreauth.AttributeServiceTier])
+	}
+	if _, exists := cleared.Attributes[coreauth.AttributeCodexDisableCloaking]; exists {
+		t.Fatalf("expected codex_disable_cloaking attribute cleared, got %q", cleared.Attributes[coreauth.AttributeCodexDisableCloaking])
+	}
+	if cleared.Prefix != "" || cleared.ProxyURL != "" {
+		t.Fatalf("expected prefix/proxy_url cleared, got %q / %q", cleared.Prefix, cleared.ProxyURL)
+	}
+	rawDisk, errRead := os.ReadFile(filePath)
+	if errRead != nil {
+		t.Fatalf("ReadFile() error = %v", errRead)
+	}
+	var diskData map[string]any
+	if errUnmarshal := json.Unmarshal(rawDisk, &diskData); errUnmarshal != nil {
+		t.Fatalf("Unmarshal() error = %v", errUnmarshal)
+	}
+	for _, key := range []string{"service_tier", "disable_cooling", "disable_codex_cloaking", "prefix", "proxy_url", "headers", "excluded_models", "request_scoped_errors"} {
+		if _, exists := diskData[key]; exists {
+			t.Fatalf("persisted JSON retained cleared field %q: %#v", key, diskData[key])
+		}
+	}
+
+	// Validation rejects invalid field shapes with 400.
+	for _, badBody := range []string{
+		`{"name":"codex-oauth.json","service_tier":123}`,
+		`{"name":"codex-oauth.json","service_tier.sub":"fast"}`,
+		`{"name":"codex-oauth.json","disable_cooling":"yes"}`,
+		`{"name":"codex-oauth.json","disable_codex_cloaking":1}`,
+		`{"name":"codex-oauth.json","prefix":"a/b"}`,
+		`{"name":"codex-oauth.json","request_scoped_errors":"invalid"}`,
+	} {
+		recBad := httptest.NewRecorder()
+		ctxBad, _ := gin.CreateTestContext(recBad)
+		reqBad := httptest.NewRequest(http.MethodPatch, "/v8/management/credentials/fields", strings.NewReader(badBody))
+		reqBad.Header.Set("Content-Type", "application/json")
+		ctxBad.Request = reqBad
+		h.PatchAuthFileFields(ctxBad)
+		if recBad.Code != http.StatusBadRequest {
+			t.Fatalf("PATCH %s status = %d, want 400 (body=%s)", badBody, recBad.Code, recBad.Body.String())
+		}
+	}
+}

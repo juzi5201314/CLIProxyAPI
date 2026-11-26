@@ -766,6 +766,7 @@ func (h *Handler) buildAuthFromFileData(path string, data []byte) (*coreauth.Aut
 		return nil, fmt.Errorf("%w: %w", errInvalidAuthFile, errLimit)
 	}
 	coreauth.ApplyCustomHeadersFromMetadata(auth)
+	coreauth.ApplyAuthRuntimeMetadata(auth, metadata)
 	return auth, nil
 }
 
@@ -905,6 +906,7 @@ func (h *Handler) buildAuthsFromFileDataV8(path string, data []byte) ([]*coreaut
 			}
 			h.preserveExistingAuthFields(auth, lastRefresh, hasLastRefresh)
 			coreauth.ApplyCustomHeadersFromMetadata(auth)
+			coreauth.ApplyAuthRuntimeMetadata(auth, metadata)
 			auth.BindFileSnapshot(path, data)
 			out = append(out, auth)
 		}
@@ -945,6 +947,7 @@ func (h *Handler) buildAuthsFromFileDataV8(path string, data []byte) ([]*coreaut
 	auth.FileName = defaultFileName
 	h.preserveExistingAuthFields(auth, lastRefresh, hasLastRefresh)
 	coreauth.ApplyCustomHeadersFromMetadata(auth)
+	coreauth.ApplyAuthRuntimeMetadata(auth, metadata)
 	auth.BindFileSnapshot(path, data)
 	return []*coreauth.Auth{auth}, metadata, nil
 }

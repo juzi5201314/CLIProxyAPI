@@ -1085,6 +1085,13 @@ const en = {
     success: "Success",
     failed: "Failed",
     editProps: "Edit Properties",
+    fieldNote: "Note",
+    notePlaceholder: "Optional note",
+    overview: "Credential Overview",
+    useSIWC: "Use SIWC credential",
+    useSIWCHint: "Route non-Codex client requests through the bound Sign in with ChatGPT credential.",
+    runtimeOnlyEditHint: "This credential comes from config (read-only). Edit it on the AI Providers page.",
+    serviceTierBadge: "Service Tier: {{tier}}",
   },
   oauth: {
     subtitle: "Log in to upstream providers and import credentials",

@@ -245,12 +245,23 @@ export interface AuthFileEntry {
   last_refresh?: string;
   next_retry_after?: string;
   path?: string;
+  prefix?: string;
+  proxy_url?: string;
   priority?: number;
   note?: string;
   weight?: number;
   websockets?: boolean;
   request_retry?: number;
   max_concurrency?: number;
+  service_tier?: string;
+  disable_cooling?: boolean;
+  disable_codex_cloaking?: boolean;
+  fingerprint_profile?: string;
+  headers?: Record<string, string>;
+  excluded_models?: string[];
+  request_scoped_errors?: unknown[];
+  use_siwc?: boolean;
+  siwc_bound?: boolean;
   cooldowns?: Record<string, unknown>;
   [key: string]: unknown;
 }

@@ -23,6 +23,7 @@ const (
 	AttributeProviderConcurrencyKey = "provider_concurrency_key"
 	AttributeProviderMaxConcurrency = "provider_max_concurrency"
 	AttributeRuntimeOnly            = "runtime_only"
+	AttributeServiceTier            = "service_tier"
 	AttributeSource                 = "source"
 	AttributeSourceBackend          = "source_backend"
 	AttributeWeight                 = "weight"

@@ -8,6 +8,8 @@ func CanonicalCredentialMetadataKey(key string) string {
 		return "api_key"
 	case "base-url":
 		return "base_url"
+	case "codex-disable-cloaking", "codex_disable_cloaking", "disable-codex-cloaking":
+		return "disable_codex_cloaking"
 	case "disable-cooling":
 		return "disable_cooling"
 	case "excluded-models":
@@ -28,6 +30,8 @@ func CanonicalCredentialMetadataKey(key string) string {
 		return "request_retry"
 	case "request-scoped-errors":
 		return "request_scoped_errors"
+	case "service-tier":
+		return "service_tier"
 	case "tool-prefix-disabled":
 		return "tool_prefix_disabled"
 	default:

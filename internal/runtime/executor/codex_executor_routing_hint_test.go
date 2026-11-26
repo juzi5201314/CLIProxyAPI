@@ -251,3 +251,83 @@ func TestApplyCodexRoutingHint(t *testing.T) {
 		}
 	})
 }
+
+func TestCodexExecutorOAuthCredentialServiceTierOverride(t *testing.T) {
+	const plainClaude = `{"model":"gpt-5.5","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`
+	const fastClaude = `{"model":"gpt-5.5","max_tokens":64,"speed":"fast","messages":[{"role":"user","content":"hi"}]}`
+
+	cases := []struct {
+		name        string
+		serviceTier string
+		stream      bool
+		payload     string
+		wantTier    string
+		wantHint    string
+	}{
+		{
+			name:        "oauth stream forces fast to priority and sets routing hint",
+			serviceTier: "fast",
+			stream:      true,
+			payload:     plainClaude,
+			wantTier:    "priority",
+			wantHint:    "model=gpt-5.5;tier=priority",
+		},
+		{
+			name:        "oauth non-stream forces priority and sets routing hint",
+			serviceTier: "priority",
+			stream:      false,
+			payload:     plainClaude,
+			wantTier:    "priority",
+			wantHint:    "model=gpt-5.5;tier=priority",
+		},
+		{
+			name:        "oauth default override strips downstream fast tier",
+			serviceTier: "default",
+			stream:      true,
+			payload:     fastClaude,
+			wantTier:    "",
+			wantHint:    "model=gpt-5.5",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var captured capturedCodexRequest
+			server := newCodexRoutingHintServer(t, &captured)
+			defer server.Close()
+
+			auth := codexOAuthTestAuth(server.URL)
+			auth.Metadata["service_tier"] = tc.serviceTier
+			cliproxyauth.ApplyAuthRuntimeMetadata(auth, auth.Metadata)
+
+			executor := NewCodexExecutor(&config.Config{})
+			req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(tc.payload)}
+			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("claude"), Stream: tc.stream}
+
+			if tc.stream {
+				result, err := executor.ExecuteStream(context.Background(), auth, req, opts)
+				if err != nil {
+					t.Fatalf("ExecuteStream error: %v", err)
+				}
+				for chunk := range result.Chunks {
+					if chunk.Err != nil {
+						t.Fatalf("stream chunk error: %v", chunk.Err)
+					}
+				}
+			} else if _, err := executor.Execute(context.Background(), auth, req, opts); err != nil {
+				t.Fatalf("Execute error: %v", err)
+			}
+
+			if tc.wantTier == "" {
+				if captured.serviceTier.Exists() {
+					t.Fatalf("body service_tier = %s, want absent", captured.serviceTier.Raw)
+				}
+			} else if captured.serviceTier.String() != tc.wantTier {
+				t.Fatalf("body service_tier = %q, want %q", captured.serviceTier.String(), tc.wantTier)
+			}
+			if captured.routingHint != tc.wantHint {
+				t.Fatalf("routing hint = %q, want %q", captured.routingHint, tc.wantHint)
+			}
+		})
+	}
+}

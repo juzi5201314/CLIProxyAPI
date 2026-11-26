@@ -236,6 +236,7 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 				applyVertexOpenAPISettingsAttribute(auth, metadata)
 				ApplyAuthExcludedModelsMeta(auth, perAccountExcluded, "oauth")
 				coreauth.ApplyCustomHeadersFromMetadata(auth)
+				coreauth.ApplyAuthRuntimeMetadata(auth, metadata)
 				applyFingerprintProfileAttribute(auth, metadata)
 				auth.BindFileSnapshot(fullPath, data)
 			}
@@ -309,6 +310,7 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 		}
 	}
 	coreauth.ApplyCustomHeadersFromMetadata(a)
+	coreauth.ApplyAuthRuntimeMetadata(a, metadata)
 	coreauth.SetOAuthModelAliasesAttribute(a, perAccountModelAliases)
 	applyOpenAPIModelsAttribute(a, metadata)
 	applyVertexOpenAPISettingsAttribute(a, metadata)

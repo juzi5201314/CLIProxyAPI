@@ -19,6 +19,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
 	xaiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/xai"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialconcurrency"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/credentialweight"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
@@ -433,6 +434,149 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 			}
 		} else if rootAuthFileField(fieldPath) == coreauth.AttributeMaxConcurrency {
 			return &authFileFieldPatchError{message: "max_concurrency does not support nested fields"}
+		} else if fieldPath == coreauth.AttributeServiceTier {
+			if value == nil {
+				delete(targetAuth.Metadata, coreauth.AttributeServiceTier)
+			} else {
+				rawTier, okString := value.(string)
+				if !okString {
+					return &authFileFieldPatchError{message: "service_tier must be a string or null"}
+				}
+				if tier := coreauth.NormalizeServiceTierValue(rawTier); tier == "" {
+					delete(targetAuth.Metadata, coreauth.AttributeServiceTier)
+				} else {
+					targetAuth.Metadata[coreauth.AttributeServiceTier] = tier
+				}
+			}
+		} else if rootAuthFileField(fieldPath) == coreauth.AttributeServiceTier {
+			return &authFileFieldPatchError{message: "service_tier does not support nested fields"}
+		} else if fieldPath == "disable_cooling" {
+			if value == nil {
+				delete(targetAuth.Metadata, "disable_cooling")
+			} else {
+				disabled, okBool := value.(bool)
+				if !okBool {
+					return &authFileFieldPatchError{message: "disable_cooling must be a boolean or null"}
+				}
+				targetAuth.Metadata["disable_cooling"] = disabled
+			}
+		} else if rootAuthFileField(fieldPath) == "disable_cooling" {
+			return &authFileFieldPatchError{message: "disable_cooling does not support nested fields"}
+		} else if fieldPath == "disable_codex_cloaking" {
+			if value == nil {
+				delete(targetAuth.Metadata, "disable_codex_cloaking")
+			} else {
+				disabled, okBool := value.(bool)
+				if !okBool {
+					return &authFileFieldPatchError{message: "disable_codex_cloaking must be a boolean or null"}
+				}
+				targetAuth.Metadata["disable_codex_cloaking"] = disabled
+			}
+		} else if rootAuthFileField(fieldPath) == "disable_codex_cloaking" {
+			return &authFileFieldPatchError{message: "disable_codex_cloaking does not support nested fields"}
+		} else if fieldPath == "websockets" {
+			if value == nil {
+				delete(targetAuth.Metadata, "websockets")
+			} else {
+				enabled, okBool := authFileBoolValue(value)
+				if !okBool {
+					return &authFileFieldPatchError{message: "websockets must be a boolean or null"}
+				}
+				targetAuth.Metadata["websockets"] = enabled
+			}
+		} else if rootAuthFileField(fieldPath) == "websockets" {
+			return &authFileFieldPatchError{message: "websockets does not support nested fields"}
+		} else if fieldPath == "use_siwc" {
+			if value == nil {
+				delete(targetAuth.Metadata, "use_siwc")
+			} else {
+				enabled, okBool := authFileBoolValue(value)
+				if !okBool {
+					return &authFileFieldPatchError{message: "use_siwc must be a boolean or null"}
+				}
+				targetAuth.Metadata["use_siwc"] = enabled
+			}
+		} else if rootAuthFileField(fieldPath) == "use_siwc" {
+			return &authFileFieldPatchError{message: "use_siwc does not support nested fields"}
+		} else if fieldPath == "prefix" {
+			if value == nil {
+				delete(targetAuth.Metadata, "prefix")
+			} else {
+				rawPrefix, okString := value.(string)
+				if !okString {
+					return &authFileFieldPatchError{message: "prefix must be a string or null"}
+				}
+				trimmed := strings.Trim(strings.TrimSpace(rawPrefix), "/")
+				if strings.Contains(trimmed, "/") {
+					return &authFileFieldPatchError{message: "prefix must not contain '/'"}
+				}
+				if trimmed == "" {
+					delete(targetAuth.Metadata, "prefix")
+				} else {
+					targetAuth.Metadata["prefix"] = trimmed
+				}
+			}
+		} else if fieldPath == "proxy_url" {
+			if value == nil {
+				delete(targetAuth.Metadata, "proxy_url")
+			} else {
+				rawProxy, okString := value.(string)
+				if !okString {
+					return &authFileFieldPatchError{message: "proxy_url must be a string or null"}
+				}
+				if trimmed := strings.TrimSpace(rawProxy); trimmed == "" {
+					delete(targetAuth.Metadata, "proxy_url")
+				} else {
+					targetAuth.Metadata["proxy_url"] = trimmed
+				}
+			}
+		} else if fieldPath == "note" {
+			if value == nil {
+				delete(targetAuth.Metadata, "note")
+			} else {
+				rawNote, okString := value.(string)
+				if !okString {
+					return &authFileFieldPatchError{message: "note must be a string or null"}
+				}
+				if trimmed := strings.TrimSpace(rawNote); trimmed == "" {
+					delete(targetAuth.Metadata, "note")
+				} else {
+					targetAuth.Metadata["note"] = trimmed
+				}
+			}
+		} else if fieldPath == "priority" && value == nil {
+			delete(targetAuth.Metadata, "priority")
+		} else if fieldPath == "fingerprint_profile" {
+			if value == nil {
+				delete(targetAuth.Metadata, "fingerprint_profile")
+			} else {
+				rawProfile, okString := value.(string)
+				if !okString {
+					return &authFileFieldPatchError{message: "fingerprint_profile must be a string or null"}
+				}
+				profile := strings.ToLower(strings.TrimSpace(rawProfile))
+				if profile == "" || profile == "default" {
+					delete(targetAuth.Metadata, "fingerprint_profile")
+				} else {
+					targetAuth.Metadata["fingerprint_profile"] = profile
+				}
+			}
+		} else if fieldPath == "request_scoped_errors" {
+			if value == nil {
+				delete(targetAuth.Metadata, "request_scoped_errors")
+			} else {
+				rules, errRules := decodeAuthFileRequestScopedErrors(rawValue)
+				if errRules != nil {
+					return &authFileFieldPatchError{message: errRules.Error()}
+				}
+				if len(rules) == 0 {
+					delete(targetAuth.Metadata, "request_scoped_errors")
+				} else {
+					targetAuth.Metadata["request_scoped_errors"] = rules
+				}
+			}
+		} else if rootAuthFileField(fieldPath) == "request_scoped_errors" {
+			return &authFileFieldPatchError{message: "request_scoped_errors does not support nested fields"}
 		} else if fieldPath == "headers" {
 			applyAuthFileHeadersPatch(targetAuth, value)
 		} else if errSet := setAuthFileMetadataValue(targetAuth.Metadata, fieldPath, value); errSet != nil {
@@ -460,6 +604,9 @@ func applyAuthFileFieldsPatch(targetAuth *coreauth.Auth, req map[string]json.Raw
 			excluded, errExcluded := synthesizer.ExtractExcludedModelsFromMetadata(targetAuth.Metadata)
 			if errExcluded != nil {
 				return &authFileFieldPatchError{message: errExcluded.Error()}
+			}
+			if len(excluded) == 0 {
+				delete(targetAuth.Metadata, "excluded_models")
 			}
 			// ApplyAuthExcludedModelsMeta never clears attributes, so drop stale values first.
 			delete(targetAuth.Attributes, "excluded_models")
@@ -669,12 +816,16 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 	}
 	if _, ok := touchedRoots["prefix"]; ok {
 		if prefix, okString := auth.Metadata["prefix"].(string); okString {
-			auth.Prefix = strings.TrimSpace(prefix)
+			auth.Prefix = strings.Trim(strings.TrimSpace(prefix), "/")
+		} else {
+			auth.Prefix = ""
 		}
 	}
 	if _, ok := touchedRoots["proxy_url"]; ok {
 		if proxyURL, okString := auth.Metadata["proxy_url"].(string); okString {
 			auth.ProxyURL = strings.TrimSpace(proxyURL)
+		} else {
+			auth.ProxyURL = ""
 		}
 	}
 	if _, ok := touchedRoots["headers"]; ok {
@@ -689,11 +840,23 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 	if _, ok := touchedRoots[coreauth.AttributeMaxConcurrency]; ok {
 		syncAuthFileMaxConcurrencyAttribute(auth)
 	}
+	if _, ok := touchedRoots[coreauth.AttributeServiceTier]; ok {
+		coreauth.ApplyAuthServiceTierMetadata(auth, auth.Metadata)
+	}
+	if _, ok := touchedRoots["disable_codex_cloaking"]; ok {
+		coreauth.ApplyAuthCodexDisableCloakingMetadata(auth, auth.Metadata)
+	}
+	if _, ok := touchedRoots["fingerprint_profile"]; ok {
+		syncAuthFileFingerprintProfileAttribute(auth)
+	}
 	if _, ok := touchedRoots["note"]; ok {
 		syncAuthFileNoteAttribute(auth)
 	}
 	if _, ok := touchedRoots["websockets"]; ok {
 		syncAuthFileWebsocketsAttribute(auth)
+	}
+	if _, ok := touchedRoots["use_siwc"]; ok && auth.Attributes != nil {
+		delete(auth.Attributes, "use_siwc")
 	}
 	if _, ok := touchedRoots["disabled"]; ok {
 		syncAuthFileDisabledState(auth)
@@ -703,6 +866,60 @@ func syncAuthFileMetadataFields(auth *coreauth.Auth, touchedRoots map[string]str
 	} else if _, ok := touchedRoots["id_token"]; ok {
 		syncAuthFilePlanTypeAttribute(auth)
 	}
+}
+
+func decodeAuthFileRequestScopedErrors(raw json.RawMessage) ([]config.RequestScopedErrorRule, error) {
+	var items []json.RawMessage
+	if errUnmarshal := json.Unmarshal(raw, &items); errUnmarshal != nil {
+		return nil, fmt.Errorf("request_scoped_errors must be a rule array or null")
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	rules := make([]config.RequestScopedErrorRule, 0, len(items))
+	for _, item := range items {
+		var rule config.RequestScopedErrorRule
+		if errRule := json.Unmarshal(item, &rule); errRule != nil {
+			return nil, fmt.Errorf("request_scoped_errors must be a rule array or null")
+		}
+		rule.Action = strings.ToLower(strings.TrimSpace(rule.Action))
+		cleanedMatch := make([]string, 0, len(rule.Match))
+		for _, m := range rule.Match {
+			if trimmed := strings.TrimSpace(m); trimmed != "" {
+				cleanedMatch = append(cleanedMatch, trimmed)
+			}
+		}
+		rule.Match = cleanedMatch
+		cleanedRegex := make([]string, 0, len(rule.MatchRegexr))
+		for _, m := range rule.MatchRegexr {
+			if trimmed := strings.TrimSpace(m); trimmed != "" {
+				cleanedRegex = append(cleanedRegex, trimmed)
+			}
+		}
+		rule.MatchRegexr = cleanedRegex
+		rules = append(rules, rule)
+	}
+	return rules, nil
+}
+
+func syncAuthFileFingerprintProfileAttribute(auth *coreauth.Auth) {
+	if auth == nil {
+		return
+	}
+	if auth.Attributes == nil {
+		auth.Attributes = make(map[string]string)
+	}
+	raw, ok := auth.Metadata["fingerprint_profile"].(string)
+	if !ok {
+		delete(auth.Attributes, "fingerprint_profile")
+		return
+	}
+	profile := strings.ToLower(strings.TrimSpace(raw))
+	if profile == "" || profile == "default" {
+		delete(auth.Attributes, "fingerprint_profile")
+		return
+	}
+	auth.Attributes["fingerprint_profile"] = profile
 }
 
 func syncAuthFilePlanTypeAttribute(auth *coreauth.Auth) {

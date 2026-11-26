@@ -1083,6 +1083,13 @@ const zhCN = {
     success: "成功",
     failed: "失败",
     editProps: "编辑属性",
+    fieldNote: "备注",
+    notePlaceholder: "可选备注信息",
+    overview: "凭据概览",
+    useSIWC: "使用 SIWC 凭据",
+    useSIWCHint: "开启后非 Codex 客户端请求将优先使用已绑定的 Sign in with ChatGPT 凭据。",
+    runtimeOnlyEditHint: "此凭据来自配置文件（只读），请在「供应商管理」页面编辑其属性。",
+    serviceTierBadge: "服务层级：{{tier}}",
   },
   oauth: {
     subtitle: "登录上游供应商并导入凭据",

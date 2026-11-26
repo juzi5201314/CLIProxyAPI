@@ -320,6 +320,7 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 					}
 				}
 				cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
+				cliproxyauth.ApplyAuthRuntimeMetadata(auth, metadata)
 			}
 			return auths, nil
 		}
@@ -376,6 +377,7 @@ func (s *FileTokenStore) readAuthFiles(path, baseDir string) ([]*cliproxyauth.Au
 		return nil, errLimit
 	}
 	cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
+	cliproxyauth.ApplyAuthRuntimeMetadata(auth, metadata)
 	return []*cliproxyauth.Auth{auth}, nil
 }
 

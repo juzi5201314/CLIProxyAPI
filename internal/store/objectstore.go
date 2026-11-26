@@ -649,6 +649,7 @@ func (s *ObjectTokenStore) readAuthFile(path, baseDir string) (*cliproxyauth.Aut
 		NextRefreshAfter: time.Time{},
 	}
 	cliproxyauth.ApplyCustomHeadersFromMetadata(auth)
+	cliproxyauth.ApplyAuthRuntimeMetadata(auth, metadata)
 	if disabled, ok := metadata["disabled"].(bool); ok && disabled {
 		auth.Disabled = true
 		auth.Status = cliproxyauth.StatusDisabled

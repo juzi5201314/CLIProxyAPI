@@ -505,6 +505,7 @@ func (h *Host) buildAuthsFromFileData(ctx context.Context, path string, data []b
 				}
 			}
 			coreauth.ApplyCustomHeadersFromMetadata(auth)
+			coreauth.ApplyAuthRuntimeMetadata(auth, metadata)
 			if existing := h.findExistingAuthForSave(auth.ID, path, len(out) == 1); existing != nil {
 				preserveExistingAuthState(auth, existing)
 			}
@@ -557,6 +558,7 @@ func (h *Host) buildAuthsFromFileData(ctx context.Context, path string, data []b
 	}
 	coreauth.ApplyAuthPriorityMetadata(auth, metadata)
 	coreauth.ApplyCustomHeadersFromMetadata(auth)
+	coreauth.ApplyAuthRuntimeMetadata(auth, metadata)
 	return []*coreauth.Auth{auth}, nil
 }
 

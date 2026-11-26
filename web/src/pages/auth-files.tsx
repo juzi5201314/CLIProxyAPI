@@ -12,7 +12,6 @@ import {
   Info,
   KeyRound,
   Loader2,
-  Power,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -20,6 +19,7 @@ import {
   Trash2,
   Upload,
   X,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -36,7 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
@@ -51,7 +49,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
-import { DetailList, JsonView, SectionCard } from "@/components/shared/misc";
+import { CredentialSettingsSheet } from "@/components/auth-files/credential-settings-sheet";
 import { credentials, quota } from "@/api/management";
 import { errMessage, type AuthFileEntry } from "@/api/types";
 import { dayjs, formatBytes, formatInt, fromNow } from "@/lib/format";
@@ -62,7 +60,6 @@ import {
   resolveCredentialQuota,
   type ResolvedQuota,
 } from "@/lib/quota-store";
-import { getCachedModels, saveCachedModels } from "@/lib/models-cache";
 
 function formatModTime(raw: string | number | undefined | null): string {
   if (!raw) return "—";
@@ -901,7 +898,15 @@ export function AuthFilesPage() {
       </AlertDialog>
 
       {/* Detail / Edit Properties Sheet */}
-      <DetailSheet entry={selected} allEntries={entries} onClose={() => setSelected(null)} onChanged={invalidate} />
+      {selected ? (
+        <CredentialSettingsSheet
+          key={selected.id || selected.name}
+          entry={selected}
+          allEntries={entries}
+          onClose={() => setSelected(null)}
+          onChanged={invalidate}
+        />
+      ) : null}
     </>
   );
 }
@@ -960,6 +965,7 @@ function CredentialCard({
               {formatProviderLabel(entry.provider)}
             </Badge>
             <StatusBadge entry={entry} />
+            <ServiceTierBadge tier={entry.service_tier} compact />
           </div>
           <Switch checked={!entry.disabled} onCheckedChange={(checked) => onToggleStatus(entry, !checked)} />
         </div>
@@ -994,12 +1000,13 @@ function CredentialCard({
     >
       {/* Top Badges & Checkbox */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <Checkbox checked={isChecked} onCheckedChange={onToggleCheck} />
           <Badge variant="outline" className={cn("text-[11px] px-2 py-0.5 font-medium rounded-md", getProviderTheme(entry.provider))}>
             {formatProviderLabel(entry.provider)}
           </Badge>
           <StatusBadge entry={entry} />
+          <ServiceTierBadge tier={entry.service_tier} />
         </div>
         <button
           onClick={copyFilename}
@@ -1353,6 +1360,29 @@ function StatusBadge({ entry }: { entry: AuthFileEntry }) {
   );
 }
 
+function ServiceTierBadge({ tier, compact }: { tier?: string; compact?: boolean }) {
+  const { t } = useTranslation();
+  const normalized = (tier ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "auto") return null;
+  const isFast = normalized === "priority" || normalized === "fast" || normalized === "ultrafast";
+  const label = normalized === "priority" ? "fast" : normalized;
+  return (
+    <span
+      title={t("authFiles.serviceTierBadge", { tier: normalized })}
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded border font-mono font-medium shrink-0",
+        compact ? "px-1 py-0 text-[10px]" : "px-1.5 py-0.5 text-[11px]",
+        isFast
+          ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300"
+          : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-300",
+      )}
+    >
+      {isFast ? <Zap className={compact ? "size-2.5" : "size-3"} /> : null}
+      {label}
+    </span>
+  );
+}
+
 function UploadDialog({ open, onOpenChange, onPick }: { open: boolean; onOpenChange: (open: boolean) => void; onPick: () => void }) {
   const { t } = useTranslation();
   return (
@@ -1371,243 +1401,5 @@ function UploadDialog({ open, onOpenChange, onPick }: { open: boolean; onOpenCha
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function DetailSheet({
-  entry,
-  allEntries,
-  onClose,
-  onChanged,
-}: {
-  entry: AuthFileEntry | null;
-  allEntries?: AuthFileEntry[];
-  onClose: () => void;
-  onChanged: () => void;
-}) {
-  const { t } = useTranslation();
-  const [models, setModels] = useState<string[] | null>(null);
-  const [syncingModels, setSyncingModels] = useState(false);
-  const [priority, setPriority] = useState("");
-  const [weight, setWeight] = useState("");
-  const [maxConcurrency, setMaxConcurrency] = useState("");
-  const [note, setNote] = useState("");
-
-  const open = Boolean(entry);
-  const key = entry?.id ?? "";
-  useEffect(() => {
-    setPriority(entry?.priority !== undefined ? String(entry.priority) : "");
-    setWeight(entry?.weight !== undefined ? String(entry.weight) : "");
-    setMaxConcurrency(entry?.max_concurrency !== undefined ? String(entry.max_concurrency) : "");
-    setNote(entry?.note ?? "");
-    const cached = entry ? getCachedModels(entry.auth_index || entry.id || entry.name) : null;
-    setModels(cached);
-  }, [key]);
-
-  const detailRows: [string, string | number][] = [];
-  const pushDetail = (label: string, value: string | number | undefined | null) => {
-    if (value !== undefined && value !== null && value !== "") detailRows.push([label, value]);
-  };
-  if (entry) {
-    pushDetail(t("common.provider"), entry.provider);
-    pushDetail("Type", entry.type);
-    pushDetail("Plan Type", entry.plan_type);
-    pushDetail("Auth index", entry.auth_index);
-    pushDetail("Status", entry.status_message || entry.status);
-    pushDetail("Email", entry.email);
-    pushDetail("Project", entry.project_id);
-    pushDetail("Account", entry.account_type);
-    pushDetail("Source", entry.source);
-    pushDetail("Base URL", entry.path);
-    if (entry.cooldowns && Object.keys(entry.cooldowns).length > 0) {
-      pushDetail("Cooldowns", JSON.stringify(entry.cooldowns));
-    }
-  }
-
-  const saveFields = async () => {
-    if (!entry) return;
-    const fields: Record<string, unknown> = {};
-    if (priority !== "") fields.priority = Number(priority);
-    if (weight !== "") fields.weight = Number(weight);
-    const trimmedConcurrency = maxConcurrency.trim();
-    const prevConcurrency = entry.max_concurrency !== undefined ? String(entry.max_concurrency) : "";
-    if (trimmedConcurrency !== prevConcurrency) {
-      fields.max_concurrency = trimmedConcurrency === "" ? null : Number(trimmedConcurrency);
-    }
-    if (note !== (entry.note ?? "")) fields.note = note;
-    if (Object.keys(fields).length === 0) {
-      onClose();
-      return;
-    }
-    try {
-      await credentials.setFields(entry.name, fields);
-      toast.success(t("common.saved"));
-      onChanged();
-      onClose();
-    } catch (error) {
-      toast.error(errMessage(error));
-    }
-  };
-
-  return (
-    <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg!">
-        {entry ? (
-          <>
-            <SheetHeader>
-              <SheetTitle className="flex items-center gap-2 text-base">
-                <Power className={`size-4 ${entry.disabled ? "text-zinc-400" : "text-emerald-500"}`} />
-                {entry.name}
-              </SheetTitle>
-            </SheetHeader>
-            <div className="mt-2 space-y-5">
-              <DetailList rows={detailRows} />
-
-              <div className="space-y-2">
-                <Label className="text-xs">{t("authFiles.fields")}</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground text-[10px]">priority</Label>
-                    <Input value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 text-xs" inputMode="numeric" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground text-[10px]">weight</Label>
-                    <Input value={weight} onChange={(event) => setWeight(event.target.value)} className="h-8 text-xs" inputMode="numeric" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground text-[10px]">max_concurrency</Label>
-                    <Input value={maxConcurrency} onChange={(event) => setMaxConcurrency(event.target.value)} placeholder="∞" className="h-8 text-xs" inputMode="numeric" />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-muted-foreground text-[10px]">note</Label>
-                  <Input value={note} onChange={(event) => setNote(event.target.value)} className="h-8 text-xs" />
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" className="h-8 flex-1 text-xs" onClick={() => void saveFields()}>
-                    {t("common.save")}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 flex-1 text-xs"
-                    onClick={async () => {
-                      try {
-                        await credentials.download(entry.name);
-                      } catch (error) {
-                        toast.error(errMessage(error));
-                      }
-                    }}
-                  >
-                    <Download className="size-3.5" />
-                    {t("common.download")}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 flex-1 text-xs justify-between"
-                    onClick={async () => {
-                      if (models !== null && models.length > 0) {
-                        setModels(null);
-                        return;
-                      }
-                      const cached = getCachedModels(entry.auth_index || entry.id || entry.name);
-                      if (cached) {
-                        setModels(cached);
-                      }
-                      try {
-                        const list = await credentials.models(entry.name);
-                        const ids = list.map((model) => model.id);
-                        setModels(ids);
-                        saveCachedModels([entry.auth_index, entry.id, entry.name], ids);
-                      } catch (error) {
-                        if (!cached) {
-                          toast.error(errMessage(error));
-                        }
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <ChevronRight className={`size-3.5 shrink-0 transition-transform ${models !== null && models.length > 0 ? "rotate-90" : ""}`} />
-                      <span>{t("authFiles.viewModels")}</span>
-                    </div>
-                    {models !== null && models.length > 0 ? (
-                      <span className="text-[10px] text-muted-foreground font-mono font-normal">
-                        ({models.length})
-                      </span>
-                    ) : null}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs shrink-0 gap-1.5"
-                    title={t("authFiles.syncModelsHint")}
-                    disabled={syncingModels}
-                    onClick={async () => {
-                      setSyncingModels(true);
-                      try {
-                        const res = await credentials.syncModels({ name: entry.name, auth_index: entry.auth_index });
-                        const ids = res.models.map((m) => m.id);
-                        setModels(ids);
-                        saveCachedModels([entry.auth_index, entry.id, entry.name], ids);
-
-                        if (res.synced_peers && res.synced_peers > 0 && allEntries) {
-                          for (const peer of allEntries) {
-                            if (peer.name === entry.name || peer.id === entry.id) continue;
-                            const sameProvider = (peer.provider || peer.type || "").toLowerCase() === (entry.provider || entry.type || "").toLowerCase();
-                            const samePlan = (peer.plan_type || "").toLowerCase() === (entry.plan_type || "").toLowerCase();
-                            if (sameProvider && samePlan) {
-                              saveCachedModels([peer.auth_index, peer.id, peer.name], ids);
-                            }
-                          }
-                        }
-
-                        if (res.synced_peers && res.synced_peers > 0) {
-                          toast.success(t("authFiles.modelsSyncedWithPeers", { count: ids.length, peers: res.synced_peers }));
-                        } else {
-                          toast.success(t("authFiles.modelsSynced", { count: ids.length }));
-                        }
-                      } catch (error) {
-                        toast.error(`${t("authFiles.modelsSyncFailed")}: ${errMessage(error)}`);
-                      } finally {
-                        setSyncingModels(false);
-                      }
-                    }}
-                  >
-                    <RefreshCw className={`size-3.5 ${syncingModels ? "animate-spin" : ""}`} />
-                    <span className="hidden sm:inline">{t("authFiles.syncModels")}</span>
-                  </Button>
-                </div>
-                {models !== null && models.length > 0 ? (
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-2">
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>{t("authFiles.availableModelsCount", { count: models.length })}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto pr-1">
-                      {models.map((model) => (
-                        <Badge key={model} variant="outline" className="font-mono text-[10px] bg-background/80">
-                          {model}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                ) : models !== null && models.length === 0 ? (
-                  <p className="text-muted-foreground mt-1 text-xs">{t("common.empty")}</p>
-                ) : null}
-              </div>
-
-              <SectionCard title={t("common.details")}>
-                <JsonView value={entry} className="max-h-72" />
-              </SectionCard>
-            </div>
-          </>
-        ) : null}
-      </SheetContent>
-    </Sheet>
   );
 }

@@ -1244,3 +1244,52 @@ func TestFileSynthesizerRecordsIncompleteFiles(t *testing.T) {
 		}
 	})
 }
+
+func TestFileSynthesizer_Synthesize_CodexRuntimeSettings(t *testing.T) {
+	tempDir := t.TempDir()
+	authData := map[string]any{
+		"type":                   "codex",
+		"email":                  "codex@example.com",
+		"access_token":           "oauth-token",
+		"service-tier":           "FAST",
+		"disable-codex-cloaking": true,
+		"websockets":             true,
+		"disable-cooling":        false,
+	}
+	raw, errMarshal := json.Marshal(authData)
+	if errMarshal != nil {
+		t.Fatalf("Marshal() error = %v", errMarshal)
+	}
+	if errWrite := os.WriteFile(filepath.Join(tempDir, "codex.json"), raw, 0o600); errWrite != nil {
+		t.Fatalf("WriteFile() error = %v", errWrite)
+	}
+
+	auths, err := NewFileSynthesizer().Synthesize(&SynthesisContext{
+		Config:      &config.Config{},
+		AuthDir:     tempDir,
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	})
+	if err != nil {
+		t.Fatalf("Synthesize() error = %v", err)
+	}
+	if len(auths) != 1 {
+		t.Fatalf("Synthesize() len = %d, want 1", len(auths))
+	}
+	got := auths[0]
+	if got.Attributes[coreauth.AttributeServiceTier] != "fast" {
+		t.Fatalf("Attributes[service_tier] = %q, want %q", got.Attributes[coreauth.AttributeServiceTier], "fast")
+	}
+	if got.Attributes[coreauth.AttributeCodexDisableCloaking] != "true" {
+		t.Fatalf("Attributes[codex_disable_cloaking] = %q, want %q", got.Attributes[coreauth.AttributeCodexDisableCloaking], "true")
+	}
+	if got.Attributes["websockets"] != "true" {
+		t.Fatalf("Attributes[websockets] = %q, want %q", got.Attributes["websockets"], "true")
+	}
+	if got.Metadata["service_tier"] != "FAST" {
+		t.Fatalf("Metadata[service_tier] = %#v, want canonicalized key", got.Metadata["service_tier"])
+	}
+	if disabled, ok := got.DisableCoolingOverride(); !ok || disabled {
+		t.Fatalf("DisableCoolingOverride() = (%v, %v), want (false, true)", disabled, ok)
+	}
+}
