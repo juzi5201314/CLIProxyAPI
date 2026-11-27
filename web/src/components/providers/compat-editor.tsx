@@ -34,6 +34,11 @@ import {
   type ModelEntry,
 } from "./model-editor";
 import {
+  CompatKeyConnectionPoolPopover,
+  ConnectionPoolEditor,
+  type ConnectionPoolConfig,
+} from "./connection-pool-editor";
+import {
   ALL_KINDS,
   COMPAT_KIND,
   KIND_COLORS,
@@ -51,6 +56,7 @@ export interface CompatKeyEntry {
   weight?: number;
   "max-concurrency"?: number;
   "proxy-url"?: string;
+  "connection-pool"?: ConnectionPoolConfig;
 }
 
 export interface CompatProvider {
@@ -65,6 +71,7 @@ export interface CompatProvider {
   "request-retry"?: number;
   "max-concurrency"?: number;
   "service-tier"?: string;
+  "connection-pool"?: ConnectionPoolConfig;
   "request-scoped-errors"?: unknown[];
   "api-key-entries"?: CompatKeyEntry[];
   models?: ModelEntry[];
@@ -156,7 +163,14 @@ export function CompatEditorSheet({
   };
 
   const setKey = (index: number, changes: Partial<CompatKeyEntry>) => {
-    const next = keys.map((entry, i) => (i === index ? { ...entry, ...changes } : entry));
+    const next = keys.map((entry, i) => {
+      if (i !== index) return entry;
+      const merged: CompatKeyEntry = { ...entry, ...changes };
+      if (merged["connection-pool"] === undefined) {
+        delete merged["connection-pool"];
+      }
+      return merged;
+    });
     patch({ "api-key-entries": next });
   };
 
@@ -341,6 +355,10 @@ export function CompatEditorSheet({
                   />
                 }
               />
+              <ConnectionPoolEditor
+                value={draft["connection-pool"]}
+                onChange={(next) => patch({ "connection-pool": next })}
+              />
             </div>
           </EditorSection>
 
@@ -375,7 +393,7 @@ export function CompatEditorSheet({
                       <TableHead className="w-20 text-center text-[10px] uppercase font-semibold">{t("providers.weight")}</TableHead>
                       <TableHead className="w-24 text-center text-[10px] uppercase font-semibold">{t("providers.maxConcurrencyColumn")}</TableHead>
                       <TableHead className="w-44 text-[10px] uppercase font-semibold">{t("providers.proxy")}</TableHead>
-                      <TableHead className="w-20 text-right text-[10px] uppercase font-semibold">{t("providers.actionsColumn")}</TableHead>
+                      <TableHead className="w-28 text-right text-[10px] uppercase font-semibold">{t("providers.actionsColumn")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -411,6 +429,11 @@ export function CompatEditorSheet({
                           </TableCell>
                           <TableCell className="text-right py-2 px-2">
                             <div className="flex items-center justify-end gap-0.5">
+                              <CompatKeyConnectionPoolPopover
+                                value={entry["connection-pool"]}
+                                groupPool={draft["connection-pool"]}
+                                onChange={(next) => setKey(index, { "connection-pool": next })}
+                              />
                               <Button
                                 variant="ghost"
                                 size="icon"

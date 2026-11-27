@@ -478,6 +478,8 @@ const V8_SHARED_KEY_FIELDS = new Set([
   "request-retry",
   "max-concurrency",
   "request-scoped-errors",
+  "service-tier",
+  "connection-pool",
 ]);
 
 function stripAuthIndex<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
@@ -520,7 +522,23 @@ export const apiKeyProviders = {
       if (keyList.length === 0) continue;
       for (const k of keyList) {
         const keyObj = (k ?? {}) as Record<string, unknown>;
-        out.push({ ...groupShared, ...keyObj } as T);
+        const merged: Record<string, unknown> = { ...groupShared, ...keyObj };
+        const groupPool = groupShared["connection-pool"];
+        const keyPool = keyObj["connection-pool"];
+        if (
+          groupPool &&
+          typeof groupPool === "object" &&
+          !Array.isArray(groupPool) &&
+          keyPool &&
+          typeof keyPool === "object" &&
+          !Array.isArray(keyPool)
+        ) {
+          merged["connection-pool"] = {
+            ...(groupPool as Record<string, unknown>),
+            ...(keyPool as Record<string, unknown>),
+          };
+        }
+        out.push(merged as T);
       }
     }
     return out;

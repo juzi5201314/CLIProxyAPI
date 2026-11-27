@@ -46,6 +46,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/page-header";
 import { CodexClientIdentity } from "@/components/config/codex-client-identity";
+import { ConnectionPoolEditor, type ConnectionPoolConfig } from "@/components/providers/connection-pool-editor";
 import { config } from "@/api/management";
 import { errMessage } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -126,6 +127,7 @@ const HANDLED_PATHS: Record<string, string[]> = {
   management: ["allow-remote", "secret-key", "disable-control-panel"],
   access: ["api-keys"],
   models: ["catalog", "codex-catalog", "devin-catalog"],
+  oauth: ["providers.antigravity.connection-pool"],
 };
 
 type FieldMeta = {
@@ -411,7 +413,7 @@ export function ConfigPage() {
   const sections = useMemo(() => {
     const rawKeys = Object.keys(doc.data?.config ?? {});
     const priority = ["routing", "requests", "upstream", "client", "server", "management", "access", "models", "oauth", "multimedia", "observability", "plugins"];
-    const ordered = [...priority.filter((k) => k === "upstream" || rawKeys.includes(k)), ...rawKeys.filter((k) => !priority.includes(k) && k !== "config-version")];
+    const ordered = [...priority.filter((k) => k === "upstream" || k === "oauth" || rawKeys.includes(k)), ...rawKeys.filter((k) => !priority.includes(k) && k !== "config-version")];
     return ordered;
   }, [doc.data]);
 
@@ -734,6 +736,8 @@ function ConfigSectionEditor({
             <AccessForm current={current} update={update} />
           ) : name === "models" ? (
             <ModelsForm current={current} update={update} />
+          ) : name === "oauth" ? (
+            <OAuthForm current={current} update={update} />
           ) : (
             <GenericFields value={current} onChange={update} prefix={name} />
           )}
@@ -1293,6 +1297,36 @@ function ModelsForm({ current, update }: { current: Doc; update: (changes: Parti
           onChange={(e) => update({ "devin-catalog": e.target.value })}
           placeholder="https://... 或 /path/to/devin-catalog.json"
         />
+      </div>
+    </div>
+  );
+}
+
+function OAuthForm({ current, update }: { current: Doc; update: (changes: Partial<Doc>) => void }) {
+  const providers = (current.providers as Doc | undefined) ?? {};
+  const antigravity = (providers.antigravity as Doc | undefined) ?? {};
+  const pool = antigravity["connection-pool"] as ConnectionPoolConfig | undefined;
+
+  const setAntigravityPool = (next: ConnectionPoolConfig | undefined) => {
+    const nextAntigravity: Doc = { ...antigravity };
+    if (next === undefined) {
+      delete nextAntigravity["connection-pool"];
+    } else {
+      nextAntigravity["connection-pool"] = next;
+    }
+    update({
+      providers: {
+        ...providers,
+        antigravity: nextAntigravity,
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Antigravity 上游连接池</h4>
+      <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-1 dark:border-slate-800 dark:bg-slate-900/50">
+        <ConnectionPoolEditor value={pool} onChange={setAntigravityPool} variant="antigravity" />
       </div>
     </div>
   );

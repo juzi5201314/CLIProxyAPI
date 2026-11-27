@@ -22,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { EditorSection, HeadersEditor, ProviderKindSelectorGrid, ServiceTierSelect, SwitchRow } from "./compat-editor";
+import { ConnectionPoolEditor, type ConnectionPoolConfig } from "./connection-pool-editor";
 import {
   ExcludedModelsEditor,
   FetchModelsButton,
@@ -351,6 +352,10 @@ export function KeyEntryEditorSheet({
               {behavior.map((row) => (
                 <BehaviorControl key={row.key} row={row} draft={draft} onPatch={patch} />
               ))}
+              <ConnectionPoolEditor
+                value={draft["connection-pool"] as ConnectionPoolConfig | undefined}
+                onChange={(next) => patch("connection-pool", next)}
+              />
             </div>
           </EditorSection>
 
@@ -668,6 +673,7 @@ function ExtraFieldsEditor({ kind, draft, onApply }: { kind: KindMeta; draft: En
   known.add("disable-cooling");
   known.add("request-retry");
   known.add("request-scoped-errors");
+  known.add("connection-pool");
   known.add("cloak");
   known.add("fingerprint-profile");
   known.add("experimental-cch-signing");
