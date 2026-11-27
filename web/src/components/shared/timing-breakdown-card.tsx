@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -8,6 +10,7 @@ import { cn } from "@/lib/utils";
 interface TimingBreakdownCardProps {
   timing: RequestTimingBreakdown;
   latencyMs: number;
+  defaultOpen?: boolean;
 }
 
 interface TimingSegment {
@@ -26,8 +29,9 @@ function formatTimingMs(ms: number | undefined): string {
   return formatDuration(value);
 }
 
-export function TimingBreakdownCard({ timing, latencyMs }: TimingBreakdownCardProps) {
+export function TimingBreakdownCard({ timing, latencyMs, defaultOpen = false }: TimingBreakdownCardProps) {
   const { t } = useTranslation();
+  const [open, setOpen] = useState(defaultOpen);
 
   const inboundQueueMs = timing.inbound_queue_ms ?? 0;
   const cpaOverheadMs = timing.cpa_overhead_ms ?? 0;
@@ -104,9 +108,19 @@ export function TimingBreakdownCard({ timing, latencyMs }: TimingBreakdownCardPr
   const isHTTP = timing.upstream_transport === "http" || (timing.round_trips ?? 0) > 0;
 
   return (
-    <div className="bg-muted/30 space-y-3 rounded-lg border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <span className="text-xs font-medium">{t("requestLogs.detail.timing.title")}</span>
+    <div className="bg-muted/30 overflow-hidden rounded-lg border">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="hover:bg-muted/50 flex w-full cursor-pointer flex-wrap items-center justify-between gap-1.5 px-3 py-2.5 text-left transition-colors"
+      >
+        <span className="flex items-center gap-1.5 text-xs font-medium">
+          <ChevronRight
+            className={cn("text-muted-foreground size-3.5 shrink-0 transition-transform duration-200", open && "rotate-90")}
+          />
+          {t("requestLogs.detail.timing.title")}
+        </span>
         <div className="flex flex-wrap items-center gap-1">
           {timing.upstream_transport ? (
             <Badge variant="outline" className="h-5 px-1.5 font-mono text-[10px] uppercase">
@@ -147,94 +161,98 @@ export function TimingBreakdownCard({ timing, latencyMs }: TimingBreakdownCardPr
             </Badge>
           ) : null}
         </div>
-      </div>
+      </button>
 
-      {/* 3-bucket quick attribution summary */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-background/70 rounded-md border px-2.5 py-1.5">
-          <div className="text-muted-foreground truncate text-[10px]">{t("requestLogs.detail.timing.cpaLocal")}</div>
-          <div className="font-mono text-xs font-semibold tabular-nums">{formatTimingMs(cpaLocalTotal)}</div>
-        </div>
-        <div className="bg-background/70 rounded-md border px-2.5 py-1.5">
-          <div className="text-muted-foreground truncate text-[10px]">{t("requestLogs.detail.timing.networkAndUpload")}</div>
-          <div className="font-mono text-xs font-semibold tabular-nums">{formatTimingMs(networkUploadTotal)}</div>
-        </div>
-        <div className="bg-background/70 rounded-md border px-2.5 py-1.5">
-          <div className="text-muted-foreground truncate text-[10px]">{t("requestLogs.detail.timing.upstreamAndStream")}</div>
-          <div className="font-mono text-xs font-semibold tabular-nums">{formatTimingMs(upstreamStreamTotal)}</div>
-        </div>
-      </div>
+      {open ? (
+        <div className="space-y-3 border-t p-3">
+          {/* 3-bucket quick attribution summary */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-background/70 rounded-md border px-2.5 py-1.5">
+              <div className="text-muted-foreground truncate text-[10px]">{t("requestLogs.detail.timing.cpaLocal")}</div>
+              <div className="font-mono text-xs font-semibold tabular-nums">{formatTimingMs(cpaLocalTotal)}</div>
+            </div>
+            <div className="bg-background/70 rounded-md border px-2.5 py-1.5">
+              <div className="text-muted-foreground truncate text-[10px]">{t("requestLogs.detail.timing.networkAndUpload")}</div>
+              <div className="font-mono text-xs font-semibold tabular-nums">{formatTimingMs(networkUploadTotal)}</div>
+            </div>
+            <div className="bg-background/70 rounded-md border px-2.5 py-1.5">
+              <div className="text-muted-foreground truncate text-[10px]">{t("requestLogs.detail.timing.upstreamAndStream")}</div>
+              <div className="font-mono text-xs font-semibold tabular-nums">{formatTimingMs(upstreamStreamTotal)}</div>
+            </div>
+          </div>
 
-      {/* Stacked proportion bar */}
-      {trackedSum > 0 ? (
-        <div className="bg-muted flex h-2.5 w-full overflow-hidden rounded-full">
-          {segments.map((seg) => {
-            if (seg.ms <= 0) return null;
-            const pct = (seg.ms / barDenom) * 100;
-            return (
-              <Tooltip key={seg.key}>
-                <TooltipTrigger asChild>
-                  <div
-                    className={cn("h-full transition-opacity hover:opacity-80", seg.barClass)}
-                    style={{ width: `${Math.max(pct, 1.5)}%` }}
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="font-mono text-xs">
-                  {seg.label}: {formatTimingMs(seg.ms)} ({pct.toFixed(1)}%)
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
+          {/* Stacked proportion bar */}
+          {trackedSum > 0 ? (
+            <div className="bg-muted flex h-2.5 w-full overflow-hidden rounded-full">
+              {segments.map((seg) => {
+                if (seg.ms <= 0) return null;
+                const pct = (seg.ms / barDenom) * 100;
+                return (
+                  <Tooltip key={seg.key}>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={cn("h-full transition-opacity hover:opacity-80", seg.barClass)}
+                        style={{ width: `${Math.max(pct, 1.5)}%` }}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="font-mono text-xs">
+                      {seg.label}: {formatTimingMs(seg.ms)} ({pct.toFixed(1)}%)
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {/* Phase table */}
+          <div className="space-y-1 text-xs">
+            {inboundQueueMs > 0 ? (
+              <div className="text-muted-foreground flex items-center justify-between gap-2 border-b border-dashed pb-1">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="bg-muted-foreground/50 size-2 shrink-0 rounded-full" />
+                  <span className="truncate">{t("requestLogs.detail.timing.inboundQueue")}</span>
+                  <span className="text-[10px] opacity-75">({t("requestLogs.detail.timing.inboundQueueHint")})</span>
+                </span>
+                <span className="shrink-0 font-mono tabular-nums">{formatTimingMs(inboundQueueMs)}</span>
+              </div>
+            ) : null}
+
+            {segments.map((seg) => {
+              const pct = barDenom > 0 ? (seg.ms / barDenom) * 100 : 0;
+              return (
+                <div key={seg.key} className="space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className={cn("size-2 shrink-0 rounded-full", seg.dotClass)} />
+                      <span className="text-muted-foreground truncate">{seg.label}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 font-mono tabular-nums">
+                      <span className="text-muted-foreground w-10 text-right text-[10px]">
+                        {seg.ms > 0 ? `${pct.toFixed(0)}%` : "—"}
+                      </span>
+                      <span className={cn("w-16 text-right", seg.ms === 0 && "text-muted-foreground/60")}>
+                        {formatTimingMs(seg.ms)}
+                      </span>
+                    </span>
+                  </div>
+                  {seg.subItems && seg.subItems.length > 0 ? (
+                    <div className="border-muted-foreground/20 ml-3.5 space-y-0.5 border-l pl-2.5 text-[11px]">
+                      {seg.subItems.map((sub) => (
+                        <div key={sub.key} className="text-muted-foreground flex items-center justify-between gap-2">
+                          <span className="truncate">{sub.label}</span>
+                          <span className={cn("font-mono tabular-nums", sub.ms === 0 && "opacity-60")}>
+                            {formatTimingMs(sub.ms)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : null}
-
-      {/* Phase table */}
-      <div className="space-y-1 text-xs">
-        {inboundQueueMs > 0 ? (
-          <div className="text-muted-foreground flex items-center justify-between gap-2 border-b border-dashed pb-1">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="bg-muted-foreground/50 size-2 shrink-0 rounded-full" />
-              <span className="truncate">{t("requestLogs.detail.timing.inboundQueue")}</span>
-              <span className="text-[10px] opacity-75">({t("requestLogs.detail.timing.inboundQueueHint")})</span>
-            </span>
-            <span className="shrink-0 font-mono tabular-nums">{formatTimingMs(inboundQueueMs)}</span>
-          </div>
-        ) : null}
-
-        {segments.map((seg) => {
-          const pct = barDenom > 0 ? (seg.ms / barDenom) * 100 : 0;
-          return (
-            <div key={seg.key} className="space-y-0.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className={cn("size-2 shrink-0 rounded-full", seg.dotClass)} />
-                  <span className="text-muted-foreground truncate">{seg.label}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2 font-mono tabular-nums">
-                  <span className="text-muted-foreground w-10 text-right text-[10px]">
-                    {seg.ms > 0 ? `${pct.toFixed(0)}%` : "—"}
-                  </span>
-                  <span className={cn("w-16 text-right", seg.ms === 0 && "text-muted-foreground/60")}>
-                    {formatTimingMs(seg.ms)}
-                  </span>
-                </span>
-              </div>
-              {seg.subItems && seg.subItems.length > 0 ? (
-                <div className="border-muted-foreground/20 ml-3.5 space-y-0.5 border-l pl-2.5 text-[11px]">
-                  {seg.subItems.map((sub) => (
-                    <div key={sub.key} className="text-muted-foreground flex items-center justify-between gap-2">
-                      <span className="truncate">{sub.label}</span>
-                      <span className={cn("font-mono tabular-nums", sub.ms === 0 && "opacity-60")}>
-                        {formatTimingMs(sub.ms)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

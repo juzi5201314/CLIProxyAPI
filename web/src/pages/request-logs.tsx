@@ -866,7 +866,7 @@ function RecordDetailSheet({ record, onClose, onTrace }: { record: RequestRecord
               </TabsList>
               <TabsContent value="overview" className="space-y-3">
                 {data.timing_breakdown ? (
-                  <TimingBreakdownCard timing={data.timing_breakdown} latencyMs={data.latency_ms} />
+                  <TimingBreakdownCard key={data.id || data.request_id} timing={data.timing_breakdown} latencyMs={data.latency_ms} />
                 ) : null}
                 <DetailList
                   rows={[
