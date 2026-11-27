@@ -46,8 +46,15 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/page-header";
 import { CodexClientIdentity } from "@/components/config/codex-client-identity";
-import { ConnectionPoolEditor, type ConnectionPoolConfig } from "@/components/providers/connection-pool-editor";
+import {
+  ClaudeHeaderDefaultsEditor,
+  MultimediaForm,
+  OAuthForm,
+  StringListChipsInput,
+  hasRemovedObjectKey,
+} from "@/components/config/config-section-forms";
 import { config } from "@/api/management";
+import { putConfigPath } from "@/api/v8-config";
 import { errMessage } from "@/api/types";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +100,7 @@ const HANDLED_PATHS: Record<string, string[]> = {
     "session-affinity-rebind-on",
     "force-model-prefix",
     "retry.request-retry",
+    "retry.max-retry-credentials",
     "retry.max-retry-interval",
     "cooldown.transient-error-cooldown-seconds",
     "cooldown.disable-cooling",
@@ -104,31 +112,88 @@ const HANDLED_PATHS: Record<string, string[]> = {
     "nonstream-keepalive-interval",
     "passthrough-headers",
     "streaming.keepalive-seconds",
+    "streaming.bootstrap-retries",
+    "streaming.send-keepalive-before-ft",
   ],
   upstream: [
     "codex.websocket-relay.idle-ttl",
     "codex.websocket-relay.max-memory",
     "codex.response-steering",
     "codex.stream-bootstrap-buffering",
+    "codex.stream-bootstrap-timeout",
+    "codex.orphan-delegation-compatibility",
     "codex.model-level-cooling",
     "codex.disable-codex-cloaking",
     "codex.client-identity",
+    "codex.websocket-compression",
+    "codex.upstream-request-compression",
+    "codex.upstream-request-compression-min-bytes",
     "claude.tool-search",
     "claude.model-level-cooling",
+    "claude.server-side-fallback",
+    "claude.session-date-pin-days",
     "claude.disable-claude-cloak-mode",
+    "claude.disable-cloaking-model-list",
+    "claude.header-defaults",
     "xai.inject-x-search",
   ],
   client: [
     "codex.enable-apply-patch",
     "codex.optimize-multi-agent-v2",
     "codex.web-search-result-cache.enabled",
+    "codex.web-search-result-cache.ttl",
+    "codex.web-search-result-cache.limit",
+    "claude.show-codex-commentary",
   ],
-  server: ["host", "port", "max-request-body-bytes", "commercial-mode", "github-token", "discovery.enabled"],
+  server: [
+    "host",
+    "port",
+    "max-request-body-bytes",
+    "shutdown-timeout",
+    "commercial-mode",
+    "github-token",
+    "trusted-proxies",
+    "tls",
+    "kv-store",
+    "response-compression",
+    "discovery.enabled",
+  ],
   management: ["allow-remote", "secret-key", "disable-control-panel"],
   access: ["api-keys"],
   models: ["catalog", "codex-catalog", "devin-catalog"],
-  oauth: ["providers.antigravity.connection-pool"],
+  multimedia: ["disable-image-generation", "gpt-image-2-base-model", "video-result-auth-cache-ttl"],
+  oauth: [
+    "auth-dir",
+    "auth-auto-refresh-workers",
+    "providers.antigravity.connection-pool",
+    "providers.antigravity.antigravity-credits",
+    "providers.antigravity.signature-cache-enabled",
+    "providers.antigravity.signature-bypass-strict",
+    "providers.antigravity.tos-pause-window",
+    "providers.antigravity.sensitive-words",
+    "providers.antigravity.sensitive-words-replace",
+    "providers.antigravity.sensitive-patterns-replace",
+    "providers.claude.oauth-include-create-api-key",
+    "providers.codex.signin-with-chatgpt-identifier",
+    "providers.codex.header-defaults",
+    "providers.devin.sensitive-words",
+    "providers.devin.sensitive-words-replace",
+    "providers.devin.sensitive-patterns-replace",
+  ],
 };
+
+const ALWAYS_VISIBLE_SECTIONS = new Set([
+  "routing",
+  "requests",
+  "upstream",
+  "client",
+  "server",
+  "management",
+  "access",
+  "models",
+  "oauth",
+  "multimedia",
+]);
 
 type FieldMeta = {
   label: string;
@@ -413,7 +478,10 @@ export function ConfigPage() {
   const sections = useMemo(() => {
     const rawKeys = Object.keys(doc.data?.config ?? {});
     const priority = ["routing", "requests", "upstream", "client", "server", "management", "access", "models", "oauth", "multimedia", "observability", "plugins"];
-    const ordered = [...priority.filter((k) => k === "upstream" || k === "oauth" || rawKeys.includes(k)), ...rawKeys.filter((k) => !priority.includes(k) && k !== "config-version")];
+    const ordered = [
+      ...priority.filter((k) => ALWAYS_VISIBLE_SECTIONS.has(k) || rawKeys.includes(k)),
+      ...rawKeys.filter((k) => !priority.includes(k) && k !== "config-version"),
+    ];
     return ordered;
   }, [doc.data]);
 
@@ -428,8 +496,14 @@ export function ConfigPage() {
   const saveSection = useMutation({
     mutationFn: async (name: string) => {
       const etag = doc.data?.etag ?? "";
+      const originalSection = (doc.data?.config ?? {})[name] ?? {};
+      const nextSection = drafts[name];
       try {
-        await config.patchPath(name, drafts[name], etag);
+        if (hasRemovedObjectKey(originalSection, nextSection)) {
+          await putConfigPath(name, nextSection, etag);
+        } else {
+          await config.patchPath(name, nextSection, etag);
+        }
         return true;
       } catch (error) {
         if (errMessage(error).includes("precondition_failed")) {
@@ -736,6 +810,8 @@ function ConfigSectionEditor({
             <AccessForm current={current} update={update} />
           ) : name === "models" ? (
             <ModelsForm current={current} update={update} />
+          ) : name === "multimedia" ? (
+            <MultimediaForm current={current} update={update} />
           ) : name === "oauth" ? (
             <OAuthForm current={current} update={update} />
           ) : (
@@ -802,6 +878,7 @@ function RoutingForm({ current, update }: { current: Doc; update: (changes: Part
               <SelectContent className="rounded-xl">
                 <SelectItem value="any">Any (任何凭据错误均解除绑定并重试新凭据)</SelectItem>
                 <SelectItem value="quota">Quota (仅在限额或鉴权错误时重绑，瞬态网络错误保留绑定)</SelectItem>
+                <SelectItem value="never">Never (始终保持已建立会话的凭据绑定，失败时不切换凭据)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -832,7 +909,7 @@ function RoutingForm({ current, update }: { current: Doc; update: (changes: Part
       {/* Retries and Cooldowns */}
       <div className="space-y-4">
         <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">故障重试与冷却黑名单</h4>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label className="text-xs">额外重试轮次 (request-retry)</Label>
             <Input
@@ -842,6 +919,19 @@ function RoutingForm({ current, update }: { current: Doc; update: (changes: Part
               onChange={(e) => update({ retry: { ...retry, "request-retry": Number(e.target.value) } })}
             />
             <p className="text-[11px] text-slate-400">遇到 429/5xx 错误时尝试换凭据的轮次。</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">单轮最大重试凭据数 (max-retry-credentials)</Label>
+            <Input
+              type="number"
+              min={0}
+              className="h-9 rounded-xl text-xs font-mono"
+              value={retry["max-retry-credentials"] !== undefined ? String(retry["max-retry-credentials"]) : "0"}
+              onChange={(e) => update({ retry: { ...retry, "max-retry-credentials": Number(e.target.value) } })}
+              placeholder="0 (不限制)"
+            />
+            <p className="text-[11px] text-slate-400">单轮故障切换最多尝试的不同凭据数量，0 表示尝试全部可用凭据。</p>
           </div>
 
           <div className="space-y-1.5">
@@ -937,12 +1027,67 @@ function RequestsForm({ current, update }: { current: Doc; update: (changes: Par
           checked={passthroughHeaders}
           onCheckedChange={(checked) => update({ "passthrough-headers": checked })}
         />
-        <SwitchRow
-          label="流式 SSE 保活心跳 (SSE Keep-Alive)"
-          hint="针对长时间推理思考的流式请求，定期发送心跳包防止反向代理和网关断连。"
-          checked={Boolean(streaming["keepalive-seconds"])}
-          onCheckedChange={(checked) => update({ streaming: { ...streaming, "keepalive-seconds": checked ? 15 : 0 } })}
-        />
+      </div>
+
+      {/* Streaming */}
+      <div className="space-y-3">
+        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">流式传输与保活策略 (Streaming)</h4>
+        <div className="space-y-4 rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">流式保活心跳间隔秒数 (keepalive-seconds)</Label>
+              <Input
+                type="number"
+                min={0}
+                className="h-9 rounded-xl font-mono text-xs"
+                value={Number(streaming["keepalive-seconds"] || 0) > 0 ? String(streaming["keepalive-seconds"]) : ""}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  const parsed = Number(raw);
+                  update({
+                    streaming: {
+                      ...streaming,
+                      "keepalive-seconds": raw === "" || Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
+                    },
+                  });
+                }}
+                placeholder="0 (禁用，推荐 15)"
+              />
+              <p className="text-[11px] text-slate-400">定期发送 SSE 心跳或 WebSocket Ping 的间隔秒数，0 表示禁用。</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">首字节前安全重试次数 (bootstrap-retries)</Label>
+              <Input
+                type="number"
+                min={0}
+                className="h-9 rounded-xl font-mono text-xs"
+                value={Number(streaming["bootstrap-retries"] || 0) > 0 ? String(streaming["bootstrap-retries"]) : ""}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  const parsed = Number(raw);
+                  update({
+                    streaming: {
+                      ...streaming,
+                      "bootstrap-retries": raw === "" || Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
+                    },
+                  });
+                }}
+                placeholder="0 (禁用)"
+              />
+              <p className="text-[11px] text-slate-400">向客户端输出任何字节前允许自动换号重试的次数，用于瞬态故障恢复。</p>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200/60 pt-2 dark:border-slate-800">
+            <SwitchRow
+              label="首字到达前即发送心跳 (send-keepalive-before-ft)"
+              hint="在 keepalive-seconds > 0 时，等待模型首个有效 Token 期间也周期性发送心跳，防止反代或客户端读超时。"
+              checked={Boolean(streaming["send-keepalive-before-ft"])}
+              onCheckedChange={(checked) => update({ streaming: { ...streaming, "send-keepalive-before-ft": checked } })}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -981,6 +1126,68 @@ function UpstreamForm({ current, update }: { current: Doc; update: (changes: Par
             checked={Boolean(codex["model-level-cooling"])}
             onCheckedChange={(checked) => update({ codex: { ...codex, "model-level-cooling": checked } })}
           />
+          <SwitchRow
+            label="孤立委托输出兼容 (Orphan Delegation Compatibility)"
+            hint="兼容缺少父级上下文的 Codex 委托输出。"
+            checked={Boolean(codex["orphan-delegation-compatibility"])}
+            onCheckedChange={(checked) => update({ codex: { ...codex, "orphan-delegation-compatibility": checked } })}
+          />
+          <SwitchRow
+            label="WebSocket 帧压缩 (WebSocket Compression)"
+            hint="对上下游 Codex WebSocket 启用 permessage-deflate 压缩；默认开启。"
+            checked={codex["websocket-compression"] !== false}
+            onCheckedChange={(checked) => update({ codex: { ...codex, "websocket-compression": checked } })}
+          />
+          <SwitchRow
+            label="上游请求体 zstd 压缩 (Upstream Request Compression)"
+            hint="对发往 ChatGPT Codex 后端的 HTTP 请求体启用 zstd 压缩，减少大上下文上传延迟与带宽。"
+            checked={Boolean(codex["upstream-request-compression"])}
+            onCheckedChange={(checked) => update({ codex: { ...codex, "upstream-request-compression": checked } })}
+          />
+          <div className="grid grid-cols-1 gap-4 border-t border-slate-200/60 pt-3 sm:grid-cols-2 dark:border-slate-800">
+            <div className="space-y-1.5">
+              <Label className="text-xs">首包缓冲超时上限 (stream-bootstrap-timeout)</Label>
+              <Input
+                className="h-8 rounded-xl font-mono text-xs"
+                value={String(codex["stream-bootstrap-timeout"] ?? "")}
+                placeholder="0 (不限时，如 20s)"
+                onChange={(e) => {
+                  const next = { ...codex };
+                  if (e.target.value === "") delete next["stream-bootstrap-timeout"];
+                  else next["stream-bootstrap-timeout"] = e.target.value;
+                  update({ codex: next });
+                }}
+              />
+              <p className="text-[11px] text-slate-400">首包缓冲的最长等待时间（如 20s），超时后立即释放响应头避免反代超时。</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">请求体压缩最小字节数 (compression-min-bytes)</Label>
+              <Input
+                type="number"
+                min={0}
+                className="h-8 rounded-xl font-mono text-xs"
+                value={
+                  typeof codex["upstream-request-compression-min-bytes"] === "number" &&
+                  codex["upstream-request-compression-min-bytes"] > 0
+                    ? String(codex["upstream-request-compression-min-bytes"])
+                    : ""
+                }
+                placeholder="1024"
+                onChange={(e) => {
+                  const next = { ...codex };
+                  const raw = e.target.value.trim();
+                  const parsed = Number(raw);
+                  if (raw === "" || Number.isNaN(parsed) || parsed <= 0) {
+                    delete next["upstream-request-compression-min-bytes"];
+                  } else {
+                    next["upstream-request-compression-min-bytes"] = parsed;
+                  }
+                  update({ codex: next });
+                }}
+              />
+              <p className="text-[11px] text-slate-400">达到该大小才启用上游请求体 zstd 压缩；留空或 ≤0 默认 1024。</p>
+            </div>
+          </div>
           <CodexClientIdentity codex={codex} onChange={(next) => update({ codex: next })} />
           <FieldGroup className="pt-3">
             <Field>
@@ -1032,6 +1239,47 @@ function UpstreamForm({ current, update }: { current: Doc; update: (changes: Par
             checked={Boolean(claude["disable-claude-cloak-mode"])}
             onCheckedChange={(checked) => update({ claude: { ...claude, "disable-claude-cloak-mode": checked } })}
           />
+          <SwitchRow
+            label="停用模型列表 ID 伪装 (Disable Cloaking Model List)"
+            hint="在 Anthropic 模型列表响应中关闭模型 ID 伪装。"
+            checked={Boolean(claude["disable-cloaking-model-list"])}
+            onCheckedChange={(checked) => update({ claude: { ...claude, "disable-cloaking-model-list": checked } })}
+          />
+          <SwitchRow
+            label="服务端拒答模型回退 (Server-side Fallback)"
+            hint="为伪装的 Claude 请求自动注入 Anthropic 服务端拒答跨模型回退列表。"
+            checked={Boolean(claude["server-side-fallback"])}
+            onCheckedChange={(checked) => update({ claude: { ...claude, "server-side-fallback": checked } })}
+          />
+          <div className="space-y-1.5 border-t border-slate-200/60 pt-3 dark:border-slate-800">
+            <Label className="text-xs">会话日期固定保留天数 (session-date-pin-days)</Label>
+            <Input
+              type="number"
+              min={0}
+              className="h-8 rounded-xl font-mono text-xs sm:w-56"
+              value={typeof claude["session-date-pin-days"] === "number" ? String(claude["session-date-pin-days"]) : ""}
+              placeholder="7 (留空默认 7 天，0 为 1 小时)"
+              onChange={(e) => {
+                const next = { ...claude };
+                const raw = e.target.value.trim();
+                if (raw === "") {
+                  delete next["session-date-pin-days"];
+                } else {
+                  const parsed = Number(raw);
+                  if (!Number.isNaN(parsed) && parsed >= 0) {
+                    next["session-date-pin-days"] = parsed;
+                  }
+                }
+                update({ claude: next });
+              }}
+            />
+            <p className="text-[11px] text-slate-400">
+              纯内存模式下固定伪装 currentDate 的天数；留空默认 7 天，显式填 0 仅保留 1 小时；启用本地 KV 或 Home KV 时永久持久化。
+            </p>
+          </div>
+          <div className="pt-2">
+            <ClaudeHeaderDefaultsEditor claude={claude} onChange={(nextClaude) => update({ claude: nextClaude })} />
+          </div>
         </div>
       </div>
 
@@ -1057,35 +1305,87 @@ function UpstreamForm({ current, update }: { current: Doc; update: (changes: Par
 function ClientForm({ current, update }: { current: Doc; update: (changes: Partial<Doc>) => void }) {
   const codex = (current.codex as Doc | undefined) ?? {};
   const webSearchCache = (codex["web-search-result-cache"] as Doc | undefined) ?? {};
+  const claude = (current.claude as Doc | undefined) ?? {};
+
+  const updateWebSearchCache = (changes: Partial<Doc>) => {
+    update({
+      codex: {
+        ...codex,
+        "web-search-result-cache": { ...webSearchCache, ...changes },
+      },
+    });
+  };
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
-        <SwitchRow
-          label="启用 apply_patch 补丁兼容声明"
-          hint="让所有路由执行器所桥接的模型在客户端模型能力声明中广播 freeform 补丁能力。"
-          checked={Boolean(codex["enable-apply-patch"])}
-          onCheckedChange={(checked) => update({ codex: { ...codex, "enable-apply-patch": checked } })}
-        />
-        <SwitchRow
-          label="多智能体 v2 优化 (Optimize Multi-Agent v2)"
-          hint="为 Codex Desktop 和 codex-tui 优化 spawn_agent 交互，自动规范消息参数与格式转换。"
-          checked={Boolean(codex["optimize-multi-agent-v2"])}
-          onCheckedChange={(checked) => update({ codex: { ...codex, "optimize-multi-agent-v2": checked } })}
-        />
-        <SwitchRow
-          label="联网搜索结果会话缓存 (Web Search Result Cache)"
-          hint="在同一会话中缓存搜索结果，在重放对话历史时复用结果节省 Token。"
-          checked={Boolean(webSearchCache.enabled)}
-          onCheckedChange={(checked) =>
-            update({
-              codex: {
-                ...codex,
-                "web-search-result-cache": { ...webSearchCache, enabled: checked },
-              },
-            })
-          }
-        />
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+          <Terminal className="size-3.5 text-blue-500" />
+          <span>Codex 客户端兼容</span>
+        </h4>
+        <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+          <SwitchRow
+            label="启用 apply_patch 补丁兼容声明"
+            hint="让所有路由执行器所桥接的模型在客户端模型能力声明中广播 freeform 补丁能力。"
+            checked={Boolean(codex["enable-apply-patch"])}
+            onCheckedChange={(checked) => update({ codex: { ...codex, "enable-apply-patch": checked } })}
+          />
+          <SwitchRow
+            label="多智能体 v2 优化 (Optimize Multi-Agent v2)"
+            hint="为 Codex Desktop 和 codex-tui 优化 spawn_agent 交互，自动规范消息参数与格式转换。"
+            checked={Boolean(codex["optimize-multi-agent-v2"])}
+            onCheckedChange={(checked) => update({ codex: { ...codex, "optimize-multi-agent-v2": checked } })}
+          />
+          <SwitchRow
+            label="联网搜索结果会话缓存 (Web Search Result Cache)"
+            hint="在同一会话中缓存搜索结果，在重放对话历史时复用结果节省 Token。"
+            checked={Boolean(webSearchCache.enabled)}
+            onCheckedChange={(checked) => updateWebSearchCache({ enabled: checked })}
+          />
+          <div className="grid grid-cols-1 gap-4 border-t border-slate-200/60 pt-3 sm:grid-cols-2 dark:border-slate-800">
+            <div className="space-y-1.5">
+              <Label className="text-xs">搜索结果缓存 TTL (ttl)</Label>
+              <Input
+                className="h-8 rounded-xl font-mono text-xs"
+                value={String(webSearchCache.ttl ?? "")}
+                placeholder="24h"
+                onChange={(e) => updateWebSearchCache({ ttl: e.target.value })}
+              />
+              <p className="text-[11px] text-slate-400">支持时长字符串（如 30m、24h）或纯秒数，留空默认 24h。</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">搜索结果缓存上限 (limit)</Label>
+              <Input
+                type="number"
+                min={0}
+                className="h-8 rounded-xl font-mono text-xs"
+                value={Number(webSearchCache.limit || 0) > 0 ? String(webSearchCache.limit) : ""}
+                placeholder="1024"
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  const parsed = Number(raw);
+                  updateWebSearchCache({ limit: raw === "" || Number.isNaN(parsed) ? 0 : Math.max(0, parsed) });
+                }}
+              />
+              <p className="text-[11px] text-slate-400">缓存保留的最大条目数，留空或 0 默认 1024。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+          <Feather className="size-3.5 text-amber-500" />
+          <span>Claude 客户端兼容</span>
+        </h4>
+        <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+          <SwitchRow
+            label="显示 Codex 进度旁白 (show-codex-commentary)"
+            hint="将 Codex 上游的公开进度/旁白镜像为 Claude 客户端可见的文本内容；默认关闭。"
+            checked={Boolean(claude["show-codex-commentary"])}
+            onCheckedChange={(checked) => update({ claude: { ...claude, "show-codex-commentary": checked } })}
+          />
+        </div>
       </div>
     </div>
   );
@@ -1095,12 +1395,27 @@ function ServerForm({ current, update }: { current: Doc; update: (changes: Parti
   const host = String(current.host || "");
   const port = Number(current.port || 8317);
   const maxRequestBodyBytes = Number(current["max-request-body-bytes"] || 0);
+  const shutdownTimeout = Number(current["shutdown-timeout"] || 0);
   const commercialMode = Boolean(current["commercial-mode"]);
   const githubToken = String(current["github-token"] || "");
   const discovery = (current.discovery as Doc | undefined) ?? {};
+  const rc = (current["response-compression"] as Doc | undefined) ?? {};
+  const kvStore = (current["kv-store"] as Doc | undefined) ?? {};
+  const tls = (current.tls as Doc | undefined) ?? {};
+  const trustedProxies = Array.isArray(current["trusted-proxies"]) ? (current["trusted-proxies"] as string[]) : [];
+
+  const updateKVStore = (changes: Partial<Doc>) => {
+    const merged: Doc = { ...kvStore, ...changes };
+    if (merged.path === "") delete merged.path;
+    update({ "kv-store": merged });
+  };
+
+  const updateTLS = (changes: Partial<Doc>) => {
+    update({ tls: { ...tls, ...changes } });
+  };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label className="text-xs">监听地址 (Host)</Label>
@@ -1135,6 +1450,23 @@ function ServerForm({ current, update }: { current: Doc; update: (changes: Parti
         </div>
 
         <div className="space-y-1.5">
+          <Label className="text-xs">优雅停机等待秒数 (shutdown-timeout)</Label>
+          <Input
+            type="number"
+            min={0}
+            className="h-9 rounded-xl text-xs font-mono"
+            value={shutdownTimeout > 0 ? String(shutdownTimeout) : ""}
+            onChange={(e) => {
+              const raw = e.target.value.trim();
+              const parsed = Number(raw);
+              update({ "shutdown-timeout": raw === "" || Number.isNaN(parsed) ? 0 : Math.max(0, parsed) });
+            }}
+            placeholder="0 (立即关闭)"
+          />
+          <p className="text-[11px] text-slate-400">服务停止时等待在途请求完成的最长秒数，0 表示不等待立即关闭。</p>
+        </div>
+
+        <div className="space-y-1.5 sm:col-span-2">
           <Label className="text-xs">GitHub Token (发布检查与下载)</Label>
           <Input
             type="password"
@@ -1160,6 +1492,103 @@ function ServerForm({ current, update }: { current: Doc; update: (changes: Parti
           onCheckedChange={(checked) => update({ discovery: { ...discovery, enabled: checked } })}
         />
       </div>
+
+      {/* Response Compression & Local KV Store */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+          <SwitchRow
+            label="下游响应压缩 (Response Compression)"
+            hint="对非流式下游 HTTP 响应启用内容协商压缩；默认开启。"
+            checked={rc.enabled !== false}
+            onCheckedChange={(checked) => update({ "response-compression": { ...rc, enabled: checked } })}
+          />
+          <div className="space-y-1">
+            <Label className="text-xs">压缩最小字节数 (min-bytes)</Label>
+            <Input
+              type="number"
+              min={0}
+              className="h-8 rounded-xl font-mono text-xs"
+              value={Number(rc["min-bytes"] || 0) > 0 ? String(rc["min-bytes"]) : ""}
+              placeholder="1024"
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                const parsed = Number(raw);
+                update({
+                  "response-compression": {
+                    ...rc,
+                    "min-bytes": raw === "" || Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
+                  },
+                });
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+          <SwitchRow
+            label="禁用本地 KV 持久化 (kv-store.disabled)"
+            hint="关闭本地 bbolt 数据库并回退为纯内存模式（默认不禁用）。"
+            checked={Boolean(kvStore.disabled)}
+            onCheckedChange={(checked) => updateKVStore({ disabled: checked })}
+          />
+          <div className="space-y-1">
+            <Label className="text-xs">KV 数据库路径 (kv-store.path)</Label>
+            <Input
+              className="h-8 rounded-xl font-mono text-xs"
+              value={String(kvStore.path ?? "")}
+              placeholder="<auth-dir>/kv.db"
+              onChange={(e) => updateKVStore({ path: e.target.value })}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Trusted Proxies */}
+      <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+        <StringListChipsInput
+          label="可信代理列表 (trusted-proxies)"
+          hint="允许提供 X-Forwarded-* 客户端 IP 请求头的代理 IP 或 CIDR（逗号或回车添加；修改后需重启服务）。"
+          values={trustedProxies}
+          placeholder="如 127.0.0.1, 10.0.0.0/8"
+          onChange={(next) => update({ "trusted-proxies": next ?? [] })}
+        />
+      </div>
+
+      {/* TLS */}
+      <CollapsibleGroup
+        label="HTTPS / TLS 证书配置 (tls)"
+        hint={tls.enable ? "当前已启用 HTTPS 监听。" : "配置证书与私钥以启用服务端 HTTPS 监听。"}
+        defaultOpen={Boolean(tls.enable)}
+      >
+        <div className="space-y-3">
+          <SwitchRow
+            label="启用 HTTPS / TLS (tls.enable)"
+            hint="开启后服务端将使用下方 PEM 证书和私钥监听 HTTPS。"
+            checked={Boolean(tls.enable)}
+            onCheckedChange={(checked) => updateTLS({ enable: checked })}
+          />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">证书文件路径 (tls.cert)</Label>
+              <Input
+                className="h-8 rounded-xl font-mono text-xs"
+                value={String(tls.cert ?? "")}
+                placeholder="/path/to/cert.pem"
+                onChange={(e) => updateTLS({ cert: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">私钥文件路径 (tls.key)</Label>
+              <Input
+                className="h-8 rounded-xl font-mono text-xs"
+                value={String(tls.key ?? "")}
+                placeholder="/path/to/key.pem"
+                onChange={(e) => updateTLS({ key: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+      </CollapsibleGroup>
     </div>
   );
 }
@@ -1297,36 +1726,6 @@ function ModelsForm({ current, update }: { current: Doc; update: (changes: Parti
           onChange={(e) => update({ "devin-catalog": e.target.value })}
           placeholder="https://... 或 /path/to/devin-catalog.json"
         />
-      </div>
-    </div>
-  );
-}
-
-function OAuthForm({ current, update }: { current: Doc; update: (changes: Partial<Doc>) => void }) {
-  const providers = (current.providers as Doc | undefined) ?? {};
-  const antigravity = (providers.antigravity as Doc | undefined) ?? {};
-  const pool = antigravity["connection-pool"] as ConnectionPoolConfig | undefined;
-
-  const setAntigravityPool = (next: ConnectionPoolConfig | undefined) => {
-    const nextAntigravity: Doc = { ...antigravity };
-    if (next === undefined) {
-      delete nextAntigravity["connection-pool"];
-    } else {
-      nextAntigravity["connection-pool"] = next;
-    }
-    update({
-      providers: {
-        ...providers,
-        antigravity: nextAntigravity,
-      },
-    });
-  };
-
-  return (
-    <div className="space-y-4">
-      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Antigravity 上游连接池</h4>
-      <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-1 dark:border-slate-800 dark:bg-slate-900/50">
-        <ConnectionPoolEditor value={pool} onChange={setAntigravityPool} variant="antigravity" />
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/sheet";
 import { EditorSection, HeadersEditor, ProviderKindSelectorGrid, ServiceTierSelect, SwitchRow } from "./compat-editor";
 import { ConnectionPoolEditor, type ConnectionPoolConfig } from "./connection-pool-editor";
+import { SensitiveRulesEditor, type SensitivePatternRule } from "@/components/config/sensitive-rules-editor";
 import {
   ExcludedModelsEditor,
   FetchModelsButton,
@@ -158,15 +159,39 @@ export function KeyEntryEditorSheet({
 
   const patchCloak = (changes: Record<string, unknown>) => {
     const currentCloak = (draft.cloak as Record<string, unknown> | undefined) ?? {};
-    const merged = { ...currentCloak, ...changes };
+    const merged: Record<string, unknown> = { ...currentCloak, ...changes };
     const mode = typeof merged.mode === "string" ? merged.mode.trim() : "";
     const strictMode = Boolean(merged["strict-mode"]);
-    const cacheUserId = Boolean(merged["cache-user-id"]);
+    const cacheUserId = typeof merged["cache-user-id"] === "boolean" ? merged["cache-user-id"] : undefined;
     const sensitiveWords = Array.isArray(merged["sensitive-words"])
       ? (merged["sensitive-words"] as string[]).map((w) => String(w).trim()).filter(Boolean)
       : [];
 
-    if (!mode && !strictMode && !cacheUserId && sensitiveWords.length === 0) {
+    const rawReplace = merged["sensitive-words-replace"];
+    const sensitiveWordsReplace: Record<string, string> = {};
+    if (rawReplace && typeof rawReplace === "object" && !Array.isArray(rawReplace)) {
+      for (const [k, v] of Object.entries(rawReplace as Record<string, unknown>)) {
+        const key = k.trim();
+        if (key) sensitiveWordsReplace[key] = String(v ?? "");
+      }
+    }
+
+    const rawPatterns = merged["sensitive-patterns-replace"];
+    const sensitivePatternsReplace: SensitivePatternRule[] = Array.isArray(rawPatterns)
+      ? rawPatterns
+          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+          .map((item) => ({ pattern: String(item.pattern ?? "").trim(), replacement: String(item.replacement ?? "") }))
+          .filter((item) => item.pattern !== "")
+      : [];
+
+    if (
+      !mode &&
+      !strictMode &&
+      cacheUserId === undefined &&
+      sensitiveWords.length === 0 &&
+      Object.keys(sensitiveWordsReplace).length === 0 &&
+      sensitivePatternsReplace.length === 0
+    ) {
       patch("cloak", undefined);
       return;
     }
@@ -174,8 +199,10 @@ export function KeyEntryEditorSheet({
     const cleanCloak: Record<string, unknown> = {};
     if (mode) cleanCloak.mode = mode;
     if (strictMode) cleanCloak["strict-mode"] = true;
-    if (cacheUserId) cleanCloak["cache-user-id"] = true;
+    if (cacheUserId !== undefined) cleanCloak["cache-user-id"] = cacheUserId;
     if (sensitiveWords.length > 0) cleanCloak["sensitive-words"] = sensitiveWords;
+    if (Object.keys(sensitiveWordsReplace).length > 0) cleanCloak["sensitive-words-replace"] = sensitiveWordsReplace;
+    if (sensitivePatternsReplace.length > 0) cleanCloak["sensitive-patterns-replace"] = sensitivePatternsReplace;
 
     patch("cloak", cleanCloak);
   };
@@ -618,6 +645,7 @@ function ClaudeCloakSection({
                 <SelectItem value="auto">{t("providers.claudeCloakModeAuto")}</SelectItem>
                 <SelectItem value="always">{t("providers.claudeCloakModeAlways")}</SelectItem>
                 <SelectItem value="never">{t("providers.claudeCloakModeNever")}</SelectItem>
+                <SelectItem value="uncloak">{t("providers.claudeCloakModeUncloak")}</SelectItem>
               </SelectContent>
             </Select>
           }
@@ -633,29 +661,44 @@ function ClaudeCloakSection({
         <SwitchRow
           label={t("providers.claudeCloakCacheUser")}
           hint={t("providers.claudeCloakCacheUserHint")}
-          checked={Boolean(currentCloak["cache-user-id"])}
-          onCheckedChange={(checked) => onPatchCloak({ "cache-user-id": checked })}
-        />
-
-        <SwitchRow
-          label={t("providers.claudeCloakSensitiveWords")}
-          hint={t("providers.claudeCloakSensitiveWordsHint")}
           control={
-            <Input
-              className="h-8 w-56 font-mono text-xs"
+            <Select
               value={
-                Array.isArray(currentCloak["sensitive-words"])
-                  ? (currentCloak["sensitive-words"] as string[]).join(", ")
-                  : ""
+                typeof currentCloak["cache-user-id"] === "boolean"
+                  ? currentCloak["cache-user-id"]
+                    ? "on"
+                    : "off"
+                  : "unset"
               }
-              placeholder="API, proxy"
-              onChange={(e) => {
-                const words = e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
-                onPatchCloak({ "sensitive-words": words });
-              }}
-            />
+              onValueChange={(val) =>
+                onPatchCloak({ "cache-user-id": val === "unset" ? undefined : val === "on" })
+              }
+            >
+              <SelectTrigger className="h-8 w-56 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unset">{t("providers.claudeCloakCacheUserDefault")}</SelectItem>
+                <SelectItem value="on">{t("providers.triOn")}</SelectItem>
+                <SelectItem value="off">{t("providers.claudeCloakCacheUserOff")}</SelectItem>
+              </SelectContent>
+            </Select>
           }
         />
+
+        <div className="pt-2">
+          <SensitiveRulesEditor
+            collapsible
+            title={t("providers.sensitiveRulesTitle")}
+            hint={t("providers.claudeCloakSensitiveRulesHint")}
+            value={{
+              "sensitive-words": currentCloak["sensitive-words"] as string[] | undefined,
+              "sensitive-words-replace": currentCloak["sensitive-words-replace"] as Record<string, string> | undefined,
+              "sensitive-patterns-replace": currentCloak["sensitive-patterns-replace"] as SensitivePatternRule[] | undefined,
+            }}
+            onChange={(changes) => onPatchCloak(changes as Record<string, unknown>)}
+          />
+        </div>
       </div>
     </EditorSection>
   );

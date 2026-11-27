@@ -58,7 +58,13 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { CompatEditorSheet, type CompatProvider } from "@/components/providers/compat-editor";
 import { KeyEntryEditorSheet } from "@/components/providers/key-entry-editor";
-import { AccessKeysDialog, ExcludedModelsDialog, ModelAliasDialog } from "@/components/providers/secondary-editors";
+import {
+  AccessKeysDialog,
+  ExcludedModelsDialog,
+  ModelAliasDialog,
+  OAuthScopedErrorsDialog,
+  OAuthSettingsDialog,
+} from "@/components/providers/secondary-editors";
 import { ProviderCurlDialog, ProviderModelsDialog } from "@/components/providers/provider-dialogs";
 import type { ModelEntry } from "@/components/providers/model-editor";
 import {
@@ -132,7 +138,7 @@ export function ProvidersPage() {
   };
   const [compatEditing, setCompatEditing] = useState<{ index: number; provider: CompatProvider } | null>(null);
   const [keyEditing, setKeyEditing] = useState<{ kind: KindMeta; index: number; entry: Entry } | null>(null);
-  const [secondary, setSecondary] = useState<"alias" | "excluded" | "keys" | null>(null);
+  const [secondary, setSecondary] = useState<"alias" | "excluded" | "settings" | "scoped-errors" | "keys" | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProviderRow | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [lastKindId, setLastKindId] = useState<string>(() => {
@@ -464,12 +470,18 @@ export function ProvidersPage() {
                 <span>{t("providers.more")}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 rounded-lg">
+            <DropdownMenuContent align="end" className="w-52 rounded-lg">
               <DropdownMenuItem onClick={() => setSecondary("alias")}>
                 <span>{t("providers.modelAlias")}</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setSecondary("excluded")}>
                 <span>{t("providers.excludedModels")}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSecondary("settings")}>
+                <span>{t("providers.oauthSettings")}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSecondary("scoped-errors")}>
+                <span>{t("providers.oauthScopedErrors")}</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setSecondary("keys")}>
@@ -654,6 +666,8 @@ export function ProvidersPage() {
 
       {secondary === "alias" ? <ModelAliasDialog onClose={() => setSecondary(null)} /> : null}
       {secondary === "excluded" ? <ExcludedModelsDialog onClose={() => setSecondary(null)} /> : null}
+      {secondary === "settings" ? <OAuthSettingsDialog onClose={() => setSecondary(null)} /> : null}
+      {secondary === "scoped-errors" ? <OAuthScopedErrorsDialog onClose={() => setSecondary(null)} /> : null}
       {secondary === "keys" ? <AccessKeysDialog onClose={() => setSecondary(null)} /> : null}
 
       {/* Model Inspector Dialog */}
