@@ -68,6 +68,7 @@ type requestDBRecordResponse struct {
 	TotalTokens              int64           `json:"total_tokens"`
 	EstimatedCostUSD         float64         `json:"estimated_cost_usd"`
 	TokenBreakdown           json.RawMessage `json:"token_breakdown,omitempty"`
+	TimingBreakdown          json.RawMessage `json:"timing_breakdown,omitempty"`
 	RequestHeaders           json.RawMessage `json:"request_headers,omitempty"`
 	ResponseHeaders          json.RawMessage `json:"response_headers,omitempty"`
 	ErrorBody                string          `json:"error_body,omitempty"`
@@ -627,6 +628,7 @@ func newRequestDBRecordResponseWithProvider(e *requestdb.Entry, withContent bool
 		return response
 	}
 	response.TokenBreakdown = json.RawMessage(e.TokenBreakdown)
+	response.TimingBreakdown = json.RawMessage(e.TimingBreakdown)
 	response.RequestHeaders = json.RawMessage(e.RequestHeaders)
 	response.ResponseHeaders = json.RawMessage(e.ResponseHeaders)
 	response.ErrorBody = string(e.ErrorBody)

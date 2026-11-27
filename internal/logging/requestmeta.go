@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
@@ -13,6 +14,7 @@ type endpointKey struct{}
 type responseStatusKey struct{}
 type responseHeadersKey struct{}
 type clientRequestMetadataKey struct{}
+type inboundStartTimeKey struct{}
 
 // ClientRequestMetadata stores immutable downstream request metadata for asynchronous consumers.
 type ClientRequestMetadata struct {
@@ -70,6 +72,28 @@ func GetEndpoint(ctx context.Context) string {
 		return endpoint
 	}
 	return ""
+}
+
+// WithInboundStartTime stores the timestamp when the server received the inbound HTTP request.
+func WithInboundStartTime(ctx context.Context, start time.Time) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if start.IsZero() {
+		return ctx
+	}
+	return context.WithValue(ctx, inboundStartTimeKey{}, start)
+}
+
+// GetInboundStartTime retrieves the inbound HTTP request arrival timestamp from ctx.
+func GetInboundStartTime(ctx context.Context) time.Time {
+	if ctx == nil {
+		return time.Time{}
+	}
+	if start, ok := ctx.Value(inboundStartTimeKey{}).(time.Time); ok {
+		return start
+	}
+	return time.Time{}
 }
 
 // WithClientRequestMetadata stores a snapshot of downstream request metadata in ctx.

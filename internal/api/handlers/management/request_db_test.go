@@ -354,3 +354,23 @@ func TestProviderResolverDisambiguationAndExpansion(t *testing.T) {
 		t.Fatalf("parsed = %+v, want 2 providers and before_id=42", parsed)
 	}
 }
+
+func TestNewRequestDBRecordResponseTimingBreakdownVisibility(t *testing.T) {
+	entry := &requestdb.Entry{
+		ID:              7,
+		RequestID:       "req-timing-7",
+		LatencyMS:       2500,
+		TTFTMS:          800,
+		TimingBreakdown: []byte(`{"cpa_overhead_ms":5,"conn_acquire_ms":150,"server_wait_ms":600}`),
+	}
+
+	summary := newRequestDBRecordResponseWithProvider(entry, false, resolvedProviderDisplay{})
+	if len(summary.TimingBreakdown) != 0 {
+		t.Fatalf("summary TimingBreakdown = %s, want omitted", summary.TimingBreakdown)
+	}
+
+	detail := newRequestDBRecordResponseWithProvider(entry, true, resolvedProviderDisplay{})
+	if string(detail.TimingBreakdown) != string(entry.TimingBreakdown) {
+		t.Fatalf("detail TimingBreakdown = %s, want %s", detail.TimingBreakdown, entry.TimingBreakdown)
+	}
+}

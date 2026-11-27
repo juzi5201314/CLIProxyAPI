@@ -7,7 +7,7 @@ import (
 
 // currentSchemaVersion is the schema revision this binary expects. Bump it and
 // add a migration step in migrate whenever the table layout changes.
-const currentSchemaVersion = 4
+const currentSchemaVersion = 5
 
 const schemaV1 = `
 CREATE TABLE IF NOT EXISTS request_logs (
@@ -128,6 +128,20 @@ func migrate(db *sql.DB) error {
 		}
 		if _, err := db.Exec(`INSERT INTO schema_version (version) VALUES (4)`); err != nil {
 			return fmt.Errorf("requestdb: record schema v4: %w", err)
+		}
+	}
+	if version < 5 {
+		exists, errCol := tableHasColumn(db, "request_logs", "timing_breakdown_zst")
+		if errCol != nil {
+			return fmt.Errorf("requestdb: inspect request_logs timing column: %w", errCol)
+		}
+		if !exists {
+			if _, err := db.Exec(`ALTER TABLE request_logs ADD COLUMN timing_breakdown_zst BLOB`); err != nil {
+				return fmt.Errorf("requestdb: apply schema v5: %w", err)
+			}
+		}
+		if _, err := db.Exec(`INSERT INTO schema_version (version) VALUES (5)`); err != nil {
+			return fmt.Errorf("requestdb: record schema v5: %w", err)
 		}
 	}
 	return nil

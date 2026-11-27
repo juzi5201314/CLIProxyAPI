@@ -429,6 +429,7 @@ func (w *writer) insertBatch(batch []Entry) {
 	for i := range batch {
 		compressed[i] = batch[i]
 		compressed[i].TokenBreakdown = compressBlob(batch[i].TokenBreakdown)
+		compressed[i].TimingBreakdown = compressBlob(batch[i].TimingBreakdown)
 		compressed[i].RequestHeaders = compressBlob(batch[i].RequestHeaders)
 		compressed[i].ResponseHeaders = compressBlob(batch[i].ResponseHeaders)
 		compressed[i].ErrorBody = compressBlob(batch[i].ErrorBody)

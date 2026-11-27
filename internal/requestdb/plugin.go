@@ -2,12 +2,12 @@ package requestdb
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/MoeForge/moego/json"
 	"github.com/google/uuid"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	coresession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
@@ -180,6 +180,7 @@ func buildEntry(ctx context.Context, record coreusage.Record) Entry {
 		CacheCreationTokens:      usageDetail.CacheCreationTokens,
 		TotalTokens:              totalTokens,
 		TokenBreakdown:           marshalJSON(usageDetail.TokenBreakdown),
+		TimingBreakdown:          timingBreakdown(record.Timing),
 		RequestHeaders:           marshalJSON(clientMeta.Headers),
 		ResponseHeaders:          marshalJSON(record.ResponseHeaders),
 		ErrorBody:                truncateErrorBody(record.Fail.Body),
@@ -198,6 +199,13 @@ func requestPreview(ctx context.Context) []byte {
 func responsePreview(ctx context.Context) []byte {
 	_, response := internallogging.GetContentPreviewHolder(ctx).Previews()
 	return response
+}
+
+func timingBreakdown(timing *coreusage.TimingBreakdown) []byte {
+	if !timing.Valid() {
+		return nil
+	}
+	return marshalJSON(timing)
 }
 
 func truncateErrorBody(body string) []byte {

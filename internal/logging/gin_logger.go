@@ -42,6 +42,9 @@ const (
 func GinLogrusLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
+		if c.Request != nil {
+			c.Request = c.Request.WithContext(WithInboundStartTime(c.Request.Context(), start))
+		}
 		path := c.Request.URL.Path
 		raw := util.MaskSensitiveQuery(c.Request.URL.RawQuery)
 		// OAuth state is a callback capability; authorization codes and issued

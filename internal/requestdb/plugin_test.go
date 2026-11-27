@@ -186,3 +186,45 @@ func TestBuildEntryNormalizesTotalInputTokensForIndependentAccounting(t *testing
 		t.Fatalf("TotalTokens = %d, want 272119", entry.TotalTokens)
 	}
 }
+
+func TestBuildEntryMapsTimingBreakdown(t *testing.T) {
+	record := coreusage.Record{
+		RequestedAt: time.UnixMilli(1000),
+		Timing: &coreusage.TimingBreakdown{
+			InboundQueueMS:    12,
+			CPAOverheadMS:     8,
+			DNSMS:             5,
+			ConnectMS:         20,
+			TLSMS:             35,
+			ConnAcquireMS:     60,
+			RequestWriteMS:    45,
+			ServerWaitMS:      300,
+			FirstTokenWaitMS:  15,
+			StreamTransferMS:  900,
+			ConnReused:        false,
+			RequestBytes:      2048,
+			RoundTrips:        1,
+			UpstreamTransport: "http",
+		},
+	}
+
+	entry := buildEntry(context.Background(), record)
+	if len(entry.TimingBreakdown) == 0 {
+		t.Fatal("TimingBreakdown = empty, want serialized JSON")
+	}
+	var decoded coreusage.TimingBreakdown
+	if err := json.Unmarshal(entry.TimingBreakdown, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal(TimingBreakdown): %v", err)
+	}
+	if decoded.ConnAcquireMS != 60 || decoded.RequestWriteMS != 45 || decoded.ServerWaitMS != 300 || decoded.RequestBytes != 2048 {
+		t.Fatalf("decoded TimingBreakdown = %+v", decoded)
+	}
+
+	emptyEntry := buildEntry(context.Background(), coreusage.Record{
+		RequestedAt: time.UnixMilli(1000),
+		Timing:      &coreusage.TimingBreakdown{},
+	})
+	if len(emptyEntry.TimingBreakdown) != 0 {
+		t.Fatalf("empty TimingBreakdown = %s, want nil", emptyEntry.TimingBreakdown)
+	}
+}

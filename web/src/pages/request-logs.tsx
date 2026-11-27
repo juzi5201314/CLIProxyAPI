@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
 import { CopyButton, DetailList, JsonView, StatusPill } from "@/components/shared/misc";
 import { RequestDBDisabled } from "@/components/shared/misc";
+import { TimingBreakdownCard } from "@/components/shared/timing-breakdown-card";
 import { TimeRangeSelect } from "@/components/shared/time-range-select";
 import { requestDB, fileLogs, type RecordFilter } from "@/api/management";
 import { errMessage, errStatus, type RequestRecord } from "@/api/types";
@@ -864,6 +865,9 @@ function RecordDetailSheet({ record, onClose, onTrace }: { record: RequestRecord
                 {data.token_breakdown ? <TabsTrigger value="breakdown">{t("requestLogs.detail.breakdown")}</TabsTrigger> : null}
               </TabsList>
               <TabsContent value="overview" className="space-y-3">
+                {data.timing_breakdown ? (
+                  <TimingBreakdownCard timing={data.timing_breakdown} latencyMs={data.latency_ms} />
+                ) : null}
                 <DetailList
                   rows={[
                     [t("common.time"), formatTime(data.requested_at, true)],

@@ -2,12 +2,14 @@ package helps
 
 import (
 	"context"
+	stdtls "crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"sync"
 	"time"
@@ -69,12 +71,34 @@ func newUtlsRoundTripper(proxyURL string) *utlsRoundTripper {
 	return &utlsRoundTripper{dialer: dialer}
 }
 
+func utlsConnectionStateToStd(conn *tls.UConn) stdtls.ConnectionState {
+	if conn == nil {
+		return stdtls.ConnectionState{}
+	}
+	st := conn.ConnectionState()
+	return stdtls.ConnectionState{
+		Version:            st.Version,
+		HandshakeComplete:  st.HandshakeComplete,
+		DidResume:          st.DidResume,
+		CipherSuite:        st.CipherSuite,
+		NegotiatedProtocol: st.NegotiatedProtocol,
+		ServerName:         st.ServerName,
+	}
+}
+
 func (t *utlsRoundTripper) createConnection(ctx context.Context, host, addr string) (*tls.UConn, error) {
 	contextDialer, ok := t.dialer.(proxy.ContextDialer)
 	if !ok {
 		return nil, fmt.Errorf("utls: dialer does not support context cancellation")
 	}
+	trace := httptrace.ContextClientTrace(ctx)
+	if trace != nil && trace.ConnectStart != nil {
+		trace.ConnectStart("tcp", addr)
+	}
 	conn, errDial := contextDialer.DialContext(ctx, "tcp", addr)
+	if trace != nil && trace.ConnectDone != nil {
+		trace.ConnectDone("tcp", addr, errDial)
+	}
 	if errDial != nil {
 		return nil, fmt.Errorf("utls: dial upstream: %w", errDial)
 	}
@@ -84,8 +108,14 @@ func (t *utlsRoundTripper) createConnection(ctx context.Context, host, addr stri
 
 	handshakeCtx, cancelHandshake := handshakeContext(ctx)
 	defer cancelHandshake()
+	if trace != nil && trace.TLSHandshakeStart != nil {
+		trace.TLSHandshakeStart()
+	}
 	if errHandshake := tlsConn.HandshakeContext(handshakeCtx); errHandshake != nil {
 		errHandshake = classifyHandshakeError(ctx, handshakeCtx, errHandshake)
+		if trace != nil && trace.TLSHandshakeDone != nil {
+			trace.TLSHandshakeDone(stdtls.ConnectionState{}, errHandshake)
+		}
 		if errors.Is(errHandshake, context.Canceled) || errors.Is(errHandshake, context.DeadlineExceeded) {
 			return nil, fmt.Errorf("utls: TLS handshake: %w", errHandshake)
 		}
@@ -93,6 +123,9 @@ func (t *utlsRoundTripper) createConnection(ctx context.Context, host, addr stri
 			return nil, fmt.Errorf("utls: TLS handshake: %w; close connection: %v", errHandshake, errClose)
 		}
 		return nil, fmt.Errorf("utls: TLS handshake: %w", errHandshake)
+	}
+	if trace != nil && trace.TLSHandshakeDone != nil {
+		trace.TLSHandshakeDone(utlsConnectionStateToStd(tlsConn), nil)
 	}
 
 	return tlsConn, nil
@@ -105,6 +138,10 @@ func (t *utlsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		port = "443"
 	}
 	addr := net.JoinHostPort(hostname, port)
+
+	if trace := httptrace.ContextClientTrace(req.Context()); trace != nil && trace.GetConn != nil {
+		trace.GetConn(addr)
+	}
 
 	tlsConn, err := t.createConnection(req.Context(), hostname, addr)
 	if err != nil {
@@ -384,14 +421,21 @@ func newClaudeCodeRoundTripperForDialerAndRoots(dialer proxy.Dialer, roots *x509
 		ForceAttemptHTTP2:   false,
 		MaxIdleConnsPerHost: -1,
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			trace := httptrace.ContextClientTrace(ctx)
 			var (
 				conn net.Conn
 				err  error
 			)
+			if trace != nil && trace.ConnectStart != nil {
+				trace.ConnectStart(network, addr)
+			}
 			if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
 				conn, err = contextDialer.DialContext(ctx, network, addr)
 			} else {
 				conn, err = dialer.Dial(network, addr)
+			}
+			if trace != nil && trace.ConnectDone != nil {
+				trace.ConnectDone(network, addr, err)
 			}
 			if err != nil {
 				return nil, fmt.Errorf("claude tls: dial upstream: %w", err)
@@ -414,12 +458,21 @@ func newClaudeCodeRoundTripperForDialerAndRoots(dialer proxy.Dialer, roots *x509
 			}
 			handshakeCtx, cancelHandshake := handshakeContext(ctx)
 			defer cancelHandshake()
+			if trace != nil && trace.TLSHandshakeStart != nil {
+				trace.TLSHandshakeStart()
+			}
 			if errHandshake := tlsConn.HandshakeContext(handshakeCtx); errHandshake != nil {
 				errHandshake = classifyHandshakeError(ctx, handshakeCtx, errHandshake)
+				if trace != nil && trace.TLSHandshakeDone != nil {
+					trace.TLSHandshakeDone(stdtls.ConnectionState{}, errHandshake)
+				}
 				if errClose := tlsConn.Close(); errClose != nil {
 					log.Debugf("claude tls: close connection after handshake failure: %v", errClose)
 				}
 				return nil, fmt.Errorf("claude tls: handshake upstream: %w", errHandshake)
+			}
+			if trace != nil && trace.TLSHandshakeDone != nil {
+				trace.TLSHandshakeDone(utlsConnectionStateToStd(tlsConn), nil)
 			}
 			return httpwire.NewOrderedRequestConn(tlsConn, claudeCodeRequestHeaderOrder), nil
 		},

@@ -77,6 +77,7 @@ type Record struct {
 	RequestedAt time.Time
 	Latency     time.Duration
 	TTFT        time.Duration
+	Timing      *TimingBreakdown
 	Failed      bool
 	Fail        Failure
 	Detail      Detail

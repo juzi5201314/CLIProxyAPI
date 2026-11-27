@@ -1,5 +1,25 @@
 import type { AxiosResponse } from "axios";
 
+/** Fine-grained per-phase latency breakdown (in milliseconds) for one upstream attempt. */
+export interface RequestTimingBreakdown {
+  inbound_queue_ms?: number;
+  cpa_overhead_ms?: number;
+  dns_ms?: number;
+  connect_ms?: number;
+  tls_ms?: number;
+  conn_acquire_ms?: number;
+  request_write_ms?: number;
+  server_wait_ms?: number;
+  first_token_wait_ms?: number;
+  stream_transfer_ms?: number;
+  conn_reused?: boolean;
+  conn_was_idle?: boolean;
+  conn_idle_ms?: number;
+  request_bytes?: number;
+  round_trips?: number;
+  upstream_transport?: string;
+}
+
 /** One stored request record from the fork-local request database. */
 export interface RequestRecord {
   id: number;
@@ -51,6 +71,7 @@ export interface RequestRecord {
   estimated_cost_usd?: number;
   // Detail-only fields:
   token_breakdown?: unknown;
+  timing_breakdown?: RequestTimingBreakdown;
   request_headers?: Record<string, string>;
   response_headers?: Record<string, string>;
   error_body?: string;

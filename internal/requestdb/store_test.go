@@ -2,6 +2,7 @@ package requestdb
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -475,5 +476,83 @@ func TestStoreCleanupAndStorageInfo(t *testing.T) {
 	}
 	if cleared != 2 {
 		t.Errorf("ClearAll() deleted %d rows, want 2", cleared)
+	}
+}
+
+func TestStoreTimingBreakdownRoundTripAndMigrationV5(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "legacy_v4.db")
+
+	// Seed a schema v4 database without timing_breakdown_zst, then reopen via Open() to test v4 -> v5 migration.
+	rawDB, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE schema_version (version INTEGER NOT NULL)`,
+		schemaV1,
+		`ALTER TABLE request_logs ADD COLUMN provider_name TEXT NOT NULL DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_request_logs_provider_auth ON request_logs (provider, auth_id)`,
+		`INSERT INTO schema_version (version) VALUES (4)`,
+	} {
+		if _, errExec := rawDB.Exec(stmt); errExec != nil {
+			_ = rawDB.Close()
+			t.Fatalf("seed v4 schema (%s): %v", stmt, errExec)
+		}
+	}
+	if errClose := rawDB.Close(); errClose != nil {
+		t.Fatalf("rawDB.Close: %v", errClose)
+	}
+
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open(legacy v4) error = %v", err)
+	}
+	defer func() {
+		if errClose := store.Close(); errClose != nil {
+			t.Fatalf("store.Close: %v", errClose)
+		}
+	}()
+
+	rawTiming := []byte(`{"cpa_overhead_ms":7,"conn_acquire_ms":120,"request_write_ms":55,"server_wait_ms":410,"stream_transfer_ms":1200,"round_trips":1,"upstream_transport":"http"}`)
+	e := sampleEntry("timing-1", 5000)
+	e.TokenBreakdown = nil
+	e.RequestHeaders = nil
+	e.ResponseHeaders = nil
+	e.ErrorBody = nil
+	e.RequestPreview = nil
+	e.ResponsePreview = nil
+	e.TimingBreakdown = compressBlob(rawTiming)
+	if err := store.InsertBatch(ctx, []Entry{e}); err != nil {
+		t.Fatalf("InsertBatch() error = %v", err)
+	}
+
+	detail, err := store.GetByID(ctx, 1)
+	if err != nil || detail == nil {
+		t.Fatalf("GetByID(1) = %v, %v", detail, err)
+	}
+	if string(detail.TimingBreakdown) != string(rawTiming) {
+		t.Fatalf("GetByID(1).TimingBreakdown = %s, want %s", detail.TimingBreakdown, rawTiming)
+	}
+
+	// List queries stay lightweight and omit blob columns.
+	listed, err := store.Query(ctx, Query{})
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("Query() = %d, %v", len(listed), err)
+	}
+	if len(listed[0].TimingBreakdown) != 0 {
+		t.Fatalf("Query()[0].TimingBreakdown = %s, want empty", listed[0].TimingBreakdown)
+	}
+
+	stripped, err := store.StripPayloads(ctx, 0)
+	if err != nil || stripped != 1 {
+		t.Fatalf("StripPayloads() = %d, %v, want 1", stripped, err)
+	}
+	afterStrip, err := store.GetByID(ctx, 1)
+	if err != nil || afterStrip == nil {
+		t.Fatalf("GetByID(1) after strip = %v, %v", afterStrip, err)
+	}
+	if len(afterStrip.TimingBreakdown) != 0 {
+		t.Fatalf("TimingBreakdown after StripPayloads = %s, want empty", afterStrip.TimingBreakdown)
 	}
 }

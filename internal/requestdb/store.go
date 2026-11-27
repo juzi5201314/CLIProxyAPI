@@ -67,6 +67,7 @@ type Entry struct {
 	TotalTokens         int64
 
 	TokenBreakdown  []byte
+	TimingBreakdown []byte
 	RequestHeaders  []byte
 	ResponseHeaders []byte
 	ErrorBody       []byte
@@ -139,7 +140,7 @@ const insertColumns = `requested_at, request_id, trace_id, endpoint, client_ip, 
 	service_tier, effective_service_tier, response_service_tier,
 	generate, stream, failed, status_code, latency_ms, ttft_ms,
 	input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_read_tokens, cache_creation_tokens, total_tokens,
-	token_breakdown_zst, request_headers_zst, response_headers_zst, error_body_zst, request_preview_zst, response_preview_zst`
+	token_breakdown_zst, timing_breakdown_zst, request_headers_zst, response_headers_zst, error_body_zst, request_preview_zst, response_preview_zst`
 
 // InsertBatch stores entries in one transaction. Compressed blob fields are
 // expected to be already compressed by the writer goroutine.
@@ -150,7 +151,7 @@ func (s *Store) InsertBatch(ctx context.Context, entries []Entry) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	placeholders := "(" + strings.TrimSuffix(strings.Repeat("?,", 48), ",") + ")"
+	placeholders := "(" + strings.TrimSuffix(strings.Repeat("?,", 49), ",") + ")"
 	stmtText := "INSERT INTO request_logs (" + insertColumns + ") VALUES " + placeholders
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -171,7 +172,7 @@ func (s *Store) InsertBatch(ctx context.Context, entries []Entry) error {
 			e.ServiceTier, e.EffectiveServiceTier, e.ResponseServiceTier,
 			boolToInt(e.Generate), boolToInt(e.Stream), boolToInt(e.Failed), e.StatusCode, e.LatencyMS, e.TTFTMS,
 			e.InputTokens, e.OutputTokens, e.ReasoningTokens, e.CachedTokens, e.CacheReadTokens, e.CacheCreationTokens, e.TotalTokens,
-			nullableBytes(e.TokenBreakdown), nullableBytes(e.RequestHeaders), nullableBytes(e.ResponseHeaders),
+			nullableBytes(e.TokenBreakdown), nullableBytes(e.TimingBreakdown), nullableBytes(e.RequestHeaders), nullableBytes(e.ResponseHeaders),
 			nullableBytes(e.ErrorBody), nullableBytes(e.RequestPreview), nullableBytes(e.ResponsePreview),
 		)
 		if errExec != nil {
@@ -265,10 +266,10 @@ func (s *Store) StorageInfo(ctx context.Context, dbPath string, retentionDays in
 		SELECT
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN failed = 1 THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN token_breakdown_zst IS NOT NULL OR request_headers_zst IS NOT NULL OR response_headers_zst IS NOT NULL OR error_body_zst IS NOT NULL OR request_preview_zst IS NOT NULL OR response_preview_zst IS NOT NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN token_breakdown_zst IS NOT NULL OR timing_breakdown_zst IS NOT NULL OR request_headers_zst IS NOT NULL OR response_headers_zst IS NOT NULL OR error_body_zst IS NOT NULL OR request_preview_zst IS NOT NULL OR response_preview_zst IS NOT NULL THEN 1 ELSE 0 END), 0),
 			COALESCE(MIN(requested_at), 0),
 			COALESCE(MAX(requested_at), 0),
-			COALESCE(SUM(LENGTH(COALESCE(token_breakdown_zst, '')) + LENGTH(COALESCE(request_headers_zst, '')) + LENGTH(COALESCE(response_headers_zst, '')) + LENGTH(COALESCE(error_body_zst, '')) + LENGTH(COALESCE(request_preview_zst, '')) + LENGTH(COALESCE(response_preview_zst, ''))), 0)
+			COALESCE(SUM(LENGTH(COALESCE(token_breakdown_zst, '')) + LENGTH(COALESCE(timing_breakdown_zst, '')) + LENGTH(COALESCE(request_headers_zst, '')) + LENGTH(COALESCE(response_headers_zst, '')) + LENGTH(COALESCE(error_body_zst, '')) + LENGTH(COALESCE(request_preview_zst, '')) + LENGTH(COALESCE(response_preview_zst, ''))), 0)
 		FROM request_logs
 	`)
 	if err := row.Scan(
@@ -286,18 +287,18 @@ func (s *Store) StorageInfo(ctx context.Context, dbPath string, retentionDays in
 	ratio := 3.5
 	if info.PayloadRecords > 0 {
 		rows, err := s.db.QueryContext(ctx, `
-			SELECT token_breakdown_zst, request_headers_zst, response_headers_zst, error_body_zst, request_preview_zst, response_preview_zst
+			SELECT token_breakdown_zst, timing_breakdown_zst, request_headers_zst, response_headers_zst, error_body_zst, request_preview_zst, response_preview_zst
 			FROM request_logs
-			WHERE request_headers_zst IS NOT NULL OR token_breakdown_zst IS NOT NULL OR error_body_zst IS NOT NULL
+			WHERE request_headers_zst IS NOT NULL OR token_breakdown_zst IS NOT NULL OR timing_breakdown_zst IS NOT NULL OR error_body_zst IS NOT NULL
 			LIMIT 25
 		`)
 		if err == nil {
 			var sampleCompressed int64
 			var sampleUncompressed int64
 			for rows.Next() {
-				var tb, reqH, respH, errB, reqP, respP []byte
-				if errScan := rows.Scan(&tb, &reqH, &respH, &errB, &reqP, &respP); errScan == nil {
-					for _, b := range [][]byte{tb, reqH, respH, errB, reqP, respP} {
+				var tb, tim, reqH, respH, errB, reqP, respP []byte
+				if errScan := rows.Scan(&tb, &tim, &reqH, &respH, &errB, &reqP, &respP); errScan == nil {
+					for _, b := range [][]byte{tb, tim, reqH, respH, errB, reqP, respP} {
 						if len(b) > 0 {
 							sampleCompressed += int64(len(b))
 							raw, errDecomp := decompressBlob(b)
@@ -350,12 +351,14 @@ func (s *Store) StripPayloads(ctx context.Context, cutoffMS int64) (int64, error
 	}
 	query := `UPDATE request_logs
 		SET token_breakdown_zst = NULL,
+		    timing_breakdown_zst = NULL,
 		    request_headers_zst = NULL,
 		    response_headers_zst = NULL,
 		    error_body_zst = NULL,
 		    request_preview_zst = NULL,
 		    response_preview_zst = NULL
 		WHERE (token_breakdown_zst IS NOT NULL
+		    OR timing_breakdown_zst IS NOT NULL
 		    OR request_headers_zst IS NOT NULL
 		    OR response_headers_zst IS NOT NULL
 		    OR error_body_zst IS NOT NULL
@@ -519,11 +522,11 @@ func (s *Store) GetByID(ctx context.Context, id int64) (*Entry, error) {
 		service_tier, effective_service_tier, response_service_tier,
 		generate, stream, failed, status_code, latency_ms, ttft_ms,
 		input_tokens, output_tokens, reasoning_tokens, cached_tokens, cache_read_tokens, cache_creation_tokens, total_tokens,
-		token_breakdown_zst, request_headers_zst, response_headers_zst, error_body_zst, request_preview_zst, response_preview_zst
+		token_breakdown_zst, timing_breakdown_zst, request_headers_zst, response_headers_zst, error_body_zst, request_preview_zst, response_preview_zst
 		FROM request_logs WHERE id = ?`
 	var e Entry
 	var isNativeKey, generate, stream, failed int
-	var tokenBreakdown, requestHeaders, responseHeaders, errorBody, requestPreview, responsePreview []byte
+	var tokenBreakdown, timingBreakdown, requestHeaders, responseHeaders, errorBody, requestPreview, responsePreview []byte
 	err := s.db.QueryRowContext(ctx, stmt, id).Scan(&e.ID, &e.RequestedAtMS, &e.RequestID, &e.TraceID, &e.Endpoint, &e.ClientIP, &e.ResolvedClientIP, &e.XForwardedFor, &e.UserAgent,
 		&e.SessionID, &e.ParentSessionID, &e.APIKey, &e.AccessProvider, &isNativeKey,
 		&e.Provider, &e.ProviderName, &e.ExecutorType, &e.AuthID, &e.AuthIndex, &e.AuthType, &e.Source, &e.BaseURL,
@@ -531,7 +534,7 @@ func (s *Store) GetByID(ctx context.Context, id int64) (*Entry, error) {
 		&e.ServiceTier, &e.EffectiveServiceTier, &e.ResponseServiceTier,
 		&generate, &stream, &failed, &e.StatusCode, &e.LatencyMS, &e.TTFTMS,
 		&e.InputTokens, &e.OutputTokens, &e.ReasoningTokens, &e.CachedTokens, &e.CacheReadTokens, &e.CacheCreationTokens, &e.TotalTokens,
-		&tokenBreakdown, &requestHeaders, &responseHeaders, &errorBody, &requestPreview, &responsePreview,
+		&tokenBreakdown, &timingBreakdown, &requestHeaders, &responseHeaders, &errorBody, &requestPreview, &responsePreview,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -545,6 +548,9 @@ func (s *Store) GetByID(ctx context.Context, id int64) (*Entry, error) {
 	e.Failed = failed != 0
 	if e.TokenBreakdown, err = decompressBlob(tokenBreakdown); err != nil {
 		return nil, fmt.Errorf("requestdb: decompress token breakdown: %w", err)
+	}
+	if e.TimingBreakdown, err = decompressBlob(timingBreakdown); err != nil {
+		return nil, fmt.Errorf("requestdb: decompress timing breakdown: %w", err)
 	}
 	if e.RequestHeaders, err = decompressBlob(requestHeaders); err != nil {
 		return nil, fmt.Errorf("requestdb: decompress request headers: %w", err)

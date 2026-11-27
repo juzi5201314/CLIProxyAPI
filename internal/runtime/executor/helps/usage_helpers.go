@@ -58,13 +58,16 @@ type UsageReporter struct {
 	effectiveServiceTier string
 	generate             bool
 	stream               bool
+	inboundStart         time.Time
 	requestedAt          time.Time
 	ttftMu               sync.RWMutex
 	ttft                 time.Duration
 	firstPacketDuration  time.Duration
 	firstPacketSet       bool
 	ttftStart            time.Time
+	firstSendAt          time.Time
 	ttftSet              bool
+	timing               httpTimingTracker
 	once                 sync.Once
 
 	responseModelMu sync.RWMutex
@@ -147,6 +150,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 		baseURL:         baseURL,
 		model:           model,
 		alias:           strings.TrimSpace(alias),
+		inboundStart:    internallogging.GetInboundStartTime(ctx),
 		requestedAt:     time.Now(),
 		apiKey:          apiKey,
 		accessProvider:  accessProvider,
@@ -513,7 +517,11 @@ func (r *UsageReporter) StartResponseTTFT() {
 	}
 	r.ttftMu.Lock()
 	if !r.ttftSet && r.ttftStart.IsZero() {
-		r.ttftStart = time.Now()
+		now := time.Now()
+		r.ttftStart = now
+		if r.firstSendAt.IsZero() {
+			r.firstSendAt = now
+		}
 	}
 	r.ttftMu.Unlock()
 }
@@ -752,8 +760,19 @@ func (r *UsageReporter) buildRecordForModel(model string, detail usage.Detail, f
 	// Additional-model records describe a side model (image generation tool usage) that
 	// the upstream response model never refers to, so they must stay empty.
 	responseModel := ""
+	var timing *usage.TimingBreakdown
+	now := time.Now()
+	latency := time.Duration(0)
+	if !r.requestedAt.IsZero() {
+		latency = now.Sub(r.requestedAt)
+		if latency < 0 {
+			latency = 0
+		}
+	}
+	ttft, hasTTFT := r.ttftDurationWithFlag()
 	if model == r.model {
 		responseModel = r.ResponseModel()
+		timing = r.buildTimingBreakdown(now, ttft, hasTTFT)
 	}
 	return usage.Record{
 		RequestID:            r.requestID,
@@ -784,8 +803,9 @@ func (r *UsageReporter) buildRecordForModel(model string, detail usage.Detail, f
 		Generate:             usage.GenerateFlag(r.generate),
 		Stream:               r.stream,
 		RequestedAt:          r.requestedAt,
-		Latency:              r.latency(),
-		TTFT:                 r.ttftDuration(),
+		Latency:              latency,
+		TTFT:                 ttft,
+		Timing:               timing,
 		Failed:               failed,
 		Fail:                 fail,
 		Detail:               detail,
@@ -835,17 +855,6 @@ func failFromErrorsWithRules(rules []internalconfig.RequestScopedErrorRule, errs
 	return usage.Failure{}
 }
 
-func (r *UsageReporter) latency() time.Duration {
-	if r == nil || r.requestedAt.IsZero() {
-		return 0
-	}
-	latency := time.Since(r.requestedAt)
-	if latency < 0 {
-		return 0
-	}
-	return latency
-}
-
 func (r *UsageReporter) setTTFT(ttft time.Duration) {
 	if r == nil {
 		return
@@ -865,18 +874,23 @@ func (r *UsageReporter) setTTFT(ttft time.Duration) {
 }
 
 func (r *UsageReporter) ttftDuration() time.Duration {
+	d, _ := r.ttftDurationWithFlag()
+	return d
+}
+
+func (r *UsageReporter) ttftDurationWithFlag() (time.Duration, bool) {
 	if r == nil {
-		return 0
+		return 0, false
 	}
 	r.ttftMu.RLock()
 	defer r.ttftMu.RUnlock()
 	if r.ttftSet {
-		return r.ttft
+		return r.ttft, true
 	}
 	if r.firstPacketSet {
-		return r.firstPacketDuration
+		return r.firstPacketDuration, true
 	}
-	return 0
+	return 0, false
 }
 
 type usageTTFTRoundTripper struct {
@@ -888,7 +902,9 @@ type usageTTFTRoundTripper struct {
 func (t usageTTFTRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	cliproxyexecutor.MarkUpstreamAttempt(req.Context())
 	t.reporter.StartResponseTTFT()
-	resp, errRoundTrip := t.base.RoundTrip(req)
+	tracedReq, trip := t.reporter.timing.beginTrip(req)
+	resp, errRoundTrip := t.base.RoundTrip(tracedReq)
+	t.reporter.timing.finishTrip(trip, errRoundTrip)
 	if errRoundTrip != nil {
 		return resp, errRoundTrip
 	}
