@@ -245,7 +245,16 @@ export const credentials = {
     return data as { status?: string; uploaded?: number; failed?: { name: string; error: string }[] };
   },
   async remove(names: string[], all = false): Promise<void> {
-    await client.delete("/credentials", { params: all ? { all: "true" } : { name: names } });
+    const params = new URLSearchParams();
+    if (all) {
+      params.set("all", "true");
+    } else {
+      for (const name of names) {
+        const trimmed = name.trim();
+        if (trimmed) params.append("name", trimmed);
+      }
+    }
+    await client.delete("/credentials", { params });
   },
   async setStatus(name: string, disabled: boolean, authIndex?: string): Promise<void> {
     await client.patch("/credentials/status", { name, auth_index: authIndex, disabled });

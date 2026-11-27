@@ -471,6 +471,11 @@ func requestedAuthFileNamesForDelete(c *gin.Context) ([]string, error) {
 	if len(names) > 0 {
 		return names, nil
 	}
+	if isV8AuthFileMutation(c.Request.Context()) {
+		if bracketNames := uniqueAuthFileNames(c.QueryArray("name[]")); len(bracketNames) > 0 {
+			return bracketNames, nil
+		}
+	}
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
